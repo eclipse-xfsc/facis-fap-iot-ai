@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -58,7 +58,7 @@ def calculate_solar_position(
     """
     # Ensure UTC
     if timestamp.tzinfo is None:
-        timestamp = timestamp.replace(tzinfo=timezone.utc)
+        timestamp = timestamp.replace(tzinfo=UTC)
 
     # Day of year (1-365)
     day_of_year = timestamp.timetuple().tm_yday
@@ -68,7 +68,9 @@ def calculate_solar_position(
 
     # Solar declination (angle of sun relative to equator)
     # Varies from -23.45 (winter solstice) to +23.45 (summer solstice)
-    declination_rad = math.radians(23.45 * math.sin(2 * math.pi * (284 + day_of_year) / 365))
+    declination_rad = math.radians(
+        23.45 * math.sin(2 * math.pi * (284 + day_of_year) / 365)
+    )
 
     # Equation of time (correction for Earth's elliptical orbit)
     b = 2 * math.pi * (day_of_year - 81) / 365
@@ -83,23 +85,25 @@ def calculate_solar_position(
     # Hour angle (degrees from solar noon)
     # At solar noon, hour angle = 0
     # Each hour = 15 degrees (360/24)
-    hour_angle_deg = (solar_time / 4.0) - 180  # Convert minutes to degrees, shift noon to 0
+    hour_angle_deg = (
+        solar_time / 4.0
+    ) - 180  # Convert minutes to degrees, shift noon to 0
     hour_angle_rad = math.radians(hour_angle_deg)
 
     # Latitude in radians
     lat_rad = math.radians(latitude)
 
     # Solar altitude (elevation angle)
-    sin_altitude = math.sin(lat_rad) * math.sin(declination_rad) + math.cos(lat_rad) * math.cos(
-        declination_rad
-    ) * math.cos(hour_angle_rad)
+    sin_altitude = math.sin(lat_rad) * math.sin(declination_rad) + math.cos(
+        lat_rad
+    ) * math.cos(declination_rad) * math.cos(hour_angle_rad)
     altitude_rad = math.asin(max(-1, min(1, sin_altitude)))
     altitude_deg = math.degrees(altitude_rad)
 
     # Solar azimuth
-    cos_azimuth = (math.sin(declination_rad) - math.sin(lat_rad) * math.sin(altitude_rad)) / (
-        math.cos(lat_rad) * math.cos(altitude_rad) + 1e-10
-    )
+    cos_azimuth = (
+        math.sin(declination_rad) - math.sin(lat_rad) * math.sin(altitude_rad)
+    ) / (math.cos(lat_rad) * math.cos(altitude_rad) + 1e-10)
     cos_azimuth = max(-1, min(1, cos_azimuth))
 
     if hour_angle_deg < 0:
@@ -126,7 +130,9 @@ def calculate_day_length_hours(day_of_year: int, latitude: float) -> float:
         Day length in hours.
     """
     # Solar declination
-    declination_rad = math.radians(23.45 * math.sin(2 * math.pi * (284 + day_of_year) / 365))
+    declination_rad = math.radians(
+        23.45 * math.sin(2 * math.pi * (284 + day_of_year) / 365)
+    )
     lat_rad = math.radians(latitude)
 
     # Hour angle at sunrise/sunset
@@ -248,7 +254,9 @@ def calculate_irradiance_components(
     if kt <= 0.22:
         diffuse_fraction = 1.0 - 0.09 * kt
     elif kt <= 0.80:
-        diffuse_fraction = 0.9511 - 0.1604 * kt + 4.388 * kt**2 - 16.638 * kt**3 + 12.336 * kt**4
+        diffuse_fraction = (
+            0.9511 - 0.1604 * kt + 4.388 * kt**2 - 16.638 * kt**3 + 12.336 * kt**4
+        )
     else:
         diffuse_fraction = 0.165
 

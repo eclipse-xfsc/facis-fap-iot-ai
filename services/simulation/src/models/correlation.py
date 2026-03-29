@@ -97,7 +97,6 @@ class CorrelatedSnapshot(BaseModel):
     )
 
     @computed_field
-    @property
     def timestamp_iso(self) -> str:
         """Return timestamp in ISO 8601 format."""
         return self.timestamp.isoformat().replace("+00:00", "Z")
@@ -108,7 +107,9 @@ class CorrelatedSnapshot(BaseModel):
             "timestamp": self.timestamp_iso,
             "weather": self.weather.to_json_payload() if self.weather else None,
             "pv_readings": [pv.to_json_payload() for pv in self.pv_readings],
-            "meter_readings": [meter.to_json_payload() for meter in self.meter_readings],
+            "meter_readings": [
+                meter.to_json_payload() for meter in self.meter_readings
+            ],
             "consumer_loads": [load.to_json_payload() for load in self.consumer_loads],
             "price": self.price.to_json_payload() if self.price else None,
             "metrics": self.metrics.to_json_payload(),

@@ -9,7 +9,7 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field
-from requests import exceptions as requests_exceptions
+from requests import exceptions as requests_exceptions  # type: ignore[import-untyped]
 from trino import exceptions as trino_exceptions
 
 from src.config import load_config
@@ -29,7 +29,11 @@ insights_router = APIRouter(prefix="/api/v1/insights", tags=["insights"])
 outputs_router = APIRouter(prefix="/api/ai", tags=["insights"])
 logger = logging.getLogger(__name__)
 
-INSIGHT_TYPES: tuple[str, str, str] = ("energy-summary", "anomaly-report", "city-status")
+INSIGHT_TYPES: tuple[str, str, str] = (
+    "energy-summary",
+    "anomaly-report",
+    "city-status",
+)
 
 _singletons_lock = Lock()
 _singletons: dict[str, Any] = {}
@@ -133,7 +137,9 @@ def _dependencies() -> dict[str, Any]:
                 "insight_cache": insight_cache,
                 "orchestrator": InsightOrchestrator(
                     outlier_service=NetGridInsightService(trino_client=trino_client),
-                    smart_city_service=SmartCityCorrelationService(trino_client=trino_client),
+                    smart_city_service=SmartCityCorrelationService(
+                        trino_client=trino_client
+                    ),
                     trend_service=TrendForecastService(trino_client=trino_client),
                     llm_client=OpenAICompatibleClient(settings.llm),
                     output_store=store,
@@ -227,7 +233,9 @@ def anomaly_report(
         raise
     except Exception as error:
         logger.exception("anomaly_report_failed")
-        raise HTTPException(status_code=502, detail=_sanitize_upstream_error(error)) from error
+        raise HTTPException(
+            status_code=502, detail=_sanitize_upstream_error(error)
+        ) from error
     return _build_insight_response(
         insight_type="anomaly-report",
         record=result.record,
@@ -263,7 +271,9 @@ def city_status(
         raise HTTPException(status_code=400, detail=str(error)) from error
     except Exception as error:
         logger.exception("city_status_failed")
-        raise HTTPException(status_code=502, detail=_sanitize_upstream_error(error)) from error
+        raise HTTPException(
+            status_code=502, detail=_sanitize_upstream_error(error)
+        ) from error
     return _build_insight_response(
         insight_type="city-status",
         record=result.record,
@@ -302,7 +312,9 @@ def energy_summary(
         raise HTTPException(status_code=400, detail=str(error)) from error
     except Exception as error:
         logger.exception("energy_summary_failed")
-        raise HTTPException(status_code=502, detail=_sanitize_upstream_error(error)) from error
+        raise HTTPException(
+            status_code=502, detail=_sanitize_upstream_error(error)
+        ) from error
     return _build_insight_response(
         insight_type="energy-summary",
         record=result.record,

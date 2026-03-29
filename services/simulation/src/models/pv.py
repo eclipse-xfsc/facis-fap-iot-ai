@@ -16,8 +16,12 @@ class PVReadings(BaseModel):
     daily_energy_kwh: float = Field(
         ..., ge=0, description="Cumulative energy generated today in kWh"
     )
-    irradiance_w_m2: float = Field(..., ge=0, description="Current solar irradiance in W/m²")
-    module_temperature_c: float = Field(..., description="Module temperature in Celsius")
+    irradiance_w_m2: float = Field(
+        ..., ge=0, description="Current solar irradiance in W/m²"
+    )
+    module_temperature_c: float = Field(
+        ..., description="Module temperature in Celsius"
+    )
     efficiency_percent: float = Field(
         ..., ge=0, le=100, description="Current system efficiency percentage"
     )

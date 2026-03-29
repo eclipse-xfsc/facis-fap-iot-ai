@@ -1,7 +1,5 @@
 """Unit tests for the random generator module."""
 
-import pytest
-
 from src.core.random_generator import DeterministicRNG
 
 

@@ -1,6 +1,6 @@
 """Unit tests for net-grid insight service orchestration."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from src.services.net_grid_insight_service import NetGridInsightService
 
@@ -33,8 +33,8 @@ def test_generate_outlier_context_handles_empty_window() -> None:
     service = NetGridInsightService(trino_client=fake_client)  # type: ignore[arg-type]
 
     context = service.generate_outlier_context(
-        start_ts=datetime(2026, 3, 1, tzinfo=timezone.utc),
-        end_ts=datetime(2026, 3, 2, tzinfo=timezone.utc),
+        start_ts=datetime(2026, 3, 1, tzinfo=UTC),
+        end_ts=datetime(2026, 3, 2, tzinfo=UTC),
         timezone="UTC",
         threshold=3.5,
     )
@@ -51,22 +51,50 @@ def test_generate_outlier_context_handles_empty_window() -> None:
 
 def test_generate_outlier_context_aggregates_metric_events() -> None:
     records = [
-        {"hour": "2026-03-01T00:00:00+00:00", "avg_consumption_kw": 10.0, "avg_generation_kw": 5.0, "estimated_hourly_cost_eur": 1.0},
-        {"hour": "2026-03-01T01:00:00+00:00", "avg_consumption_kw": 11.0, "avg_generation_kw": 5.0, "estimated_hourly_cost_eur": 1.0},
-        {"hour": "2026-03-01T02:00:00+00:00", "avg_consumption_kw": 10.5, "avg_generation_kw": 5.0, "estimated_hourly_cost_eur": 1.0},
-        {"hour": "2026-03-01T03:00:00+00:00", "avg_consumption_kw": 80.0, "avg_generation_kw": 5.0, "estimated_hourly_cost_eur": 1.1},
-        {"hour": "2026-03-01T04:00:00+00:00", "avg_consumption_kw": -30.0, "avg_generation_kw": 5.0, "estimated_hourly_cost_eur": 0.9},
+        {
+            "hour": "2026-03-01T00:00:00+00:00",
+            "avg_consumption_kw": 10.0,
+            "avg_generation_kw": 5.0,
+            "estimated_hourly_cost_eur": 1.0,
+        },
+        {
+            "hour": "2026-03-01T01:00:00+00:00",
+            "avg_consumption_kw": 11.0,
+            "avg_generation_kw": 5.0,
+            "estimated_hourly_cost_eur": 1.0,
+        },
+        {
+            "hour": "2026-03-01T02:00:00+00:00",
+            "avg_consumption_kw": 10.5,
+            "avg_generation_kw": 5.0,
+            "estimated_hourly_cost_eur": 1.0,
+        },
+        {
+            "hour": "2026-03-01T03:00:00+00:00",
+            "avg_consumption_kw": 80.0,
+            "avg_generation_kw": 5.0,
+            "estimated_hourly_cost_eur": 1.1,
+        },
+        {
+            "hour": "2026-03-01T04:00:00+00:00",
+            "avg_consumption_kw": -30.0,
+            "avg_generation_kw": 5.0,
+            "estimated_hourly_cost_eur": 0.9,
+        },
     ]
     fake_client = _FakeTrinoClient(records=records)
     service = NetGridInsightService(trino_client=fake_client)  # type: ignore[arg-type]
 
     context = service.generate_outlier_context(
-        start_ts=datetime(2026, 3, 1, tzinfo=timezone.utc),
-        end_ts=datetime(2026, 3, 2, tzinfo=timezone.utc),
+        start_ts=datetime(2026, 3, 1, tzinfo=UTC),
+        end_ts=datetime(2026, 3, 2, tzinfo=UTC),
         timezone="UTC",
         threshold=3.5,
     )
 
     assert context["summary"]["total_outliers"] == 2
     assert context["summary"]["outliers_by_metric"] == {"avg_consumption_kw": 2}
-    assert {event["event_type"] for event in context["outlier_events"]} == {"spike", "drop"}
+    assert {event["event_type"] for event in context["outlier_events"]} == {
+        "spike",
+        "drop",
+    }

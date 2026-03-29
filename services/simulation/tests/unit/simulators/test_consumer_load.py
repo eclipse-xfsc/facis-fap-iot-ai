@@ -1,12 +1,9 @@
 """Tests for consumer load simulator."""
 
 import json
-from datetime import datetime, timezone
-
-import pytest
+from datetime import UTC, datetime
 
 from src.core.random_generator import DeterministicRNG
-from src.core.time_series import IntervalMinutes, TimeRange
 from src.models.consumer_load import (
     ConsumerLoadConfig,
     ConsumerLoadReading,
@@ -53,23 +50,23 @@ class TestScheduleFunctions:
     def test_is_weekend_saturday(self) -> None:
         """Test Saturday is detected as weekend."""
         # Saturday 2024-01-06
-        saturday = datetime(2024, 1, 6, 12, 0, 0, tzinfo=timezone.utc)
+        saturday = datetime(2024, 1, 6, 12, 0, 0, tzinfo=UTC)
         assert is_weekend(saturday)
 
     def test_is_weekend_sunday(self) -> None:
         """Test Sunday is detected as weekend."""
         # Sunday 2024-01-07
-        sunday = datetime(2024, 1, 7, 12, 0, 0, tzinfo=timezone.utc)
+        sunday = datetime(2024, 1, 7, 12, 0, 0, tzinfo=UTC)
         assert is_weekend(sunday)
 
     def test_is_weekend_weekday(self) -> None:
         """Test weekdays are not detected as weekend."""
         # Monday 2024-01-01
-        monday = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        monday = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
         assert not is_weekend(monday)
 
         # Friday 2024-01-05
-        friday = datetime(2024, 1, 5, 12, 0, 0, tzinfo=timezone.utc)
+        friday = datetime(2024, 1, 5, 12, 0, 0, tzinfo=UTC)
         assert not is_weekend(friday)
 
     def test_is_within_operating_window(self) -> None:
@@ -81,19 +78,19 @@ class TestScheduleFunctions:
         ]
 
         # Within first window
-        ts1 = datetime(2024, 1, 1, 8, 0, 0, tzinfo=timezone.utc)
+        ts1 = datetime(2024, 1, 1, 8, 0, 0, tzinfo=UTC)
         assert is_within_operating_window(ts1, windows)
 
         # Between windows
-        ts2 = datetime(2024, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
+        ts2 = datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC)
         assert not is_within_operating_window(ts2, windows)
 
         # Within second window
-        ts3 = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        ts3 = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
         assert is_within_operating_window(ts3, windows)
 
         # Outside all windows
-        ts4 = datetime(2024, 1, 1, 20, 0, 0, tzinfo=timezone.utc)
+        ts4 = datetime(2024, 1, 1, 20, 0, 0, tzinfo=UTC)
         assert not is_within_operating_window(ts4, windows)
 
     def test_should_device_operate_weekday(self) -> None:
@@ -104,7 +101,7 @@ class TestScheduleFunctions:
         )
 
         # Monday 8:00 (within default operating window)
-        ts = datetime(2024, 1, 1, 8, 0, 0, tzinfo=timezone.utc)
+        ts = datetime(2024, 1, 1, 8, 0, 0, tzinfo=UTC)
         assert should_device_operate(ts, config)
 
     def test_should_device_operate_weekend_disabled(self) -> None:
@@ -115,7 +112,7 @@ class TestScheduleFunctions:
         )
 
         # Saturday 8:00 (would be within operating window)
-        ts = datetime(2024, 1, 6, 8, 0, 0, tzinfo=timezone.utc)
+        ts = datetime(2024, 1, 6, 8, 0, 0, tzinfo=UTC)
         assert not should_device_operate(ts, config)
 
     def test_should_device_operate_weekend_enabled(self) -> None:
@@ -126,7 +123,7 @@ class TestScheduleFunctions:
         )
 
         # Saturday 8:00
-        ts = datetime(2024, 1, 6, 8, 0, 0, tzinfo=timezone.utc)
+        ts = datetime(2024, 1, 6, 8, 0, 0, tzinfo=UTC)
         assert should_device_operate(ts, config)
 
 
@@ -163,7 +160,7 @@ class TestConsumerLoadSimulator:
         simulator = ConsumerLoadSimulator("device-001", rng)
 
         # Monday 8:00 (within default operating window)
-        timestamp = datetime(2024, 1, 1, 8, 0, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2024, 1, 1, 8, 0, 0, tzinfo=UTC)
         point = simulator.generate_at(timestamp)
         reading = point.value
 
@@ -181,7 +178,7 @@ class TestConsumerLoadSimulator:
         simulator = ConsumerLoadSimulator("test", rng, config=config)
 
         # Monday 8:00
-        timestamp = datetime(2024, 1, 1, 8, 0, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2024, 1, 1, 8, 0, 0, tzinfo=UTC)
         reading = simulator.generate_at(timestamp).value
 
         assert reading.device_state == DeviceState.OFF
@@ -199,7 +196,7 @@ class TestConsumerLoadSimulator:
         simulator = ConsumerLoadSimulator("test", rng, config=config)
 
         # Monday 8:00
-        timestamp = datetime(2024, 1, 1, 8, 0, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2024, 1, 1, 8, 0, 0, tzinfo=UTC)
         reading = simulator.generate_at(timestamp).value
 
         assert reading.device_state == DeviceState.ON
@@ -217,7 +214,7 @@ class TestConsumerLoadSimulator:
         simulator = ConsumerLoadSimulator("test", rng, config=config)
 
         # Saturday 8:00 (weekend)
-        timestamp = datetime(2024, 1, 6, 8, 0, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2024, 1, 6, 8, 0, 0, tzinfo=UTC)
         reading = simulator.generate_at(timestamp).value
 
         assert reading.device_state == DeviceState.OFF
@@ -233,7 +230,7 @@ class TestConsumerLoadSimulator:
         simulator = ConsumerLoadSimulator("test", rng, config=config)
 
         # Monday 22:00 (outside operating windows)
-        timestamp = datetime(2024, 1, 1, 22, 0, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2024, 1, 1, 22, 0, 0, tzinfo=UTC)
         reading = simulator.generate_at(timestamp).value
 
         assert reading.device_state == DeviceState.OFF
@@ -262,7 +259,7 @@ class TestDutyCycle:
                 continue
             for hour in [7, 8, 11, 12, 15, 16]:  # Operating hours only
                 for minute in [0, 15, 30, 45]:
-                    ts = datetime(2024, 1, day, hour, minute, 0, tzinfo=timezone.utc)
+                    ts = datetime(2024, 1, day, hour, minute, 0, tzinfo=UTC)
                     reading = simulator.generate_at(ts).value
                     if reading.device_state == DeviceState.ON:
                         on_count += 1
@@ -303,7 +300,7 @@ class TestDeterminism:
 
     def test_same_seed_produces_identical_readings(self) -> None:
         """Test that same seed produces identical readings."""
-        timestamp = datetime(2024, 1, 1, 8, 0, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2024, 1, 1, 8, 0, 0, tzinfo=UTC)
 
         results = []
         for _ in range(5):
@@ -316,7 +313,6 @@ class TestDeterminism:
 
     def test_different_devices_produce_different_readings(self) -> None:
         """Test that different devices produce different readings."""
-        timestamp = datetime(2024, 1, 1, 8, 0, 0, tzinfo=timezone.utc)
         rng = DeterministicRNG(seed=12345)
 
         config = ConsumerLoadConfig(
@@ -331,7 +327,7 @@ class TestDeterminism:
         readings1 = []
         readings2 = []
         for hour in [7, 8, 11, 12]:
-            ts = datetime(2024, 1, 1, hour, 0, 0, tzinfo=timezone.utc)
+            ts = datetime(2024, 1, 1, hour, 0, 0, tzinfo=UTC)
             readings1.append(sim1.generate_at(ts).value.device_state)
             readings2.append(sim2.generate_at(ts).value.device_state)
 
@@ -354,7 +350,7 @@ class TestJSONPayload:
         simulator = ConsumerLoadSimulator("industrial-oven-001", rng, config=config)
 
         # Monday 8:00
-        timestamp = datetime(2024, 1, 1, 8, 0, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2024, 1, 1, 8, 0, 0, tzinfo=UTC)
         reading = simulator.generate_at(timestamp).value
         payload = reading.to_json_payload()
 
@@ -376,7 +372,7 @@ class TestJSONPayload:
         rng = DeterministicRNG(seed=12345)
         simulator = ConsumerLoadSimulator("device-001", rng)
 
-        timestamp = datetime(2024, 1, 1, 8, 0, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2024, 1, 1, 8, 0, 0, tzinfo=UTC)
         reading = simulator.generate_at(timestamp).value
         payload = reading.to_json_payload()
 

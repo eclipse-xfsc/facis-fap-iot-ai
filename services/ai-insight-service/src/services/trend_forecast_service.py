@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 import logging
+from datetime import datetime
 from time import perf_counter
 from typing import Any, Literal
 
@@ -23,7 +23,9 @@ def _safe_iso(value: Any) -> str:
 def _series_bounds(rows: list[dict[str, Any]], timestamp_key: str) -> dict[str, Any]:
     if not rows:
         return {"count": 0, "first": None, "last": None}
-    values = [row.get(timestamp_key) for row in rows if row.get(timestamp_key) is not None]
+    values = [
+        row.get(timestamp_key) for row in rows if row.get(timestamp_key) is not None
+    ]
     if not values:
         return {"count": len(rows), "first": None, "last": None}
     ordered = sorted(values, key=lambda item: str(item))
@@ -48,7 +50,9 @@ class TrendForecastService:
         timezone: str,
         forecast_alpha: float = 0.6,
         trend_epsilon: float = 0.02,
-        daily_overview_strategy: Literal["strict_daily", "fallback_hourly"] = "strict_daily",
+        daily_overview_strategy: Literal[
+            "strict_daily", "fallback_hourly"
+        ] = "strict_daily",
     ) -> dict[str, Any]:
         """Generate trend and next-24h forecast context for LLM summarization."""
         started_at = perf_counter()

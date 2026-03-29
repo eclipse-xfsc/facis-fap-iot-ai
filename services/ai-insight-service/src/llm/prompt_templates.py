@@ -9,7 +9,9 @@ from typing import Any, Literal, TypedDict
 
 from src.config import load_config
 
-InsightType = Literal["net_grid_outliers", "smart_city_correlation", "energy_trend_forecast"]
+InsightType = Literal[
+    "net_grid_outliers", "smart_city_correlation", "energy_trend_forecast"
+]
 
 
 class PromptPayload(TypedDict):
@@ -148,7 +150,9 @@ def build_system_prompt(*, insight_type: InsightType) -> str:
 
 def build_user_prompt(*, context: dict[str, Any]) -> str:
     """Build deterministic user prompt with compact JSON context."""
-    context_json = json.dumps(context, ensure_ascii=True, sort_keys=True, indent=2, default=str)
+    context_json = json.dumps(
+        context, ensure_ascii=True, sort_keys=True, indent=2, default=str
+    )
     return (
         "Analyze the following structured context and produce the required JSON output.\n"
         "Context JSON:\n"
@@ -156,7 +160,9 @@ def build_user_prompt(*, context: dict[str, Any]) -> str:
     )
 
 
-def build_prompt_payload(*, insight_type: InsightType, context: dict[str, Any]) -> PromptPayload:
+def build_prompt_payload(
+    *, insight_type: InsightType, context: dict[str, Any]
+) -> PromptPayload:
     """Create a structured prompt payload for LLM client consumption."""
     return {
         "system": build_system_prompt(insight_type=insight_type),

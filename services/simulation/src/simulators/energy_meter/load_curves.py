@@ -120,7 +120,9 @@ def get_load_factor(timestamp: datetime) -> float:
 
     # Linear interpolation based on minutes
     interpolation = minute / 60.0
-    load_factor = current_hour_factor + (next_hour_factor - current_hour_factor) * interpolation
+    load_factor = (
+        current_hour_factor + (next_hour_factor - current_hour_factor) * interpolation
+    )
 
     return float(load_factor)
 

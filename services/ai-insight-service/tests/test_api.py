@@ -50,7 +50,9 @@ class _FakeOrchestrator:
         )
         return SimpleNamespace(
             record=record,
-            context={"source_context": {"rows_analyzed": 24, "insight_type": insight_type}},
+            context={
+                "source_context": {"rows_analyzed": 24, "insight_type": insight_type}
+            },
             llm_used=True,
             llm_error=None,
         )
@@ -187,7 +189,9 @@ def test_dev_mode_includes_llm_error_in_metadata(client) -> None:
 
     insights._singletons.update(
         {
-            "settings": SimpleNamespace(service=SimpleNamespace(environment="development")),
+            "settings": SimpleNamespace(
+                service=SimpleNamespace(environment="development")
+            ),
             "policy": _FakePolicy(),
             "limiter": _FakeLimiter(),
             "store": store,

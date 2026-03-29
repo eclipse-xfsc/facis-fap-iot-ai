@@ -21,7 +21,9 @@ from src.services.trend_forecast_service import TrendForecastService
 from src.storage.insight_cache import InsightCache, build_insight_cache_key
 from src.storage.output_store import AIOutputRecord, InMemoryOutputStore
 
-PromptInsightType = Literal["net_grid_outliers", "smart_city_correlation", "energy_trend_forecast"]
+PromptInsightType = Literal[
+    "net_grid_outliers", "smart_city_correlation", "energy_trend_forecast"
+]
 
 _PII_KEY_HINTS = ("name", "email", "phone", "address", "ssn")
 
@@ -210,17 +212,17 @@ class InsightOrchestrator:
     ) -> InsightExecutionResult:
         rows_analyzed = self._rows_analyzed(context)
         if rows_analyzed <= 0:
-            structured_output = self._rule_based_fallback(context=context)
-            output_text = json.dumps(structured_output, ensure_ascii=True)
-            llm_error = "LLM skipped due to insufficient data (rows_analyzed=0)"
+            fallback_output = self._rule_based_fallback(context=context)
+            fallback_text = json.dumps(fallback_output, ensure_ascii=True)
+            fallback_error = "LLM skipped due to insufficient data (rows_analyzed=0)"
             record = self._output_store.save(
                 insight_type=insight_type,
                 agreement_id=agreement_id,
                 asset_id=asset_id,
                 input_data=self._redact_pii(context),
                 llm_model="rule-based-fallback",
-                output_text=output_text,
-                structured_output=structured_output,
+                output_text=fallback_text,
+                structured_output=fallback_output,
             )
             self._audit.log(
                 event="llm_skipped_insufficient_data",
@@ -233,11 +235,13 @@ class InsightOrchestrator:
                 record=record,
                 context=context,
                 llm_used=False,
-                llm_error=llm_error,
+                llm_error=fallback_error,
             )
 
         redacted_context = self._redact_pii(context)
-        prompt = build_prompt_payload(insight_type=prompt_type, context=redacted_context)
+        prompt = build_prompt_payload(
+            insight_type=prompt_type, context=redacted_context
+        )
         self._audit.log(
             event="prompt_prepared",
             insight_type=insight_type,
@@ -268,7 +272,12 @@ class InsightOrchestrator:
                 asset_id=asset_id,
                 payload={"response": raw_response},
             )
-        except (LLMRateLimitError, LLMUpstreamError, LLMClientError, ValueError) as error:
+        except (
+            LLMRateLimitError,
+            LLMUpstreamError,
+            LLMClientError,
+            ValueError,
+        ) as error:
             structured_output = self._rule_based_fallback(context=context)
             output_text = json.dumps(structured_output, ensure_ascii=True)
             llm_error = str(error)
@@ -373,7 +382,9 @@ class InsightOrchestrator:
         narrative_hints = context.get("narrative_hints", [])
         key_findings = [str(item) for item in narrative_hints[:4]]
         if not key_findings:
-            key_findings = ["No critical findings were detected for the requested interval."]
+            key_findings = [
+                "No critical findings were detected for the requested interval."
+            ]
         recommendations = [
             "Validate highlighted periods against operational logs and maintenance records.",
             "Trigger a dashboard refresh once upstream LLM connectivity is restored.",

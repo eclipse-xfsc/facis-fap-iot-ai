@@ -7,7 +7,6 @@ from datetime import datetime, timedelta
 from statistics import mean
 from typing import Any, Literal
 
-
 METRICS = ("avg_consumption_kw", "net_grid_kw", "estimated_hourly_cost_eur")
 
 
@@ -42,7 +41,9 @@ def _moving_average(values: list[float], window: int) -> float | None:
     return mean(values[-window:])
 
 
-def _trend_direction(values: list[float], points: int = 24, epsilon: float = 0.02) -> dict[str, Any]:
+def _trend_direction(
+    values: list[float], points: int = 24, epsilon: float = 0.02
+) -> dict[str, Any]:
     if len(values) < 2:
         return {"direction": "stable", "slope_per_step": 0.0}
     tail = values[-points:] if len(values) >= points else values
@@ -135,7 +136,9 @@ def analyze_trend_forecast(
     daily_pv_rows: list[dict[str, Any]],
     alpha: float = 0.6,
     trend_epsilon: float = 0.02,
-    daily_overview_strategy: Literal["strict_daily", "fallback_hourly"] = "strict_daily",
+    daily_overview_strategy: Literal[
+        "strict_daily", "fallback_hourly"
+    ] = "strict_daily",
 ) -> TrendForecastResult:
     """Compute moving averages, trend direction, seasonality, and next-24h forecast."""
     sorted_hourly = sorted(hourly_rows, key=lambda item: str(item.get("hour", "")))
@@ -171,17 +174,17 @@ def analyze_trend_forecast(
         }
         trend_signals[metric] = _trend_direction(values, epsilon=trend_epsilon)
         seasonality_patterns[metric] = {
-            str(hour): (
-                round(mean(hour_values), 4) if hour_values else None
-            )
+            str(hour): (round(mean(hour_values), 4) if hour_values else None)
             for hour, hour_values in series_by_hour[metric].items()
         }
 
     forecast_24h: list[dict[str, Any]] = []
     seasonality_means = {
-        metric: mean([v for v in seasonality_patterns[metric].values() if v is not None])
-        if any(v is not None for v in seasonality_patterns[metric].values())
-        else 0.0
+        metric: (
+            mean([v for v in seasonality_patterns[metric].values() if v is not None])
+            if any(v is not None for v in seasonality_patterns[metric].values())
+            else 0.0
+        )
         for metric in METRICS
     }
     reference_time = timestamps[-1] if timestamps else None
@@ -194,33 +197,46 @@ def analyze_trend_forecast(
             values = series[metric]
             recent_level = mean(values[-24:]) if values else 0.0
             seasonal = seasonality_patterns[metric].get(str(target_ts.hour))
-            seasonal_value = seasonal if seasonal is not None else seasonality_means[metric]
-            forecast_value = recent_level + (alpha * (seasonal_value - seasonality_means[metric]))
+            seasonal_value = (
+                seasonal if seasonal is not None else seasonality_means[metric]
+            )
+            forecast_value = recent_level + (
+                alpha * (seasonal_value - seasonality_means[metric])
+            )
             point[metric] = round(forecast_value, 4)
         forecast_24h.append(point)
 
     confidence_notes: list[str] = []
     if not sorted_hourly:
-        confidence_notes.append("No hourly rows available; forecast cannot be computed reliably.")
+        confidence_notes.append(
+            "No hourly rows available; forecast cannot be computed reliably."
+        )
     else:
         for metric in METRICS:
             total = len(sorted_hourly)
             missing = total - len(series[metric])
             if total > 0 and (missing / total) > 0.15:
                 confidence_notes.append(
-                    f"{metric}: elevated missingness ({missing}/{total}) lowers forecast confidence."
+                    f"{metric}: elevated missingness ({missing}/{total}) "
+                    "lowers forecast confidence."
                 )
     if not confidence_notes:
-        confidence_notes.append("Recent history coverage is sufficient for deterministic baseline forecasting.")
+        confidence_notes.append(
+            "Recent history coverage is sufficient for deterministic baseline forecasting."
+        )
 
     cost_values = [
         value
-        for value in (_to_float(item.get("total_consumption_kw")) for item in daily_cost_rows)
+        for value in (
+            _to_float(item.get("total_consumption_kw")) for item in daily_cost_rows
+        )
         if value is not None
     ]
     self_ratio_values = [
         value
-        for value in (_to_float(item.get("self_consumption_ratio")) for item in daily_pv_rows)
+        for value in (
+            _to_float(item.get("self_consumption_ratio")) for item in daily_pv_rows
+        )
         if value is not None
     ]
     daily_overview = {

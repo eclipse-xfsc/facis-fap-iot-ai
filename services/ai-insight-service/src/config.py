@@ -7,7 +7,11 @@ from typing import Any, ClassVar
 
 import yaml
 from pydantic import BaseModel, Field
-from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
+from pydantic_settings import (
+    BaseSettings,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +64,7 @@ class TrinoConfig(BaseModel):
     table_energy_cost_daily: str = Field(default="energy_cost_daily")
     table_pv_self_consumption_daily: str = Field(default="pv_self_consumption_daily")
     catalog: str = Field(default="hive")
-    schema: str = Field(default="default")
+    schema_name: str = Field(default="default", alias="schema")
     http_scheme: str = Field(default="http")
     verify: bool | str = Field(default=True)
     request_timeout_seconds: int = Field(default=120, ge=1, le=300)
@@ -157,7 +161,9 @@ class Settings(BaseSettings):
     rate_limit: RateLimitConfig = Field(default_factory=RateLimitConfig)
     cache: CacheConfig = Field(default_factory=CacheConfig)
     audit: AuditConfig = Field(default_factory=AuditConfig)
-    prompt_templates: PromptTemplatesConfig = Field(default_factory=PromptTemplatesConfig)
+    prompt_templates: PromptTemplatesConfig = Field(
+        default_factory=PromptTemplatesConfig
+    )
 
     @classmethod
     def settings_customise_sources(
@@ -198,7 +204,9 @@ def load_yaml_config(config_file: Path) -> dict[str, Any]:
     return data
 
 
-def load_config(config_path: Path | str | None = None, env: str | None = None) -> Settings:
+def load_config(
+    config_path: Path | str | None = None, env: str | None = None
+) -> Settings:
     """Load settings from default YAML + environment YAML + env vars."""
     if config_path is None:
         config_path = Path(__file__).parent.parent / "config"

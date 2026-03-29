@@ -107,7 +107,7 @@ class SimulationState:
                 longitude=13.405,
             )
         self.add_weather_station("weather-001", weather_config)
-        logger.info(f"Created weather station: weather-001")
+        logger.info("Created weather station: weather-001")
 
         # Create meters from config
         if self._settings:
@@ -133,7 +133,7 @@ class SimulationState:
         self.add_price_feed("epex-spot-de", price_config)
         logger.info("Created price feed: epex-spot-de")
 
-    def _convert_meter_config(self, cfg: "ConfigMeterConfig") -> MeterConfig:
+    def _convert_meter_config(self, cfg: ConfigMeterConfig) -> MeterConfig:
         """Convert config meter to simulator meter config."""
         return MeterConfig(
             meter_id=cfg.id,
@@ -148,18 +148,19 @@ class SimulationState:
             initial_energy_kwh=cfg.initial_energy_kwh,
         )
 
-    def _convert_pv_config(self, cfg: "ConfigPVSystemConfig") -> PVConfig:
+    def _convert_pv_config(self, cfg: ConfigPVSystemConfig) -> PVConfig:
         """Convert config PV system to simulator PV config."""
         return PVConfig(
             system_id=cfg.id,
             weather_station_id="weather-001",
             nominal_capacity_kwp=cfg.nominal_capacity_kw,
             system_losses_percent=cfg.losses * 100,  # Convert fraction to percent
-            temperature_coefficient_pct_per_c=cfg.temperature_coefficient * 100,  # Convert to %
+            temperature_coefficient_pct_per_c=cfg.temperature_coefficient
+            * 100,  # Convert to %
             reference_temperature_c=cfg.reference_temperature_c,
         )
 
-    def _convert_consumer_config(self, cfg: "ConfigConsumerConfig") -> ConsumerLoadConfig:
+    def _convert_consumer_config(self, cfg: ConfigConsumerConfig) -> ConsumerLoadConfig:
         """Convert config consumer to simulator consumer config."""
         # Map device type string to enum
         device_type_map = {
@@ -201,7 +202,9 @@ class SimulationState:
             self.initialize()
         return self._engine  # type: ignore
 
-    def add_meter(self, meter_id: str, config: MeterConfig | None = None) -> EnergyMeterSimulator:
+    def add_meter(
+        self, meter_id: str, config: MeterConfig | None = None
+    ) -> EnergyMeterSimulator:
         """Add a meter simulator."""
         if config is None:
             config = MeterConfig(meter_id=meter_id)
@@ -356,7 +359,9 @@ class SimulationState:
                 )
             # Recreate PV systems with updated weather simulators
             for system_id, pv_system in list(self._pv_systems.items()):
-                weather_station = self._weather_stations.get(pv_system.config.weather_station_id)
+                weather_station = self._weather_stations.get(
+                    pv_system.config.weather_station_id
+                )
                 if weather_station:
                     self._pv_systems[system_id] = PVGenerationSimulator(
                         entity_id=system_id,

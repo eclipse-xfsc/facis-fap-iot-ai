@@ -1,6 +1,6 @@
 """Unit tests for trend/forecast service orchestration."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from src.services.trend_forecast_service import TrendForecastService
 
@@ -26,8 +26,8 @@ def test_generate_trend_forecast_context_empty_hourly() -> None:
         )  # type: ignore[arg-type]
     )
     context = service.generate_trend_forecast_context(
-        start_ts=datetime(2026, 3, 1, tzinfo=timezone.utc),
-        end_ts=datetime(2026, 3, 2, tzinfo=timezone.utc),
+        start_ts=datetime(2026, 3, 1, tzinfo=UTC),
+        end_ts=datetime(2026, 3, 2, tzinfo=UTC),
         timezone="UTC",
         daily_overview_strategy="fallback_hourly",
     )
@@ -45,8 +45,8 @@ def test_generate_trend_forecast_context_validates_time_window() -> None:
     )
     try:
         service.generate_trend_forecast_context(
-            start_ts=datetime(2026, 3, 2, tzinfo=timezone.utc),
-            end_ts=datetime(2026, 3, 1, tzinfo=timezone.utc),
+            start_ts=datetime(2026, 3, 2, tzinfo=UTC),
+            end_ts=datetime(2026, 3, 1, tzinfo=UTC),
             timezone="UTC",
         )
         assert False, "expected ValueError for invalid time window"
@@ -72,8 +72,8 @@ def test_generate_trend_forecast_context_invokes_fetch() -> None:
         }
     )
     service = TrendForecastService(trino_client=fake)  # type: ignore[arg-type]
-    start_ts = datetime(2026, 3, 1, tzinfo=timezone.utc)
-    end_ts = datetime(2026, 3, 2, tzinfo=timezone.utc)
+    start_ts = datetime(2026, 3, 1, tzinfo=UTC)
+    end_ts = datetime(2026, 3, 2, tzinfo=UTC)
 
     context = service.generate_trend_forecast_context(
         start_ts=start_ts,
@@ -99,8 +99,8 @@ def test_generate_trend_forecast_context_validates_config_params() -> None:
     )
     try:
         service.generate_trend_forecast_context(
-            start_ts=datetime(2026, 3, 1, tzinfo=timezone.utc),
-            end_ts=datetime(2026, 3, 2, tzinfo=timezone.utc),
+            start_ts=datetime(2026, 3, 1, tzinfo=UTC),
+            end_ts=datetime(2026, 3, 2, tzinfo=UTC),
             timezone="UTC",
             forecast_alpha=1.5,
         )

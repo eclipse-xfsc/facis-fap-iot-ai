@@ -64,7 +64,9 @@ async def get_current_price(
 
 @router.get("/prices/forecast", response_model=PriceForecastResponse)
 async def get_price_forecast(
-    hours: int = Query(default=24, ge=1, le=168, description="Forecast hours (max 168)"),
+    hours: int = Query(
+        default=24, ge=1, le=168, description="Forecast hours (max 168)"
+    ),
     interval: IntervalParam = Query(
         default=IntervalParam.ONE_HOUR, description="Forecast interval"
     ),
@@ -117,9 +119,13 @@ async def get_price_forecast(
 
 @router.get("/prices/history", response_model=PriceHistoryResponse)
 async def get_price_history(
-    start_time: datetime | None = Query(default=None, description="Start time (ISO 8601)"),
+    start_time: datetime | None = Query(
+        default=None, description="Start time (ISO 8601)"
+    ),
     end_time: datetime | None = Query(default=None, description="End time (ISO 8601)"),
-    interval: IntervalParam = Query(default=IntervalParam.FIFTEEN_MIN, description="Data interval"),
+    interval: IntervalParam = Query(
+        default=IntervalParam.FIFTEEN_MIN, description="Data interval"
+    ),
     limit: int = Query(default=100, ge=1, le=1000, description="Maximum results"),
     state: SimulationState = Depends(get_simulation_state),
 ) -> PriceHistoryResponse:

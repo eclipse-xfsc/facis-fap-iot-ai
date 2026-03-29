@@ -5,19 +5,19 @@ Pydantic schema for energy-intensive device readings.
 """
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
 
-class DeviceState(str, Enum):
+class DeviceState(StrEnum):
     """Device operating state."""
 
     ON = "ON"
     OFF = "OFF"
 
 
-class DeviceType(str, Enum):
+class DeviceType(StrEnum):
     """Type of consumer device."""
 
     INDUSTRIAL_OVEN = "industrial_oven"
@@ -48,7 +48,9 @@ class ConsumerLoadReading(BaseModel):
     device_id: str = Field(..., description="Unique device identifier")
     device_type: DeviceType = Field(..., description="Type of device")
     device_state: DeviceState = Field(..., description="Current device state (ON/OFF)")
-    device_power_kw: float = Field(..., ge=0.0, description="Current power consumption in kW")
+    device_power_kw: float = Field(
+        ..., ge=0.0, description="Current power consumption in kW"
+    )
 
     def to_json_payload(self) -> dict:
         """Convert to JSON payload matching spec structure."""
@@ -68,12 +70,17 @@ class ConsumerLoadConfig(BaseModel):
     device_type: DeviceType = Field(
         default=DeviceType.INDUSTRIAL_OVEN, description="Type of device"
     )
-    rated_power_kw: float = Field(default=3.0, ge=0.0, description="Rated power consumption in kW")
+    rated_power_kw: float = Field(
+        default=3.0, ge=0.0, description="Rated power consumption in kW"
+    )
     power_variance_pct: float = Field(
         default=5.0, ge=0.0, le=20.0, description="Power variance percentage when ON"
     )
     duty_cycle_pct: float = Field(
-        default=70.0, ge=0.0, le=100.0, description="Duty cycle percentage during operating windows"
+        default=70.0,
+        ge=0.0,
+        le=100.0,
+        description="Duty cycle percentage during operating windows",
     )
     operating_windows: list[OperatingWindow] = Field(
         default_factory=lambda: [

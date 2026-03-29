@@ -155,7 +155,9 @@ class TestMinMaxAddresses:
     def test_max_address(self) -> None:
         """Test MAX_REGISTER_ADDRESS includes the last register pair."""
         # FREQUENCY is at 19064-19065
-        expected_max = max(reg.address + reg.register_count - 1 for reg in ALL_REGISTERS)
+        expected_max = max(
+            reg.address + reg.register_count - 1 for reg in ALL_REGISTERS
+        )
         assert MAX_REGISTER_ADDRESS == expected_max
         assert MAX_REGISTER_ADDRESS == 19065
 
@@ -236,7 +238,9 @@ class TestGetAllRegisterValues:
         for reg in ALL_REGISTERS:
             assert reg.address in values
 
-    def test_values_match_individual_extraction(self, sample_meter_reading: MeterReading) -> None:
+    def test_values_match_individual_extraction(
+        self, sample_meter_reading: MeterReading
+    ) -> None:
         """Test that values match individual get_register_value calls."""
         all_values = get_all_register_values(sample_meter_reading)
 

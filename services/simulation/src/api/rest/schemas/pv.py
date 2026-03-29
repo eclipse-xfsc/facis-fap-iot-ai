@@ -11,10 +11,16 @@ class PVReadingsSchema(BaseModel):
     """PV system readings in API response."""
 
     power_output_kw: float = Field(..., description="Current power output in kW")
-    daily_energy_kwh: float = Field(..., description="Cumulative energy generated today in kWh")
+    daily_energy_kwh: float = Field(
+        ..., description="Cumulative energy generated today in kWh"
+    )
     irradiance_w_m2: float = Field(..., description="Current solar irradiance in W/m²")
-    module_temperature_c: float = Field(..., description="Module temperature in Celsius")
-    efficiency_percent: float = Field(..., description="Current system efficiency percentage")
+    module_temperature_c: float = Field(
+        ..., description="Module temperature in Celsius"
+    )
+    efficiency_percent: float = Field(
+        ..., description="Current system efficiency percentage"
+    )
 
 
 class PVReadingResponse(BaseModel):

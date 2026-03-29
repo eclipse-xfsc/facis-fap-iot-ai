@@ -6,7 +6,7 @@ GET /api/v1/loads/{id}/current
 GET /api/v1/loads/{id}/history
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -105,9 +105,13 @@ async def get_load_current(
 @router.get("/loads/{device_id}/history", response_model=ConsumerLoadHistoryResponse)
 async def get_load_history(
     device_id: str,
-    start_time: datetime | None = Query(default=None, description="Start time (ISO 8601)"),
+    start_time: datetime | None = Query(
+        default=None, description="Start time (ISO 8601)"
+    ),
     end_time: datetime | None = Query(default=None, description="End time (ISO 8601)"),
-    interval: IntervalParam = Query(default=IntervalParam.FIFTEEN_MIN, description="Data interval"),
+    interval: IntervalParam = Query(
+        default=IntervalParam.FIFTEEN_MIN, description="Data interval"
+    ),
     limit: int = Query(default=100, ge=1, le=1000, description="Maximum results"),
     state: SimulationState = Depends(get_simulation_state),
 ) -> ConsumerLoadHistoryResponse:
@@ -130,9 +134,9 @@ async def get_load_history(
 
     # Ensure timezone awareness
     if start_time.tzinfo is None:
-        start_time = start_time.replace(tzinfo=timezone.utc)
+        start_time = start_time.replace(tzinfo=UTC)
     if end_time.tzinfo is None:
-        end_time = end_time.replace(tzinfo=timezone.utc)
+        end_time = end_time.replace(tzinfo=UTC)
 
     # Create time range
     time_range = TimeRange(start=start_time, end=end_time)

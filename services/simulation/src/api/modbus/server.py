@@ -7,7 +7,7 @@ Supports multiple Unit IDs (one per simulated meter).
 
 import asyncio
 import logging
-from typing import Callable
+from collections.abc import Callable
 
 from pymodbus.datastore import (
     ModbusDeviceContext,
@@ -19,9 +19,7 @@ from pymodbus.server import StartAsyncTcpServer
 from src.models.meter import MeterReading
 from src.simulators.energy_meter.ieee754 import float32_to_registers
 from src.simulators.energy_meter.register_map import (
-    ALL_REGISTERS,
     MAX_REGISTER_ADDRESS,
-    MIN_REGISTER_ADDRESS,
     get_all_register_values,
 )
 
@@ -77,7 +75,7 @@ class JanitzaDataBlock(ModbusSparseDataBlock):
             self._register_cache[address + 1] = high
             self._register_cache[address + 2] = low
 
-    def getValues(self, address: int, count: int = 1) -> list[int]:
+    def getValues(self, address: int, count: int = 1) -> list[int]:  # noqa: N802
         """
         Get register values starting at address.
 
@@ -100,7 +98,9 @@ class JanitzaDataBlock(ModbusSparseDataBlock):
             value = self._register_cache.get(addr, 0)
             result.append(value)
 
-        logger.debug(f"Meter {self._meter_id}: Read {count} registers from {address}: {result}")
+        logger.debug(
+            f"Meter {self._meter_id}: Read {count} registers from {address}: {result}"
+        )
         return result
 
     def validate(self, address: int, count: int = 1) -> bool:

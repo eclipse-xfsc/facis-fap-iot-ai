@@ -7,14 +7,13 @@ schedule-based operation and duty cycle control.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from src.core.random_generator import DeterministicRNG
 from src.core.time_series import BaseTimeSeriesGenerator, IntervalMinutes
 from src.models.consumer_load import (
     ConsumerLoadConfig,
     ConsumerLoadReading,
-    DeviceState,
     DeviceType,
 )
 from src.simulators.consumer_load.schedule import (
@@ -77,7 +76,7 @@ class ConsumerLoadSimulator(BaseTimeSeriesGenerator[ConsumerLoadReading]):
         """
         # Ensure timezone-aware timestamp
         if timestamp.tzinfo is None:
-            timestamp = timestamp.replace(tzinfo=timezone.utc)
+            timestamp = timestamp.replace(tzinfo=UTC)
 
         # Get deterministic RNG for this timestamp
         ts_ms = int(timestamp.timestamp() * 1000)

@@ -65,7 +65,9 @@ class InMemoryOutputStore:
             record = self._by_id.get(output_id)
         return deepcopy(record) if record else None
 
-    def latest_for_types(self, insight_types: tuple[str, ...]) -> dict[str, AIOutputRecord | None]:
+    def latest_for_types(
+        self, insight_types: tuple[str, ...]
+    ) -> dict[str, AIOutputRecord | None]:
         with self._lock:
             latest = {
                 insight_type: self._latest_by_type.get(insight_type)

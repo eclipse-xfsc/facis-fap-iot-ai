@@ -63,7 +63,9 @@ def _apply_runtime_overrides(
         monkeypatch.setattr(
             OpenAICompatibleClient,
             "create_chat_completion",
-            lambda self, **kwargs: (_ for _ in ()).throw(LLMUpstreamError("integration llm down")),
+            lambda self, **kwargs: (_ for _ in ()).throw(
+                LLMUpstreamError("integration llm down")
+            ),
         )
     elif llm_mode == "plain_text":
         monkeypatch.setattr(
@@ -75,7 +77,10 @@ def _apply_runtime_overrides(
         monkeypatch.setattr(
             OpenAICompatibleClient,
             "create_chat_completion",
-            lambda self, **kwargs: (json.dumps({"summary": "only-summary"}), {"model": "gpt-test"}),
+            lambda self, **kwargs: (
+                json.dumps({"summary": "only-summary"}),
+                {"model": "gpt-test"},
+            ),
         )
 
     if bdd_context["rows_mode"] == "empty":
@@ -146,9 +151,7 @@ def given_valid_policy_headers_are_provided(
 
 
 @given("policy headers contain a non-consumer role")
-def given_policy_headers_contain_non_consumer_role(
-    bdd_context: dict[str, Any]
-) -> None:
+def given_policy_headers_contain_non_consumer_role(bdd_context: dict[str, Any]) -> None:
     bdd_context["headers"] = {
         "x-agreement-id": "agreement-1",
         "x-asset-id": "asset-7",
@@ -212,7 +215,9 @@ def when_request_ai_insight_generation(
 def when_generate_city_status_insight(
     bdd_context: dict[str, Any], integration_client: TestClient
 ) -> None:
-    created = integration_client.post("/api/v1/insights/city-status", json=_window_payload())
+    created = integration_client.post(
+        "/api/v1/insights/city-status", json=_window_payload()
+    )
     assert created.status_code == 200
     bdd_context["output_id"] = created.json()["metadata"]["output_id"]
 
@@ -228,7 +233,9 @@ def when_request_latest_insights_snapshot(
 def when_request_created_output_by_id(
     bdd_context: dict[str, Any], integration_client: TestClient
 ) -> None:
-    bdd_context["response"] = integration_client.get(f"/api/ai/outputs/{bdd_context['output_id']}")
+    bdd_context["response"] = integration_client.get(
+        f"/api/ai/outputs/{bdd_context['output_id']}"
+    )
 
 
 @when(parsers.parse('I request output by id "{output_id}"'))
@@ -247,7 +254,10 @@ def when_request_energy_summary_with_invalid_llm_schema_output(
     monkeypatch.setattr(
         OpenAICompatibleClient,
         "create_chat_completion",
-        lambda self, **kwargs: (json.dumps({"summary": "only-summary"}), {"model": "gpt-test"}),
+        lambda self, **kwargs: (
+            json.dumps({"summary": "only-summary"}),
+            {"model": "gpt-test"},
+        ),
     )
     payload = _payload_for_endpoint("/api/v1/insights/energy-summary")
     payload.update(bdd_context["payload"])
@@ -261,7 +271,9 @@ def when_request_energy_summary_with_invalid_llm_schema_output(
 def when_send_two_anomaly_insight_requests_under_governance(
     bdd_context: dict[str, Any], governed_integration_client: TestClient
 ) -> None:
-    payload = bdd_context["payload"] or _payload_for_endpoint("/api/v1/insights/anomaly-report")
+    payload = bdd_context["payload"] or _payload_for_endpoint(
+        "/api/v1/insights/anomaly-report"
+    )
     headers = bdd_context["headers"]
     bdd_context["first_response"] = governed_integration_client.post(
         "/api/v1/insights/anomaly-report",
@@ -276,9 +288,7 @@ def when_send_two_anomaly_insight_requests_under_governance(
 
 
 @then(parsers.parse("the response status code is {status_code:d}"))
-def then_response_status_code_is(
-    bdd_context: dict[str, Any], status_code: int
-) -> None:
+def then_response_status_code_is(bdd_context: dict[str, Any], status_code: int) -> None:
     response = bdd_context["response"]
     assert response is not None
     assert response.status_code == status_code
@@ -318,7 +328,7 @@ def then_endpoint_insight_type_is_correct(
 
 @then("LLM metadata indicates successful generation")
 def then_llm_metadata_indicates_successful_generation(
-    bdd_context: dict[str, Any]
+    bdd_context: dict[str, Any],
 ) -> None:
     payload = bdd_context["response"].json()
     assert payload["metadata"]["llm_used"] is True
@@ -327,7 +337,7 @@ def then_llm_metadata_indicates_successful_generation(
 
 @then("the insight summary contains generated content")
 def then_insight_summary_contains_generated_content(
-    bdd_context: dict[str, Any]
+    bdd_context: dict[str, Any],
 ) -> None:
     payload = bdd_context["response"].json()
     assert isinstance(payload["summary"], str)
@@ -335,11 +345,15 @@ def then_insight_summary_contains_generated_content(
 
 
 @then("the insight response format is valid")
-def then_insight_response_format_is_valid(
-    bdd_context: dict[str, Any]
-) -> None:
+def then_insight_response_format_is_valid(bdd_context: dict[str, Any]) -> None:
     payload = bdd_context["response"].json()
-    required_keys = {"insight_type", "summary", "key_findings", "recommendations", "metadata"}
+    required_keys = {
+        "insight_type",
+        "summary",
+        "key_findings",
+        "recommendations",
+        "metadata",
+    }
     assert required_keys.issubset(payload.keys())
     assert isinstance(payload["insight_type"], str)
     assert payload["insight_type"] in set(_ENDPOINT_TO_INSIGHT_TYPE.values())
@@ -353,26 +367,24 @@ def then_insight_response_format_is_valid(
 
 
 @then("the response contains analyzed window data")
-def then_response_contains_analyzed_window_data(
-    bdd_context: dict[str, Any]
-) -> None:
+def then_response_contains_analyzed_window_data(bdd_context: dict[str, Any]) -> None:
     payload = bdd_context["response"].json()
     assert payload["data"] is not None
     assert payload["data"]["window"]["rows_analyzed"] >= 1
 
 
 @then("latest city-status output id matches the created output id")
-def then_latest_city_status_output_matches_created(
-    bdd_context: dict[str, Any]
-) -> None:
+def then_latest_city_status_output_matches_created(bdd_context: dict[str, Any]) -> None:
     latest_payload = bdd_context["response"].json()
-    latest_output_id = latest_payload["latest"]["city-status"]["output"]["metadata"]["output_id"]
+    latest_output_id = latest_payload["latest"]["city-status"]["output"]["metadata"][
+        "output_id"
+    ]
     assert latest_output_id == bdd_context["output_id"]
 
 
 @then("the output lookup succeeds with city-status content")
 def then_output_lookup_succeeds_with_city_status_content(
-    bdd_context: dict[str, Any]
+    bdd_context: dict[str, Any],
 ) -> None:
     output_payload = bdd_context["response"].json()
     assert output_payload["id"] == bdd_context["output_id"]
@@ -381,9 +393,7 @@ def then_output_lookup_succeeds_with_city_status_content(
 
 
 @then(parsers.parse('the error detail contains "{expected_text}"'))
-def then_error_detail_contains(
-    bdd_context: dict[str, Any], expected_text: str
-) -> None:
+def then_error_detail_contains(bdd_context: dict[str, Any], expected_text: str) -> None:
     assert expected_text in bdd_context["response"].json()["detail"]
 
 
@@ -393,7 +403,10 @@ def then_fallback_metadata_indicates(
 ) -> None:
     payload = bdd_context["response"].json()
     # Some service builds may normalize partial LLM output instead of falling back.
-    if llm_error == "LLM output does not match expected schema" and payload["metadata"]["llm_used"]:
+    if (
+        llm_error == "LLM output does not match expected schema"
+        and payload["metadata"]["llm_used"]
+    ):
         assert payload["metadata"]["llm_error"] == llm_error
         assert payload["summary"].strip() != ""
         return
@@ -403,32 +416,27 @@ def then_fallback_metadata_indicates(
 
 
 @then("fallback summary is returned")
-def then_fallback_summary_is_returned(
-    bdd_context: dict[str, Any]
-) -> None:
+def then_fallback_summary_is_returned(bdd_context: dict[str, Any]) -> None:
     payload = bdd_context["response"].json()
     assert payload["metadata"]["llm_error"]
-    assert "Fallback insight generated from deterministic analytics context" in payload["summary"]
+    assert (
+        "Fallback insight generated from deterministic analytics context"
+        in payload["summary"]
+    )
 
 
 @then("the second response has retry-after header")
-def then_second_response_has_retry_after_header(
-    bdd_context: dict[str, Any]
-) -> None:
+def then_second_response_has_retry_after_header(bdd_context: dict[str, Any]) -> None:
     assert "retry-after" in bdd_context["second_response"].headers
 
 
 @then("llm_error is null in metadata")
-def then_llm_error_is_null_in_metadata(
-    bdd_context: dict[str, Any]
-) -> None:
+def then_llm_error_is_null_in_metadata(bdd_context: dict[str, Any]) -> None:
     assert bdd_context["response"].json()["metadata"]["llm_error"] is None
 
 
 @then("latest insights are empty for all insight types")
-def then_latest_insights_are_empty_for_all_types(
-    bdd_context: dict[str, Any]
-) -> None:
+def then_latest_insights_are_empty_for_all_types(bdd_context: dict[str, Any]) -> None:
     latest = bdd_context["response"].json()["latest"]
     assert latest["anomaly-report"] is None
     assert latest["city-status"] is None

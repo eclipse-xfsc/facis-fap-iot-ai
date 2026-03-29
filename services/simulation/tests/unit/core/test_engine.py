@@ -1,6 +1,6 @@
 """Unit tests for the simulation engine module."""
 
-from datetime import datetime, timezone
+from datetime import datetime
 
 import pytest
 
@@ -341,7 +341,9 @@ class TestTimeAdvancement:
         """Test advancing simulation time by seconds."""
         from src.config import Settings, SimulationConfig
 
-        settings = Settings(simulation=SimulationConfig(start_time="2024-01-01T00:00:00+00:00"))
+        settings = Settings(
+            simulation=SimulationConfig(start_time="2024-01-01T00:00:00+00:00")
+        )
         engine = SimulationEngine(settings=settings)
 
         new_time = engine.advance(3600)  # 1 hour
@@ -352,7 +354,9 @@ class TestTimeAdvancement:
         """Test advancing to a specific time."""
         from src.config import Settings, SimulationConfig
 
-        settings = Settings(simulation=SimulationConfig(start_time="2024-01-01T00:00:00+00:00"))
+        settings = Settings(
+            simulation=SimulationConfig(start_time="2024-01-01T00:00:00+00:00")
+        )
         engine = SimulationEngine(settings=settings)
 
         new_time = engine.advance_to("2024-01-01T12:00:00+00:00")

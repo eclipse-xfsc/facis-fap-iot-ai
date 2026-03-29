@@ -1,12 +1,19 @@
 """Unit tests for trend/forecast analytics and context builder."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from src.analytics.trend_forecast import analyze_trend_forecast
 from src.llm.context_builder import build_trend_forecast_context
 
 
-def _hourly_row(hour: int, day: int, consumption: float, generation: float, net: float, cost: float):
+def _hourly_row(
+    hour: int,
+    day: int,
+    consumption: float,
+    generation: float,
+    net: float,
+    cost: float,
+):
     return {
         "hour": f"2026-03-{day:02d}T{hour:02d}:00:00+00:00",
         "avg_consumption_kw": consumption,
@@ -68,8 +75,8 @@ def test_build_trend_forecast_context_has_stable_keys() -> None:
         daily_overview_strategy="strict_daily",
     )
     context = build_trend_forecast_context(
-        start_ts=datetime(2026, 3, 1, tzinfo=timezone.utc),
-        end_ts=datetime(2026, 3, 2, tzinfo=timezone.utc),
+        start_ts=datetime(2026, 3, 1, tzinfo=UTC),
+        end_ts=datetime(2026, 3, 2, tzinfo=UTC),
         timezone="UTC",
         total_rows=0,
         trend_result=result,

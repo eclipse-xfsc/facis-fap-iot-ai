@@ -1,6 +1,6 @@
 """Unit tests for Trino authentication and query generation."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 from trino.auth import JWTAuthentication
 
@@ -14,9 +14,15 @@ class _FakeCursor:
         *,
         description: list[tuple[str, None, None, None, None, None, None]],
         rows: list[tuple[object, ...]],
-        scripted_responses: list[
-            tuple[list[tuple[str, None, None, None, None, None, None]], list[tuple[object, ...]]]
-        ] | None = None,
+        scripted_responses: (
+            list[
+                tuple[
+                    list[tuple[str, None, None, None, None, None, None]],
+                    list[tuple[object, ...]],
+                ]
+            ]
+            | None
+        ) = None,
     ) -> None:
         self.executed_queries: list[str] = []
         self.description = description
@@ -26,7 +32,9 @@ class _FakeCursor:
 
     def execute(self, query: str) -> None:
         self.executed_queries.append(query)
-        if self._scripted_responses and self._response_index < len(self._scripted_responses):
+        if self._scripted_responses and self._response_index < len(
+            self._scripted_responses
+        ):
             description, rows = self._scripted_responses[self._response_index]
             self.description = description
             self._rows = rows
@@ -121,15 +129,17 @@ def test_net_grid_table_name_can_be_overridden(monkeypatch) -> None:
     monkeypatch.setattr(client, "_connect", lambda: connection)
 
     client.fetch_net_grid_hourly(
-        start_ts=datetime(2026, 3, 1, 0, 0, tzinfo=timezone.utc),
-        end_ts=datetime(2026, 3, 1, 1, 0, tzinfo=timezone.utc),
+        start_ts=datetime(2026, 3, 1, 0, 0, tzinfo=UTC),
+        end_ts=datetime(2026, 3, 1, 1, 0, tzinfo=UTC),
         timestamp_column="hour",
         metric_columns=["avg_consumption_kw"],
     )
     assert 'FROM "gold"."custom_net_grid"' in cursor.executed_queries[0]
 
 
-def test_fetch_net_grid_hourly_builds_projected_query_with_utc_bounds(monkeypatch) -> None:
+def test_fetch_net_grid_hourly_builds_projected_query_with_utc_bounds(
+    monkeypatch,
+) -> None:
     cursor = _FakeCursor(
         description=[
             ("hour", None, None, None, None, None, None),
@@ -150,14 +160,21 @@ def test_fetch_net_grid_hourly_builds_projected_query_with_utc_bounds(monkeypatc
         start_ts=start_ts,
         end_ts=end_ts,
         timestamp_column="hour",
-        metric_columns=["avg_consumption_kw", "avg_generation_kw", "estimated_hourly_cost_eur"],
+        metric_columns=[
+            "avg_consumption_kw",
+            "avg_generation_kw",
+            "estimated_hourly_cost_eur",
+        ],
     )
 
     assert timestamp_col == "hour"
     assert len(rows) == 1
     executed = cursor.executed_queries[0]
-    assert 'SELECT "hour", "avg_consumption_kw", "avg_generation_kw", "estimated_hourly_cost_eur"' in executed
-    assert "FROM \"gold\".\"net_grid_hourly\"" in executed
+    assert (
+        'SELECT "hour", "avg_consumption_kw", "avg_generation_kw", '
+        '"estimated_hourly_cost_eur"' in executed
+    )
+    assert 'FROM "gold"."net_grid_hourly"' in executed
     assert "from_iso8601_timestamp('2026-03-01T00:00:00Z')" in executed
     assert "from_iso8601_timestamp('2026-03-01T01:00:00Z')" in executed
 
@@ -206,13 +223,26 @@ def test_fetch_smart_city_correlation_rows_uses_gold_only_join(monkeypatch) -> N
     assert 'JOIN "gold"."streetlight_zone_hourly" AS streetlights' in executed
     assert "events.zone_id = streetlights.zone_id" in executed
     assert "events.event_date = CAST(streetlights.hour AS DATE)" in executed
-    assert "events.event_date >= CAST(from_iso8601_timestamp('2026-03-01T00:00:00Z') AS DATE)" in executed
-    assert "events.event_date < CAST(from_iso8601_timestamp('2026-03-02T00:00:00Z') AS DATE)" in executed
-    assert "streetlights.hour >= from_iso8601_timestamp('2026-03-01T00:00:00Z')" in executed
-    assert "streetlights.hour < from_iso8601_timestamp('2026-03-02T00:00:00Z')" in executed
+    assert (
+        "events.event_date >= CAST(from_iso8601_timestamp('2026-03-01T00:00:00Z') AS DATE)"
+        in executed
+    )
+    assert (
+        "events.event_date < CAST(from_iso8601_timestamp('2026-03-02T00:00:00Z') AS DATE)"
+        in executed
+    )
+    assert (
+        "streetlights.hour >= from_iso8601_timestamp('2026-03-01T00:00:00Z')"
+        in executed
+    )
+    assert (
+        "streetlights.hour < from_iso8601_timestamp('2026-03-02T00:00:00Z')" in executed
+    )
 
 
-def test_fetch_energy_trend_forecast_rows_queries_expected_gold_views(monkeypatch) -> None:
+def test_fetch_energy_trend_forecast_rows_queries_expected_gold_views(
+    monkeypatch,
+) -> None:
     cursor = _FakeCursor(
         description=[("placeholder", None, None, None, None, None, None)],
         rows=[],
@@ -231,7 +261,21 @@ def test_fetch_energy_trend_forecast_rows_queries_expected_gold_views(monkeypatc
                     ("avg_wind_speed_ms", None, None, None, None, None, None),
                     ("avg_cloud_cover_pct", None, None, None, None, None, None),
                 ],
-                [("2026-03-01T00:00:00+00:00", 52.0, 10.0, 42.0, 0.2, 8.4, 18.0, 120.0, 65.0, 3.0, 42.0)],
+                [
+                    (
+                        "2026-03-01T00:00:00+00:00",
+                        52.0,
+                        10.0,
+                        42.0,
+                        0.2,
+                        8.4,
+                        18.0,
+                        120.0,
+                        65.0,
+                        3.0,
+                        42.0,
+                    )
+                ],
             ),
             (
                 [
@@ -281,10 +325,22 @@ def test_fetch_energy_trend_forecast_rows_queries_expected_gold_views(monkeypatc
 
     daily_cost_query = cursor.executed_queries[1]
     assert 'FROM "gold"."energy_cost_daily"' in daily_cost_query
-    assert "cost_date >= CAST(from_iso8601_timestamp('2026-03-01T00:00:00Z') AS DATE)" in daily_cost_query
-    assert "cost_date < CAST(from_iso8601_timestamp('2026-03-02T00:00:00Z') AS DATE)" in daily_cost_query
+    assert (
+        "cost_date >= CAST(from_iso8601_timestamp('2026-03-01T00:00:00Z') AS DATE)"
+        in daily_cost_query
+    )
+    assert (
+        "cost_date < CAST(from_iso8601_timestamp('2026-03-02T00:00:00Z') AS DATE)"
+        in daily_cost_query
+    )
 
     daily_pv_query = cursor.executed_queries[2]
     assert 'FROM "gold"."pv_self_consumption_daily"' in daily_pv_query
-    assert "sc_date >= CAST(from_iso8601_timestamp('2026-03-01T00:00:00Z') AS DATE)" in daily_pv_query
-    assert "sc_date < CAST(from_iso8601_timestamp('2026-03-02T00:00:00Z') AS DATE)" in daily_pv_query
+    assert (
+        "sc_date >= CAST(from_iso8601_timestamp('2026-03-01T00:00:00Z') AS DATE)"
+        in daily_pv_query
+    )
+    assert (
+        "sc_date < CAST(from_iso8601_timestamp('2026-03-02T00:00:00Z') AS DATE)"
+        in daily_pv_query
+    )

@@ -20,12 +20,18 @@ class _FakeOutlierService:
 
 class _FakeSmartCityService:
     def generate_correlation_context(self, **kwargs):
-        return {"summary": {"total_patterns": 1}, "narrative_hints": ["Detected pattern"]}
+        return {
+            "summary": {"total_patterns": 1},
+            "narrative_hints": ["Detected pattern"],
+        }
 
 
 class _FakeTrendService:
     def generate_trend_forecast_context(self, **kwargs):
-        return {"summary": {"forecast_points": 24}, "narrative_hints": ["Forecast generated"]}
+        return {
+            "summary": {"forecast_points": 24},
+            "narrative_hints": ["Forecast generated"],
+        }
 
 
 class _FailingLLMClient:

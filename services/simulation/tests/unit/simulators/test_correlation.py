@@ -9,7 +9,7 @@ Acceptance criteria from spec section 11.8:
 - Batch generation for time ranges works
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -110,7 +110,7 @@ class TestCorrelatedSnapshot:
 
     def test_snapshot_creation_minimal(self) -> None:
         """Test creating a snapshot with minimal data."""
-        ts = datetime(2024, 6, 15, 12, 0, 0, tzinfo=timezone.utc)
+        ts = datetime(2024, 6, 15, 12, 0, 0, tzinfo=UTC)
         metrics = DerivedMetrics(
             total_consumption_kw=0.0,
             total_generation_kw=0.0,
@@ -130,7 +130,7 @@ class TestCorrelatedSnapshot:
 
     def test_timestamp_iso_format(self) -> None:
         """Test timestamp ISO format property."""
-        ts = datetime(2024, 6, 15, 12, 30, 0, tzinfo=timezone.utc)
+        ts = datetime(2024, 6, 15, 12, 30, 0, tzinfo=UTC)
         metrics = DerivedMetrics(
             total_consumption_kw=0.0,
             total_generation_kw=0.0,
@@ -222,9 +222,11 @@ class TestCorrelationEngine:
             price_simulator=price_simulator,
         )
 
-    def test_generate_snapshot_basic(self, correlation_engine: CorrelationEngine) -> None:
+    def test_generate_snapshot_basic(
+        self, correlation_engine: CorrelationEngine
+    ) -> None:
         """Test basic snapshot generation."""
-        ts = datetime(2024, 6, 15, 12, 0, 0, tzinfo=timezone.utc)
+        ts = datetime(2024, 6, 15, 12, 0, 0, tzinfo=UTC)
         snapshot = correlation_engine.generate_snapshot(ts)
 
         assert snapshot.timestamp == ts
@@ -239,11 +241,11 @@ class TestCorrelationEngine:
         self, correlation_engine: CorrelationEngine
     ) -> None:
         """Test that all feeds share the same timestamp."""
-        ts = datetime(2024, 6, 15, 14, 30, 0, tzinfo=timezone.utc)
+        ts = datetime(2024, 6, 15, 14, 30, 0, tzinfo=UTC)
         snapshot = correlation_engine.generate_snapshot(ts)
 
         # Timestamp should be aligned to 15-min boundary
-        expected_ts = datetime(2024, 6, 15, 14, 30, 0, tzinfo=timezone.utc)
+        expected_ts = datetime(2024, 6, 15, 14, 30, 0, tzinfo=UTC)
 
         assert snapshot.timestamp == expected_ts
         assert snapshot.weather.timestamp == expected_ts
@@ -255,10 +257,10 @@ class TestCorrelationEngine:
     def test_timestamp_alignment(self, correlation_engine: CorrelationEngine) -> None:
         """Test that unaligned timestamps get aligned to interval boundary."""
         # Timestamp at 14:37:45 should align to 14:30:00 for 15-min intervals
-        ts = datetime(2024, 6, 15, 14, 37, 45, tzinfo=timezone.utc)
+        ts = datetime(2024, 6, 15, 14, 37, 45, tzinfo=UTC)
         snapshot = correlation_engine.generate_snapshot(ts)
 
-        expected_ts = datetime(2024, 6, 15, 14, 30, 0, tzinfo=timezone.utc)
+        expected_ts = datetime(2024, 6, 15, 14, 30, 0, tzinfo=UTC)
         assert snapshot.timestamp == expected_ts
 
     def test_deterministic_output_same_seed_time(
@@ -303,16 +305,20 @@ class TestCorrelationEngine:
             pv_simulators=[pv2],
         )
 
-        ts = datetime(2024, 6, 15, 12, 0, 0, tzinfo=timezone.utc)
+        ts = datetime(2024, 6, 15, 12, 0, 0, tzinfo=UTC)
 
         snapshot1 = engine1.generate_snapshot(ts)
         snapshot2 = engine2.generate_snapshot(ts)
 
         # Weather should be identical
         assert (
-            snapshot1.weather.conditions.temperature_c == snapshot2.weather.conditions.temperature_c
+            snapshot1.weather.conditions.temperature_c
+            == snapshot2.weather.conditions.temperature_c
         )
-        assert snapshot1.weather.conditions.ghi_w_m2 == snapshot2.weather.conditions.ghi_w_m2
+        assert (
+            snapshot1.weather.conditions.ghi_w_m2
+            == snapshot2.weather.conditions.ghi_w_m2
+        )
 
         # PV should be identical
         assert (
@@ -321,7 +327,10 @@ class TestCorrelationEngine:
         )
 
         # Metrics should be identical
-        assert snapshot1.metrics.total_generation_kw == snapshot2.metrics.total_generation_kw
+        assert (
+            snapshot1.metrics.total_generation_kw
+            == snapshot2.metrics.total_generation_kw
+        )
 
     def test_different_seeds_produce_different_output(self) -> None:
         """Test that different seeds produce different output."""
@@ -342,7 +351,7 @@ class TestCorrelationEngine:
         engine1 = CorrelationEngine(weather_simulator=weather1)
         engine2 = CorrelationEngine(weather_simulator=weather2)
 
-        ts = datetime(2024, 6, 15, 12, 0, 0, tzinfo=timezone.utc)
+        ts = datetime(2024, 6, 15, 12, 0, 0, tzinfo=UTC)
 
         snapshot1 = engine1.generate_snapshot(ts)
         snapshot2 = engine2.generate_snapshot(ts)
@@ -352,7 +361,8 @@ class TestCorrelationEngine:
         # This test may occasionally fail if variance happens to be identical
         # but statistically very unlikely
         assert (
-            snapshot1.weather.conditions.temperature_c != snapshot2.weather.conditions.temperature_c
+            snapshot1.weather.conditions.temperature_c
+            != snapshot2.weather.conditions.temperature_c
         )
 
     def test_self_consumption_ratio_in_valid_range(
@@ -361,11 +371,11 @@ class TestCorrelationEngine:
         """Test that self-consumption ratio is always in 0-1 range."""
         # Test multiple timestamps throughout the day
         test_times = [
-            datetime(2024, 6, 15, 0, 0, 0, tzinfo=timezone.utc),  # Night
-            datetime(2024, 6, 15, 6, 0, 0, tzinfo=timezone.utc),  # Dawn
-            datetime(2024, 6, 15, 12, 0, 0, tzinfo=timezone.utc),  # Midday
-            datetime(2024, 6, 15, 18, 0, 0, tzinfo=timezone.utc),  # Evening
-            datetime(2024, 6, 15, 23, 0, 0, tzinfo=timezone.utc),  # Late night
+            datetime(2024, 6, 15, 0, 0, 0, tzinfo=UTC),  # Night
+            datetime(2024, 6, 15, 6, 0, 0, tzinfo=UTC),  # Dawn
+            datetime(2024, 6, 15, 12, 0, 0, tzinfo=UTC),  # Midday
+            datetime(2024, 6, 15, 18, 0, 0, tzinfo=UTC),  # Evening
+            datetime(2024, 6, 15, 23, 0, 0, tzinfo=UTC),  # Late night
         ]
 
         for ts in test_times:
@@ -384,7 +394,9 @@ class TestDerivedMetricsCalculations:
         """Create a deterministic RNG."""
         return DeterministicRNG(seed=12345)
 
-    def test_net_grid_power_positive_when_consuming(self, rng: DeterministicRNG) -> None:
+    def test_net_grid_power_positive_when_consuming(
+        self, rng: DeterministicRNG
+    ) -> None:
         """Test net grid power is positive when consumption > generation."""
         # Create engine with meter but no PV (zero generation)
         meter_config = MeterConfig(
@@ -392,18 +404,22 @@ class TestDerivedMetricsCalculations:
             base_power_kw=20.0,  # High consumption
             peak_power_kw=30.0,
         )
-        meter = EnergyMeterSimulator(entity_id="meter-001", rng=rng, config=meter_config)
+        meter = EnergyMeterSimulator(
+            entity_id="meter-001", rng=rng, config=meter_config
+        )
 
         engine = CorrelationEngine(meter_simulators=[meter])
 
-        ts = datetime(2024, 6, 15, 12, 0, 0, tzinfo=timezone.utc)
+        ts = datetime(2024, 6, 15, 12, 0, 0, tzinfo=UTC)
         snapshot = engine.generate_snapshot(ts)
 
         # No generation, positive consumption -> positive net grid power
         assert snapshot.metrics.total_generation_kw == 0.0
         assert snapshot.metrics.total_consumption_kw > 0.0
         assert snapshot.metrics.net_grid_power_kw > 0.0
-        assert snapshot.metrics.net_grid_power_kw == snapshot.metrics.total_consumption_kw
+        assert (
+            snapshot.metrics.net_grid_power_kw == snapshot.metrics.total_consumption_kw
+        )
 
     def test_net_grid_power_calculation(self, rng: DeterministicRNG) -> None:
         """Test net grid power = consumption - generation."""
@@ -428,7 +444,9 @@ class TestDerivedMetricsCalculations:
             base_power_kw=5.0,
             peak_power_kw=10.0,
         )
-        meter = EnergyMeterSimulator(entity_id="meter-001", rng=rng, config=meter_config)
+        meter = EnergyMeterSimulator(
+            entity_id="meter-001", rng=rng, config=meter_config
+        )
 
         engine = CorrelationEngine(
             weather_simulator=weather,
@@ -436,10 +454,12 @@ class TestDerivedMetricsCalculations:
             meter_simulators=[meter],
         )
 
-        ts = datetime(2024, 6, 15, 12, 0, 0, tzinfo=timezone.utc)
+        ts = datetime(2024, 6, 15, 12, 0, 0, tzinfo=UTC)
         snapshot = engine.generate_snapshot(ts)
 
-        expected_net = snapshot.metrics.total_consumption_kw - snapshot.metrics.total_generation_kw
+        expected_net = (
+            snapshot.metrics.total_consumption_kw - snapshot.metrics.total_generation_kw
+        )
         assert abs(snapshot.metrics.net_grid_power_kw - expected_net) < 0.001
 
     def test_self_consumption_ratio_all_consumed(self, rng: DeterministicRNG) -> None:
@@ -466,7 +486,9 @@ class TestDerivedMetricsCalculations:
             base_power_kw=50.0,  # High consumption
             peak_power_kw=100.0,
         )
-        meter = EnergyMeterSimulator(entity_id="meter-001", rng=rng, config=meter_config)
+        meter = EnergyMeterSimulator(
+            entity_id="meter-001", rng=rng, config=meter_config
+        )
 
         engine = CorrelationEngine(
             weather_simulator=weather,
@@ -475,23 +497,30 @@ class TestDerivedMetricsCalculations:
         )
 
         # Midday for PV generation
-        ts = datetime(2024, 6, 15, 12, 0, 0, tzinfo=timezone.utc)
+        ts = datetime(2024, 6, 15, 12, 0, 0, tzinfo=UTC)
         snapshot = engine.generate_snapshot(ts)
 
         # If generation > 0 and consumption > generation, ratio should be 1.0
         if snapshot.metrics.total_generation_kw > 0:
-            if snapshot.metrics.total_consumption_kw >= snapshot.metrics.total_generation_kw:
+            if (
+                snapshot.metrics.total_consumption_kw
+                >= snapshot.metrics.total_generation_kw
+            ):
                 assert snapshot.metrics.self_consumption_ratio == 1.0
 
-    def test_self_consumption_ratio_zero_generation(self, rng: DeterministicRNG) -> None:
+    def test_self_consumption_ratio_zero_generation(
+        self, rng: DeterministicRNG
+    ) -> None:
         """Test self-consumption ratio = 0 when there's no generation."""
         # Night time - no PV generation
         meter_config = MeterConfig(meter_id="meter-001")
-        meter = EnergyMeterSimulator(entity_id="meter-001", rng=rng, config=meter_config)
+        meter = EnergyMeterSimulator(
+            entity_id="meter-001", rng=rng, config=meter_config
+        )
 
         engine = CorrelationEngine(meter_simulators=[meter])
 
-        ts = datetime(2024, 6, 15, 2, 0, 0, tzinfo=timezone.utc)  # 2 AM
+        ts = datetime(2024, 6, 15, 2, 0, 0, tzinfo=UTC)  # 2 AM
         snapshot = engine.generate_snapshot(ts)
 
         assert snapshot.metrics.total_generation_kw == 0.0
@@ -503,21 +532,25 @@ class TestDerivedMetricsCalculations:
             meter_id="meter-001",
             base_power_kw=10.0,
         )
-        meter = EnergyMeterSimulator(entity_id="meter-001", rng=rng, config=meter_config)
+        meter = EnergyMeterSimulator(
+            entity_id="meter-001", rng=rng, config=meter_config
+        )
 
         price_config = PriceConfig(
             feed_id="price-001",
             midday_price=0.30,  # 0.30 EUR/kWh
             volatility_pct=0.0,  # No volatility for predictable test
         )
-        price = EnergyPriceSimulator(entity_id="price-001", rng=rng, config=price_config)
+        price = EnergyPriceSimulator(
+            entity_id="price-001", rng=rng, config=price_config
+        )
 
         engine = CorrelationEngine(
             meter_simulators=[meter],
             price_simulator=price,
         )
 
-        ts = datetime(2024, 6, 15, 12, 0, 0, tzinfo=timezone.utc)
+        ts = datetime(2024, 6, 15, 12, 0, 0, tzinfo=UTC)
         snapshot = engine.generate_snapshot(ts)
 
         # Cost = net_grid_power * price
@@ -548,10 +581,14 @@ class TestDerivedMetricsCalculations:
             base_power_kw=0.5,  # Very low consumption
             peak_power_kw=1.0,
         )
-        meter = EnergyMeterSimulator(entity_id="meter-001", rng=rng, config=meter_config)
+        meter = EnergyMeterSimulator(
+            entity_id="meter-001", rng=rng, config=meter_config
+        )
 
         price_config = PriceConfig(feed_id="price-001")
-        price = EnergyPriceSimulator(entity_id="price-001", rng=rng, config=price_config)
+        price = EnergyPriceSimulator(
+            entity_id="price-001", rng=rng, config=price_config
+        )
 
         engine = CorrelationEngine(
             weather_simulator=weather,
@@ -561,7 +598,7 @@ class TestDerivedMetricsCalculations:
         )
 
         # Midday with high generation
-        ts = datetime(2024, 6, 15, 12, 0, 0, tzinfo=timezone.utc)
+        ts = datetime(2024, 6, 15, 12, 0, 0, tzinfo=UTC)
         snapshot = engine.generate_snapshot(ts)
 
         # If exporting (negative net grid power), cost should be 0
@@ -585,8 +622,8 @@ class TestBatchGeneration:
 
     def test_generate_range(self, simple_engine: CorrelationEngine) -> None:
         """Test generating snapshots for a time range."""
-        start = datetime(2024, 6, 15, 10, 0, 0, tzinfo=timezone.utc)
-        end = datetime(2024, 6, 15, 12, 0, 0, tzinfo=timezone.utc)
+        start = datetime(2024, 6, 15, 10, 0, 0, tzinfo=UTC)
+        end = datetime(2024, 6, 15, 12, 0, 0, tzinfo=UTC)
         time_range = TimeRange(start=start, end=end)
 
         snapshots = simple_engine.generate_range(time_range)
@@ -601,8 +638,8 @@ class TestBatchGeneration:
 
     def test_iterate_range(self, simple_engine: CorrelationEngine) -> None:
         """Test iterating over snapshots for a time range."""
-        start = datetime(2024, 6, 15, 10, 0, 0, tzinfo=timezone.utc)
-        end = datetime(2024, 6, 15, 11, 0, 0, tzinfo=timezone.utc)
+        start = datetime(2024, 6, 15, 10, 0, 0, tzinfo=UTC)
+        end = datetime(2024, 6, 15, 11, 0, 0, tzinfo=UTC)
         time_range = TimeRange(start=start, end=end)
 
         snapshots = list(simple_engine.iterate_range(time_range))
@@ -612,25 +649,28 @@ class TestBatchGeneration:
 
     def test_generate_batch(self, simple_engine: CorrelationEngine) -> None:
         """Test generating a fixed number of consecutive snapshots."""
-        start = datetime(2024, 6, 15, 10, 0, 0, tzinfo=timezone.utc)
+        start = datetime(2024, 6, 15, 10, 0, 0, tzinfo=UTC)
         count = 4
 
         snapshots = simple_engine.generate_batch(start, count)
 
         assert len(snapshots) == 4
         assert snapshots[0].timestamp == start
-        assert snapshots[3].timestamp == datetime(2024, 6, 15, 10, 45, 0, tzinfo=timezone.utc)
+        assert snapshots[3].timestamp == datetime(2024, 6, 15, 10, 45, 0, tzinfo=UTC)
 
     def test_batch_determinism(self, simple_engine: CorrelationEngine) -> None:
         """Test that batch generation is deterministic."""
-        start = datetime(2024, 6, 15, 10, 0, 0, tzinfo=timezone.utc)
+        start = datetime(2024, 6, 15, 10, 0, 0, tzinfo=UTC)
 
         batch1 = simple_engine.generate_batch(start, 4)
         batch2 = simple_engine.generate_batch(start, 4)
 
         for s1, s2 in zip(batch1, batch2):
             assert s1.timestamp == s2.timestamp
-            assert s1.weather.conditions.temperature_c == s2.weather.conditions.temperature_c
+            assert (
+                s1.weather.conditions.temperature_c
+                == s2.weather.conditions.temperature_c
+            )
 
 
 class TestWeatherPVDependency:
@@ -668,14 +708,14 @@ class TestWeatherPVDependency:
         )
 
         # Midday should have high irradiance and PV output
-        midday = datetime(2024, 6, 15, 12, 0, 0, tzinfo=timezone.utc)
+        midday = datetime(2024, 6, 15, 12, 0, 0, tzinfo=UTC)
         snapshot = engine.generate_snapshot(midday)
 
         assert snapshot.weather.conditions.ghi_w_m2 > 0
         assert snapshot.pv_readings[0].readings.power_output_kw > 0
 
         # Night should have zero irradiance and PV output
-        night = datetime(2024, 6, 15, 2, 0, 0, tzinfo=timezone.utc)
+        night = datetime(2024, 6, 15, 2, 0, 0, tzinfo=UTC)
         snapshot_night = engine.generate_snapshot(night)
 
         assert snapshot_night.weather.conditions.ghi_w_m2 == 0
@@ -707,12 +747,13 @@ class TestWeatherPVDependency:
             pv_simulators=[pv],
         )
 
-        ts = datetime(2024, 6, 15, 12, 0, 0, tzinfo=timezone.utc)
+        ts = datetime(2024, 6, 15, 12, 0, 0, tzinfo=UTC)
         snapshot = engine.generate_snapshot(ts)
 
         # PV reading should use weather's GHI
         assert (
-            snapshot.pv_readings[0].readings.irradiance_w_m2 == snapshot.weather.conditions.ghi_w_m2
+            snapshot.pv_readings[0].readings.irradiance_w_m2
+            == snapshot.weather.conditions.ghi_w_m2
         )
 
 
@@ -765,10 +806,10 @@ class TestHourlyInterval:
         )
 
         # 14:37 should align to 14:00 for hourly intervals
-        ts = datetime(2024, 6, 15, 14, 37, 0, tzinfo=timezone.utc)
+        ts = datetime(2024, 6, 15, 14, 37, 0, tzinfo=UTC)
         snapshot = engine.generate_snapshot(ts)
 
-        expected = datetime(2024, 6, 15, 14, 0, 0, tzinfo=timezone.utc)
+        expected = datetime(2024, 6, 15, 14, 0, 0, tzinfo=UTC)
         assert snapshot.timestamp == expected
 
     def test_hourly_batch_generation(self) -> None:
@@ -786,7 +827,7 @@ class TestHourlyInterval:
             interval=IntervalMinutes.ONE_HOUR,
         )
 
-        start = datetime(2024, 6, 15, 10, 0, 0, tzinfo=timezone.utc)
+        start = datetime(2024, 6, 15, 10, 0, 0, tzinfo=UTC)
         snapshots = engine.generate_batch(start, 4)
 
         assert len(snapshots) == 4

@@ -100,7 +100,9 @@ class SimulationEngine:
         # Generator factories: type_name -> factory function
         self._generator_factories: dict[str, type[BaseTimeSeriesGenerator]] = {}
 
-        logger.info(f"SimulationEngine initialized with seed={seed}, acceleration={acceleration}")
+        logger.info(
+            f"SimulationEngine initialized with seed={seed}, acceleration={acceleration}"
+        )
 
     @property
     def seed(self) -> int:
@@ -271,7 +273,9 @@ class SimulationEngine:
 
         return generator.generate_at(self._clock.simulation_time)
 
-    def generate_at(self, entity_id: str, timestamp: datetime | str) -> TimeSeriesPoint | None:
+    def generate_at(
+        self, entity_id: str, timestamp: datetime | str
+    ) -> TimeSeriesPoint | None:
         """
         Generate data for an entity at a specific timestamp.
 

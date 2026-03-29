@@ -34,4 +34,6 @@ class AuditLogger:
             "asset_id": asset_id,
             "payload": payload or {},
         }
-        self._logger.info("audit_event=%s", json.dumps(event_data, sort_keys=True, default=str))
+        self._logger.info(
+            "audit_event=%s", json.dumps(event_data, sort_keys=True, default=str)
+        )

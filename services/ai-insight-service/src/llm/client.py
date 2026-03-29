@@ -6,7 +6,7 @@ import time
 from typing import Any
 from urllib.parse import urlparse
 
-import requests
+import requests  # type: ignore[import-untyped]
 
 from src.config import LlmConfig
 
@@ -93,7 +93,9 @@ class OpenAICompatibleClient:
                 self._sleep_for_retry(attempt)
                 continue
             if response.status_code >= 400:
-                raise LLMClientError(f"LLM request failed with status {response.status_code}")
+                raise LLMClientError(
+                    f"LLM request failed with status {response.status_code}"
+                )
 
             body = response.json()
             text = self._extract_content(body)

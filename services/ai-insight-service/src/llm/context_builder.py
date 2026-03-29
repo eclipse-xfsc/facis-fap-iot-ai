@@ -42,7 +42,9 @@ def build_structured_context(
         for summary in summaries
     ]
 
-    cost_anomalies = [event for event in outlier_events if "cost" in event["metric"].lower()]
+    cost_anomalies = [
+        event for event in outlier_events if "cost" in event["metric"].lower()
+    ]
     outlier_events_sorted = sorted(
         outlier_events,
         key=lambda event: (event.get("timestamp", ""), event.get("metric", "")),
@@ -55,12 +57,16 @@ def build_structured_context(
 
     hints: list[str] = []
     if outlier_events_sorted:
-        hints.append("Detected statistically unusual points using robust z-score (MAD).")
+        hints.append(
+            "Detected statistically unusual points using robust z-score (MAD)."
+        )
     else:
         hints.append("No robust outliers detected for the selected metrics and window.")
 
     if cost_anomalies:
-        hints.append("Cost-related anomalies were detected and may reflect tariff or usage shifts.")
+        hints.append(
+            "Cost-related anomalies were detected and may reflect tariff or usage shifts."
+        )
 
     if not selected_metrics:
         hints.append(
@@ -115,14 +121,24 @@ def build_smart_city_correlation_context(
     hints: list[str] = []
     if patterns:
         hints.append(
-            "Detected event-to-streetlight response patterns using hybrid baseline and lag analysis."
+            "Detected event-to-streetlight response patterns "
+            "using hybrid baseline and lag analysis."
         )
     else:
-        hints.append("No event-to-infrastructure response patterns detected in the selected window.")
+        hints.append(
+            "No event-to-infrastructure response patterns "
+            "detected in the selected window."
+        )
     if high_confidence_links:
-        hints.append("High-confidence links indicate strong and temporally close infrastructure responses.")
+        hints.append(
+            "High-confidence links indicate strong and temporally "
+            "close infrastructure responses."
+        )
     else:
-        hints.append("No high-confidence links identified; responses are weak or diffuse across lag windows.")
+        hints.append(
+            "No high-confidence links identified; responses are weak "
+            "or diffuse across lag windows."
+        )
 
     confidence_counts = {"high": 0, "medium": 0, "low": 0}
     for pattern in patterns:
@@ -166,14 +182,24 @@ def build_trend_forecast_context(
         key=lambda point: str(point.get("timestamp", "")),
     )
     trend_items = sorted(trend_result.trend_signals.items(), key=lambda item: item[0])
-    moving_average_items = sorted(trend_result.moving_averages.items(), key=lambda item: item[0])
-    seasonality_items = sorted(trend_result.seasonality_patterns.items(), key=lambda item: item[0])
+    moving_average_items = sorted(
+        trend_result.moving_averages.items(), key=lambda item: item[0]
+    )
+    seasonality_items = sorted(
+        trend_result.seasonality_patterns.items(), key=lambda item: item[0]
+    )
 
     hints = list(trend_result.confidence_notes)
     if forecast_24h:
-        hints.append("Forecast uses hourly seasonality plus recent-level adjustment baseline model.")
+        hints.append(
+            "Forecast uses hourly seasonality plus recent-level "
+            "adjustment baseline model."
+        )
     else:
-        hints.append("Forecast output is empty due to insufficient hourly history in selected window.")
+        hints.append(
+            "Forecast output is empty due to insufficient hourly history "
+            "in selected window."
+        )
 
     return {
         "window": {
@@ -192,7 +218,9 @@ def build_trend_forecast_context(
         "summary": {
             "forecast_points": len(forecast_24h),
             "tracked_metrics": [key for key, _ in trend_items],
-            "daily_cost_points": trend_result.daily_overview.get("daily_cost_points", 0),
+            "daily_cost_points": trend_result.daily_overview.get(
+                "daily_cost_points", 0
+            ),
             "daily_pv_points": trend_result.daily_overview.get("daily_pv_points", 0),
         },
     }

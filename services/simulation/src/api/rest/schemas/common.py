@@ -5,12 +5,12 @@ Shared request/response schemas used across endpoints.
 """
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
 
-class IntervalParam(str, Enum):
+class IntervalParam(StrEnum):
     """Supported time intervals for data queries."""
 
     FIFTEEN_MIN = "15min"
@@ -20,10 +20,16 @@ class IntervalParam(str, Enum):
 class TimeRangeQuery(BaseModel):
     """Query parameters for time range filtering."""
 
-    start_time: datetime | None = Field(default=None, description="Start time (ISO 8601)")
+    start_time: datetime | None = Field(
+        default=None, description="Start time (ISO 8601)"
+    )
     end_time: datetime | None = Field(default=None, description="End time (ISO 8601)")
-    interval: IntervalParam = Field(default=IntervalParam.FIFTEEN_MIN, description="Data interval")
-    limit: int = Field(default=100, ge=1, le=1000, description="Maximum number of results")
+    interval: IntervalParam = Field(
+        default=IntervalParam.FIFTEEN_MIN, description="Data interval"
+    )
+    limit: int = Field(
+        default=100, ge=1, le=1000, description="Maximum number of results"
+    )
 
 
 class PaginatedResponse(BaseModel):

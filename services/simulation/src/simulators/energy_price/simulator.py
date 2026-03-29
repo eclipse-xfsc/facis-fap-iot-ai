@@ -151,7 +151,9 @@ class EnergyPriceSimulator(BaseTimeSeriesGenerator[PriceReading]):
             Average price in EUR/kWh for the day.
         """
         # Generate prices for each hour of the day
-        start_of_day = date.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=UTC)
+        start_of_day = date.replace(
+            hour=0, minute=0, second=0, microsecond=0, tzinfo=UTC
+        )
 
         total_price = 0.0
         num_readings = 0
@@ -175,7 +177,9 @@ class EnergyPriceSimulator(BaseTimeSeriesGenerator[PriceReading]):
         Returns:
             Tuple of (min_price, max_price) in EUR/kWh.
         """
-        start_of_day = date.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=UTC)
+        start_of_day = date.replace(
+            hour=0, minute=0, second=0, microsecond=0, tzinfo=UTC
+        )
 
         prices = []
         for hour in range(24):

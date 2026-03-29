@@ -23,7 +23,9 @@ class MeterReadings(BaseModel):
     current_l3_a: float = Field(..., description="Current phase L3 in amperes")
     power_factor: float = Field(..., ge=0.0, le=1.0, description="Power factor")
     frequency_hz: float = Field(..., description="Grid frequency in Hz")
-    total_energy_kwh: float = Field(..., ge=0.0, description="Total cumulative energy in kWh")
+    total_energy_kwh: float = Field(
+        ..., ge=0.0, description="Total cumulative energy in kWh"
+    )
 
 
 class MeterReading(BaseModel):
@@ -59,13 +61,21 @@ class MeterConfig(BaseModel):
     """Configuration for an energy meter."""
 
     meter_id: str = Field(..., description="Unique meter identifier")
-    base_power_kw: float = Field(default=10.0, ge=0.0, description="Base load power in kW")
-    peak_power_kw: float = Field(default=25.0, ge=0.0, description="Peak load power in kW")
-    nominal_voltage_v: float = Field(default=230.0, description="Nominal voltage in volts")
+    base_power_kw: float = Field(
+        default=10.0, ge=0.0, description="Base load power in kW"
+    )
+    peak_power_kw: float = Field(
+        default=25.0, ge=0.0, description="Peak load power in kW"
+    )
+    nominal_voltage_v: float = Field(
+        default=230.0, description="Nominal voltage in volts"
+    )
     voltage_variance_pct: float = Field(
         default=5.0, ge=0.0, le=10.0, description="Voltage variance percentage"
     )
-    nominal_frequency_hz: float = Field(default=50.0, description="Nominal frequency in Hz")
+    nominal_frequency_hz: float = Field(
+        default=50.0, description="Nominal frequency in Hz"
+    )
     frequency_variance_hz: float = Field(
         default=0.05, ge=0.0, description="Frequency variance in Hz"
     )

@@ -130,7 +130,9 @@ class TestMeterEndpoints:
 
     def test_get_meter_history_with_interval(self, client: TestClient) -> None:
         """Test GET /api/v1/meters/{id}/history respects interval parameter."""
-        response = client.get("/api/v1/meters/janitza-umg96rm-001/history?interval=1hour&limit=5")
+        response = client.get(
+            "/api/v1/meters/janitza-umg96rm-001/history?interval=1hour&limit=5"
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -398,7 +400,9 @@ class TestLoadEndpoints:
 
     def test_get_load_history_with_interval(self, client: TestClient) -> None:
         """Test GET /api/v1/loads/{id}/history respects interval parameter."""
-        response = client.get("/api/v1/loads/industrial-oven-001/history?interval=1hour&limit=5")
+        response = client.get(
+            "/api/v1/loads/industrial-oven-001/history?interval=1hour&limit=5"
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -482,7 +486,9 @@ class TestLoadEndpoints:
         for reading in data["readings"]:
             if reading["device_state"] == "ON":
                 # Allow ±10% variation from rated power
-                assert 0.9 * rated_power <= reading["device_power_kw"] <= 1.1 * rated_power
+                assert (
+                    0.9 * rated_power <= reading["device_power_kw"] <= 1.1 * rated_power
+                )
             else:
                 assert reading["device_power_kw"] == 0.0
 

@@ -5,12 +5,12 @@ Pydantic schema for energy market prices.
 """
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
 
-class TariffType(str, Enum):
+class TariffType(StrEnum):
     """Electricity tariff types based on time of day."""
 
     NIGHT = "night"  # 00:00-06:00
@@ -42,10 +42,16 @@ class PriceConfig(BaseModel):
     feed_id: str = Field(default="epex-spot-de", description="Price feed identifier")
 
     # Base prices per tariff type (EUR/kWh)
-    night_price: float = Field(default=0.15, ge=0.0, description="Night tariff base price")
-    morning_peak_price: float = Field(default=0.33, ge=0.0, description="Morning peak base price")
+    night_price: float = Field(
+        default=0.15, ge=0.0, description="Night tariff base price"
+    )
+    morning_peak_price: float = Field(
+        default=0.33, ge=0.0, description="Morning peak base price"
+    )
     midday_price: float = Field(default=0.26, ge=0.0, description="Midday base price")
-    evening_peak_price: float = Field(default=0.40, ge=0.0, description="Evening peak base price")
+    evening_peak_price: float = Field(
+        default=0.40, ge=0.0, description="Evening peak base price"
+    )
     evening_price: float = Field(default=0.22, ge=0.0, description="Evening base price")
 
     # Weekend discount (percentage)
@@ -59,4 +65,6 @@ class PriceConfig(BaseModel):
     )
 
     # Price floor (never go below this)
-    min_price: float = Field(default=0.05, ge=0.0, description="Minimum price floor in EUR/kWh")
+    min_price: float = Field(
+        default=0.05, ge=0.0, description="Minimum price floor in EUR/kWh"
+    )

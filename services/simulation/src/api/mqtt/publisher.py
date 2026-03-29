@@ -12,7 +12,7 @@ import logging
 import threading
 from dataclasses import dataclass
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 import paho.mqtt.client as mqtt
@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class ConnectionState(str, Enum):
+class ConnectionState(StrEnum):
     """MQTT connection state."""
 
     DISCONNECTED = "disconnected"
@@ -103,7 +103,7 @@ class MQTTPublisher:
         # Set up callbacks
         self._client.on_connect = self._on_connect
         self._client.on_disconnect = self._on_disconnect
-        self._client.on_publish = self._on_publish
+        self._client.on_publish = self._on_publish  # type: ignore[assignment]
 
         # Set credentials if provided
         if username and password:
@@ -524,7 +524,9 @@ class MQTTFeedPublisher:
 
         return results
 
-    def _generate_price_forecast(self, simulator: Any, current_time: datetime) -> dict | None:
+    def _generate_price_forecast(
+        self, simulator: Any, current_time: datetime
+    ) -> dict | None:
         """Generate 24-hour price forecast."""
         from datetime import timedelta
 
@@ -537,7 +539,9 @@ class MQTTFeedPublisher:
                     forecast_prices.append(
                         {
                             "timestamp": future_time.isoformat().replace("+00:00", "Z"),
-                            "price_eur_per_kwh": round(reading.value.price_eur_per_kwh, 4),
+                            "price_eur_per_kwh": round(
+                                reading.value.price_eur_per_kwh, 4
+                            ),
                             "tariff_type": reading.value.tariff_type.value,
                         }
                     )
@@ -603,7 +607,7 @@ class MQTTFeedPublisher:
         Returns:
             PublishResult.
         """
-        alert = {
+        alert: dict[str, Any] = {
             "timestamp": datetime.now().isoformat().replace("+00:00", "Z"),
             "severity": severity,
             "message": message,

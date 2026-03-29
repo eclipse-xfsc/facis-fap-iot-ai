@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 import logging
+from datetime import datetime
 from time import perf_counter
 from typing import Any
 
-from src.analytics.smart_city_correlation import analyze_event_infrastructure_correlation
+from src.analytics.smart_city_correlation import (
+    analyze_event_infrastructure_correlation,
+)
 from src.data.trino_client import TrinoQueryClient
 from src.llm.context_builder import build_smart_city_correlation_context
 

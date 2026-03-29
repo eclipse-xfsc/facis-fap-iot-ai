@@ -32,7 +32,9 @@ def test_anomaly_report_pipeline_e2e(integration_client: TestClient) -> None:
     assert payload["recommendations"] == ["r1"]
 
 
-def test_anomaly_report_include_data_returns_context(integration_client: TestClient) -> None:
+def test_anomaly_report_include_data_returns_context(
+    integration_client: TestClient,
+) -> None:
     response = integration_client.post(
         "/api/v1/insights/anomaly-report",
         json={**_window_payload(), "robust_z_threshold": 3.5, "include_data": True},
@@ -74,7 +76,9 @@ def test_energy_summary_pipeline_e2e(integration_client: TestClient) -> None:
     assert payload["summary"] == "integration-ok"
 
 
-def test_latest_and_output_lookup_work_end_to_end(integration_client: TestClient) -> None:
+def test_latest_and_output_lookup_work_end_to_end(
+    integration_client: TestClient,
+) -> None:
     created = integration_client.post(
         "/api/v1/insights/city-status",
         json=_window_payload(),
@@ -84,7 +88,10 @@ def test_latest_and_output_lookup_work_end_to_end(integration_client: TestClient
 
     latest = integration_client.get("/api/v1/insights/latest")
     assert latest.status_code == 200
-    assert latest.json()["latest"]["city-status"]["output"]["metadata"]["output_id"] == output_id
+    assert (
+        latest.json()["latest"]["city-status"]["output"]["metadata"]["output_id"]
+        == output_id
+    )
 
     fetched = integration_client.get(f"/api/ai/outputs/{output_id}")
     assert fetched.status_code == 200
@@ -94,7 +101,9 @@ def test_latest_and_output_lookup_work_end_to_end(integration_client: TestClient
     assert fetched_payload["structured_output"]["summary"] == "integration-ok"
 
 
-def test_output_lookup_returns_404_for_missing_id(integration_client: TestClient) -> None:
+def test_output_lookup_returns_404_for_missing_id(
+    integration_client: TestClient,
+) -> None:
     response = integration_client.get("/api/ai/outputs/does-not-exist")
     assert response.status_code == 404
 
@@ -127,7 +136,9 @@ def test_pipeline_falls_back_when_llm_unavailable(
     monkeypatch.setattr(
         OpenAICompatibleClient,
         "create_chat_completion",
-        lambda self, **kwargs: (_ for _ in ()).throw(LLMUpstreamError("integration llm down")),
+        lambda self, **kwargs: (_ for _ in ()).throw(
+            LLMUpstreamError("integration llm down")
+        ),
     )
 
     response = integration_client.post(
@@ -139,7 +150,10 @@ def test_pipeline_falls_back_when_llm_unavailable(
     assert payload["metadata"]["llm_used"] is False
     assert payload["metadata"]["llm_model"] == "rule-based-fallback"
     assert payload["metadata"]["llm_error"] == "integration llm down"
-    assert "Fallback insight generated from deterministic analytics context" in payload["summary"]
+    assert (
+        "Fallback insight generated from deterministic analytics context"
+        in payload["summary"]
+    )
 
 
 def test_pipeline_falls_back_when_llm_output_is_not_json(
@@ -157,7 +171,10 @@ def test_pipeline_falls_back_when_llm_output_is_not_json(
     assert response.status_code == 200
     payload = response.json()
     assert payload["metadata"]["llm_error"]
-    assert "Fallback insight generated from deterministic analytics context" in payload["summary"]
+    assert (
+        "Fallback insight generated from deterministic analytics context"
+        in payload["summary"]
+    )
 
 
 def test_pipeline_falls_back_when_llm_output_schema_is_invalid(
@@ -182,8 +199,13 @@ def test_pipeline_falls_back_when_llm_output_schema_is_invalid(
     )
     assert response.status_code == 200
     payload = response.json()
-    assert payload["metadata"]["llm_error"] == "LLM output does not match expected schema"
-    assert "Fallback insight generated from deterministic analytics context" in payload["summary"]
+    assert (
+        payload["metadata"]["llm_error"] == "LLM output does not match expected schema"
+    )
+    assert (
+        "Fallback insight generated from deterministic analytics context"
+        in payload["summary"]
+    )
 
 
 def test_pipeline_skips_llm_when_rows_analyzed_is_zero(
@@ -192,7 +214,9 @@ def test_pipeline_skips_llm_when_rows_analyzed_is_zero(
     monkeypatch.setattr(
         OpenAICompatibleClient,
         "create_chat_completion",
-        lambda self, **kwargs: (_ for _ in ()).throw(AssertionError("LLM should not be called")),
+        lambda self, **kwargs: (_ for _ in ()).throw(
+            AssertionError("LLM should not be called")
+        ),
     )
     monkeypatch.setattr(
         "src.data.trino_client.TrinoQueryClient.fetch_net_grid_hourly",
@@ -206,7 +230,10 @@ def test_pipeline_skips_llm_when_rows_analyzed_is_zero(
     payload = response.json()
     assert payload["metadata"]["llm_used"] is False
     assert payload["metadata"]["llm_model"] == "rule-based-fallback"
-    assert payload["metadata"]["llm_error"] == "LLM skipped due to insufficient data (rows_analyzed=0)"
+    assert (
+        payload["metadata"]["llm_error"]
+        == "LLM skipped due to insufficient data (rows_analyzed=0)"
+    )
 
 
 def test_policy_requires_headers_when_enabled(

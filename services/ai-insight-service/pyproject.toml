@@ -27,6 +27,7 @@ dev = [
     "pytest-asyncio>=0.23.0",
     "pytest-cov>=4.1.0",
     "pytest-bdd>=7.0.0",
+    "types-requests",
     "ruff>=0.2.0",
     "mypy>=1.8.0",
     "black>=24.1.0",
@@ -51,6 +52,10 @@ ignore = ["W293"]
 [tool.mypy]
 python_version = "3.11"
 strict = false
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["requests", "requests.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

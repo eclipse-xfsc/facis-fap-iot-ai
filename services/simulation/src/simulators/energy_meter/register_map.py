@@ -8,9 +8,9 @@ Register addresses use 0-based indexing (Modbus convention).
 Float32 values span 2 consecutive registers in big-endian byte order.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Callable
 
 from src.models.meter import MeterReading
 
@@ -136,11 +136,15 @@ ALL_REGISTERS: list[RegisterDefinition] = [
 ]
 
 # Register address to definition mapping
-REGISTER_MAP: dict[int, RegisterDefinition] = {reg.address: reg for reg in ALL_REGISTERS}
+REGISTER_MAP: dict[int, RegisterDefinition] = {
+    reg.address: reg for reg in ALL_REGISTERS
+}
 
 # Minimum and maximum register addresses
 MIN_REGISTER_ADDRESS = min(reg.address for reg in ALL_REGISTERS)
-MAX_REGISTER_ADDRESS = max(reg.address + reg.register_count - 1 for reg in ALL_REGISTERS)
+MAX_REGISTER_ADDRESS = max(
+    reg.address + reg.register_count - 1 for reg in ALL_REGISTERS
+)
 
 
 def get_register_value(reading: MeterReading, register: RegisterDefinition) -> float:
@@ -164,7 +168,9 @@ def get_register_value(reading: MeterReading, register: RegisterDefinition) -> f
         ACTIVE_POWER_L2.address: readings.active_power_l2_w,
         ACTIVE_POWER_L3.address: readings.active_power_l3_w,
         ACTIVE_POWER_TOTAL.address: (
-            readings.active_power_l1_w + readings.active_power_l2_w + readings.active_power_l3_w
+            readings.active_power_l1_w
+            + readings.active_power_l2_w
+            + readings.active_power_l3_w
         ),
         VOLTAGE_L1_N.address: readings.voltage_l1_v,
         VOLTAGE_L2_N.address: readings.voltage_l2_v,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Awaitable
 from datetime import UTC, datetime
 from hashlib import sha256
 from typing import Any, Protocol
@@ -57,7 +58,19 @@ class RedisInsightCache:
             raw_value = self._client.get(key)
             if not raw_value:
                 return None
-            parsed = json.loads(raw_value)
+            if isinstance(raw_value, Awaitable):
+                logger.warning(
+                    "Unexpected awaitable cache payload; skipping cache read",
+                    extra={"key": key},
+                )
+                return None
+            if isinstance(raw_value, bytes | bytearray):
+                raw_text = raw_value.decode("utf-8")
+            elif isinstance(raw_value, str):
+                raw_text = raw_value
+            else:
+                return None
+            parsed = json.loads(raw_text)
         except Exception:
             logger.exception("insight_cache_read_failed", extra={"key": key})
             return None
@@ -81,7 +94,9 @@ class RedisInsightCache:
 
 def _normalize_dt(value: datetime) -> str:
     normalized = value if value.tzinfo is not None else value.replace(tzinfo=UTC)
-    return normalized.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+    return (
+        normalized.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+    )
 
 
 def build_insight_cache_key(
@@ -121,7 +136,9 @@ def create_insight_cache(cache_config: CacheConfig) -> InsightCache:
         return NoopInsightCache()
     backend = cache_config.backend.strip().lower()
     if backend != "redis":
-        logger.warning("Unsupported cache backend '%s'; disabling cache", cache_config.backend)
+        logger.warning(
+            "Unsupported cache backend '%s'; disabling cache", cache_config.backend
+        )
         return NoopInsightCache()
     if not cache_config.redis_url:
         logger.warning("Cache is enabled but redis_url is empty; disabling cache")

@@ -27,6 +27,7 @@ dev = [
     "pytest-bdd>=7.0.0",
     "pytest-asyncio>=0.23.0",
     "pytest-cov>=4.1.0",
+    "httpx>=0.28.0",
     "ruff>=0.2.0",
     "mypy>=1.8.0",
     "black>=24.1.0",

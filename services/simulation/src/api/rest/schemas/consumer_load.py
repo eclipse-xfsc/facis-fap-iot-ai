@@ -55,7 +55,9 @@ class ConsumerLoadHistoryResponse(BaseModel):
     """Historical consumer load readings response."""
 
     device_id: str = Field(..., description="Device identifier")
-    readings: list[ConsumerLoadReadingResponse] = Field(..., description="Historical readings")
+    readings: list[ConsumerLoadReadingResponse] = Field(
+        ..., description="Historical readings"
+    )
     count: int = Field(..., description="Number of readings")
     limit: int = Field(..., description="Maximum requested")
     has_more: bool = Field(..., description="Whether more data is available")

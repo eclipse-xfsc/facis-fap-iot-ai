@@ -1,6 +1,6 @@
 """Unit tests for Smart City hybrid correlation analytics and context builder."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from src.analytics.smart_city_correlation import (
     CorrelationResult,
@@ -9,7 +9,9 @@ from src.analytics.smart_city_correlation import (
 from src.llm.context_builder import build_smart_city_correlation_context
 
 
-def test_analyze_event_infrastructure_correlation_detects_high_confidence_pattern() -> None:
+def test_analyze_event_infrastructure_correlation_detects_high_confidence_pattern() -> (
+    None
+):
     rows = []
     for hour in range(24):
         rows.append(
@@ -48,7 +50,9 @@ def test_analyze_event_infrastructure_correlation_detects_high_confidence_patter
     assert result.lag_distribution == {"0-6h": 10, "6-24h": 18, "24-48h": 0}
     assert len(result.high_confidence_links) == 1
     assert result.high_confidence_links[0]["event_type"] == "accident"
-    zone_a = next(item for item in result.zone_response_summary if item["zone_id"] == "zone-a")
+    zone_a = next(
+        item for item in result.zone_response_summary if item["zone_id"] == "zone-a"
+    )
     assert zone_a["patterns"] == 2
 
 
@@ -82,8 +86,8 @@ def test_build_smart_city_correlation_context_has_stable_shape() -> None:
         ],
     )
     context = build_smart_city_correlation_context(
-        start_ts=datetime(2026, 3, 1, tzinfo=timezone.utc),
-        end_ts=datetime(2026, 3, 3, tzinfo=timezone.utc),
+        start_ts=datetime(2026, 3, 1, tzinfo=UTC),
+        end_ts=datetime(2026, 3, 3, tzinfo=UTC),
         timezone="UTC",
         total_rows=12,
         correlation_result=result,

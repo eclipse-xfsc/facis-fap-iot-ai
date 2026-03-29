@@ -1,12 +1,10 @@
 """Tests for energy meter simulator."""
 
 import json
-from datetime import datetime, timedelta, timezone
-
-import pytest
+from datetime import UTC, datetime
 
 from src.core.random_generator import DeterministicRNG
-from src.core.time_series import IntervalMinutes, TimeRange
+from src.core.time_series import TimeRange
 from src.models.meter import MeterConfig, MeterReading
 from src.simulators.energy_meter import (
     DayType,
@@ -22,31 +20,31 @@ class TestLoadCurves:
     def test_get_day_type_weekday(self) -> None:
         """Test that Monday-Friday are identified as weekdays."""
         # Monday 2024-01-01
-        monday = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        monday = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
         assert get_day_type(monday) == DayType.WEEKDAY
 
         # Friday 2024-01-05
-        friday = datetime(2024, 1, 5, 12, 0, 0, tzinfo=timezone.utc)
+        friday = datetime(2024, 1, 5, 12, 0, 0, tzinfo=UTC)
         assert get_day_type(friday) == DayType.WEEKDAY
 
     def test_get_day_type_weekend(self) -> None:
         """Test that Saturday-Sunday are identified as weekend."""
         # Saturday 2024-01-06
-        saturday = datetime(2024, 1, 6, 12, 0, 0, tzinfo=timezone.utc)
+        saturday = datetime(2024, 1, 6, 12, 0, 0, tzinfo=UTC)
         assert get_day_type(saturday) == DayType.WEEKEND
 
         # Sunday 2024-01-07
-        sunday = datetime(2024, 1, 7, 12, 0, 0, tzinfo=timezone.utc)
+        sunday = datetime(2024, 1, 7, 12, 0, 0, tzinfo=UTC)
         assert get_day_type(sunday) == DayType.WEEKEND
 
     def test_load_factor_peak_hours_weekday(self) -> None:
         """Test that load factor is higher during peak hours on weekdays."""
         # Monday at 10:00 (peak)
-        peak_time = datetime(2024, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
+        peak_time = datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC)
         peak_factor = get_load_factor(peak_time)
 
         # Monday at 03:00 (off-peak)
-        offpeak_time = datetime(2024, 1, 1, 3, 0, 0, tzinfo=timezone.utc)
+        offpeak_time = datetime(2024, 1, 1, 3, 0, 0, tzinfo=UTC)
         offpeak_factor = get_load_factor(offpeak_time)
 
         assert peak_factor > offpeak_factor
@@ -56,11 +54,11 @@ class TestLoadCurves:
     def test_load_factor_weekend_lower(self) -> None:
         """Test that weekend load is lower than weekday at same hour."""
         # Monday 10:00
-        weekday_time = datetime(2024, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
+        weekday_time = datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC)
         weekday_factor = get_load_factor(weekday_time)
 
         # Saturday 10:00
-        weekend_time = datetime(2024, 1, 6, 10, 0, 0, tzinfo=timezone.utc)
+        weekend_time = datetime(2024, 1, 6, 10, 0, 0, tzinfo=UTC)
         weekend_factor = get_load_factor(weekend_time)
 
         assert weekend_factor < weekday_factor
@@ -69,7 +67,7 @@ class TestLoadCurves:
 
     def test_load_factor_interpolation(self) -> None:
         """Test that load factor interpolates smoothly between hours."""
-        base_time = datetime(2024, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
+        base_time = datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC)
 
         # Get factors at 10:00, 10:15, 10:30, 10:45
         factors = []
@@ -91,7 +89,7 @@ class TestMeterReading:
         from src.models.meter import MeterReadings
 
         reading = MeterReading(
-            timestamp=datetime(2026, 1, 21, 14, 30, 0, tzinfo=timezone.utc),
+            timestamp=datetime(2026, 1, 21, 14, 30, 0, tzinfo=UTC),
             meter_id="janitza-umg96rm-001",
             readings=MeterReadings(
                 active_power_l1_w=1234.5,
@@ -158,7 +156,7 @@ class TestEnergyMeterSimulator:
         rng = DeterministicRNG(seed=12345)
         simulator = EnergyMeterSimulator("meter-001", rng)
 
-        timestamp = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
         point = simulator.generate_at(timestamp)
 
         reading = point.value
@@ -175,7 +173,7 @@ class TestEnergyMeterSimulator:
 
         # Generate multiple readings
         for hour in range(24):
-            timestamp = datetime(2024, 1, 1, hour, 0, 0, tzinfo=timezone.utc)
+            timestamp = datetime(2024, 1, 1, hour, 0, 0, tzinfo=UTC)
             reading = simulator.generate_at(timestamp).value
 
             # Check all phases are within tolerance
@@ -192,7 +190,7 @@ class TestEnergyMeterSimulator:
         simulator = EnergyMeterSimulator("meter-001", rng)
 
         for hour in range(24):
-            timestamp = datetime(2024, 1, 1, hour, 0, 0, tzinfo=timezone.utc)
+            timestamp = datetime(2024, 1, 1, hour, 0, 0, tzinfo=UTC)
             reading = simulator.generate_at(timestamp).value
 
             assert 0.95 <= reading.readings.power_factor <= 0.99
@@ -203,7 +201,7 @@ class TestEnergyMeterSimulator:
         simulator = EnergyMeterSimulator("meter-001", rng)
 
         for hour in range(24):
-            timestamp = datetime(2024, 1, 1, hour, 0, 0, tzinfo=timezone.utc)
+            timestamp = datetime(2024, 1, 1, hour, 0, 0, tzinfo=UTC)
             reading = simulator.generate_at(timestamp).value
 
             assert abs(reading.readings.frequency_hz - 50.0) <= 0.05
@@ -214,8 +212,8 @@ class TestEnergyMeterSimulator:
         simulator = EnergyMeterSimulator("meter-001", rng)
 
         # Generate readings at peak (high power) and off-peak (low power)
-        peak_time = datetime(2024, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
-        offpeak_time = datetime(2024, 1, 1, 3, 0, 0, tzinfo=timezone.utc)
+        peak_time = datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC)
+        offpeak_time = datetime(2024, 1, 1, 3, 0, 0, tzinfo=UTC)
 
         peak_reading = simulator.generate_at(peak_time).value
         offpeak_reading = simulator.generate_at(offpeak_time).value
@@ -305,11 +303,11 @@ class TestDailyPatterns:
         simulator = EnergyMeterSimulator("meter-001", rng)
 
         # Monday 10:00 (peak weekday)
-        weekday_time = datetime(2024, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
+        weekday_time = datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC)
         weekday_reading = simulator.generate_at(weekday_time).value
 
         # Saturday 10:00 (weekend)
-        weekend_time = datetime(2024, 1, 6, 10, 0, 0, tzinfo=timezone.utc)
+        weekend_time = datetime(2024, 1, 6, 10, 0, 0, tzinfo=UTC)
         weekend_reading = simulator.generate_at(weekend_time).value
 
         weekday_power = (
@@ -335,7 +333,7 @@ class TestDailyPatterns:
         # Generate readings for a full weekday
         hourly_powers = []
         for hour in range(24):
-            timestamp = datetime(2024, 1, 1, hour, 0, 0, tzinfo=timezone.utc)
+            timestamp = datetime(2024, 1, 1, hour, 0, 0, tzinfo=UTC)
             reading = simulator.generate_at(timestamp).value
             total_power = (
                 reading.readings.active_power_l1_w
@@ -359,7 +357,7 @@ class TestDeterminism:
 
     def test_same_seed_produces_identical_readings(self) -> None:
         """Test that same seed produces identical readings."""
-        timestamp = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
 
         results = []
         for _ in range(5):
@@ -372,7 +370,7 @@ class TestDeterminism:
 
     def test_different_meters_produce_different_readings(self) -> None:
         """Test that different meters produce different readings."""
-        timestamp = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
         rng = DeterministicRNG(seed=12345)
 
         sim1 = EnergyMeterSimulator("meter-001", rng)
@@ -382,7 +380,9 @@ class TestDeterminism:
         reading2 = sim2.generate_at(timestamp).value
 
         # Power values should be different due to different entity seeds
-        assert reading1.readings.active_power_l1_w != reading2.readings.active_power_l1_w
+        assert (
+            reading1.readings.active_power_l1_w != reading2.readings.active_power_l1_w
+        )
 
 
 class TestJSONPayload:
@@ -393,7 +393,7 @@ class TestJSONPayload:
         rng = DeterministicRNG(seed=12345)
         simulator = EnergyMeterSimulator("janitza-umg96rm-001", rng)
 
-        timestamp = datetime(2026, 1, 21, 14, 30, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2026, 1, 21, 14, 30, 0, tzinfo=UTC)
         reading = simulator.generate_at(timestamp).value
 
         payload = reading.to_json_payload()
@@ -430,7 +430,7 @@ class TestJSONPayload:
         rng = DeterministicRNG(seed=12345)
         simulator = EnergyMeterSimulator("meter-001", rng)
 
-        timestamp = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
         reading = simulator.generate_at(timestamp).value
         payload = reading.to_json_payload()
 

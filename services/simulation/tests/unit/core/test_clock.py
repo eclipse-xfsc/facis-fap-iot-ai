@@ -1,7 +1,7 @@
 """Unit tests for the simulation clock module."""
 
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 
 import pytest
 
@@ -136,7 +136,9 @@ class TestClockAcceleration:
 
     def test_accelerated_time_advances_faster(self) -> None:
         """Test that accelerated time advances faster than real time."""
-        clock = SimulationClock(acceleration=100, start_time="2024-01-01T00:00:00+00:00")
+        clock = SimulationClock(
+            acceleration=100, start_time="2024-01-01T00:00:00+00:00"
+        )
         initial_time = clock.simulation_time
 
         clock.start()
@@ -209,7 +211,9 @@ class TestClockPauseResume:
 
     def test_resume_continues_from_paused_time(self) -> None:
         """Test that resuming continues from the paused time."""
-        clock = SimulationClock(acceleration=100, start_time="2024-01-01T00:00:00+00:00")
+        clock = SimulationClock(
+            acceleration=100, start_time="2024-01-01T00:00:00+00:00"
+        )
 
         clock.start()
         time.sleep(0.05)

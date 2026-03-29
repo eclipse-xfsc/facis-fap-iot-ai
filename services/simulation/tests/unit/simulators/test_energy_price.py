@@ -1,12 +1,9 @@
 """Tests for energy price simulator."""
 
 import json
-from datetime import datetime, timezone
-
-import pytest
+from datetime import UTC, datetime
 
 from src.core.random_generator import DeterministicRNG
-from src.core.time_series import IntervalMinutes, TimeRange
 from src.models.price import PriceConfig, PriceReading, TariffType
 from src.simulators.energy_price import (
     EnergyPriceSimulator,
@@ -21,31 +18,31 @@ class TestTariffTypes:
     def test_night_tariff(self) -> None:
         """Test night tariff period (00:00-06:00)."""
         for hour in range(0, 6):
-            ts = datetime(2024, 1, 1, hour, 0, 0, tzinfo=timezone.utc)
+            ts = datetime(2024, 1, 1, hour, 0, 0, tzinfo=UTC)
             assert get_tariff_type(ts) == TariffType.NIGHT
 
     def test_morning_peak_tariff(self) -> None:
         """Test morning peak tariff period (06:00-09:00)."""
         for hour in range(6, 9):
-            ts = datetime(2024, 1, 1, hour, 0, 0, tzinfo=timezone.utc)
+            ts = datetime(2024, 1, 1, hour, 0, 0, tzinfo=UTC)
             assert get_tariff_type(ts) == TariffType.MORNING_PEAK
 
     def test_midday_tariff(self) -> None:
         """Test midday tariff period (09:00-17:00)."""
         for hour in range(9, 17):
-            ts = datetime(2024, 1, 1, hour, 0, 0, tzinfo=timezone.utc)
+            ts = datetime(2024, 1, 1, hour, 0, 0, tzinfo=UTC)
             assert get_tariff_type(ts) == TariffType.MIDDAY
 
     def test_evening_peak_tariff(self) -> None:
         """Test evening peak tariff period (17:00-20:00)."""
         for hour in range(17, 20):
-            ts = datetime(2024, 1, 1, hour, 0, 0, tzinfo=timezone.utc)
+            ts = datetime(2024, 1, 1, hour, 0, 0, tzinfo=UTC)
             assert get_tariff_type(ts) == TariffType.EVENING_PEAK
 
     def test_evening_tariff(self) -> None:
         """Test evening tariff period (20:00-00:00)."""
         for hour in range(20, 24):
-            ts = datetime(2024, 1, 1, hour, 0, 0, tzinfo=timezone.utc)
+            ts = datetime(2024, 1, 1, hour, 0, 0, tzinfo=UTC)
             assert get_tariff_type(ts) == TariffType.EVENING
 
 
@@ -55,21 +52,21 @@ class TestWeekendDetection:
     def test_weekday_detection(self) -> None:
         """Test that Monday-Friday are not weekends."""
         # Monday 2024-01-01
-        monday = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        monday = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
         assert not is_weekend(monday)
 
         # Friday 2024-01-05
-        friday = datetime(2024, 1, 5, 12, 0, 0, tzinfo=timezone.utc)
+        friday = datetime(2024, 1, 5, 12, 0, 0, tzinfo=UTC)
         assert not is_weekend(friday)
 
     def test_weekend_detection(self) -> None:
         """Test that Saturday-Sunday are weekends."""
         # Saturday 2024-01-06
-        saturday = datetime(2024, 1, 6, 12, 0, 0, tzinfo=timezone.utc)
+        saturday = datetime(2024, 1, 6, 12, 0, 0, tzinfo=UTC)
         assert is_weekend(saturday)
 
         # Sunday 2024-01-07
-        sunday = datetime(2024, 1, 7, 12, 0, 0, tzinfo=timezone.utc)
+        sunday = datetime(2024, 1, 7, 12, 0, 0, tzinfo=UTC)
         assert is_weekend(sunday)
 
 
@@ -79,7 +76,7 @@ class TestPriceReading:
     def test_price_reading_creation(self) -> None:
         """Test creating a price reading."""
         reading = PriceReading(
-            timestamp=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
             price_eur_per_kwh=0.26,
             tariff_type=TariffType.MIDDAY,
         )
@@ -90,7 +87,7 @@ class TestPriceReading:
     def test_price_reading_to_json_payload(self) -> None:
         """Test JSON payload format."""
         reading = PriceReading(
-            timestamp=datetime(2024, 1, 1, 14, 30, 0, tzinfo=timezone.utc),
+            timestamp=datetime(2024, 1, 1, 14, 30, 0, tzinfo=UTC),
             price_eur_per_kwh=0.2654,
             tariff_type=TariffType.MIDDAY,
         )
@@ -133,7 +130,7 @@ class TestEnergyPriceSimulator:
         rng = DeterministicRNG(seed=12345)
         simulator = EnergyPriceSimulator("epex-spot-de", rng)
 
-        timestamp = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
         point = simulator.generate_at(timestamp)
 
         reading = point.value
@@ -147,7 +144,7 @@ class TestEnergyPriceSimulator:
         simulator = EnergyPriceSimulator("epex-spot-de", rng)
 
         for hour in range(24):
-            timestamp = datetime(2024, 1, 1, hour, 0, 0, tzinfo=timezone.utc)
+            timestamp = datetime(2024, 1, 1, hour, 0, 0, tzinfo=UTC)
             reading = simulator.generate_at(timestamp).value
 
             assert reading.tariff_type is not None
@@ -163,11 +160,11 @@ class TestPricePatterns:
         simulator = EnergyPriceSimulator("epex-spot-de", rng)
 
         # Night price at 03:00
-        night_ts = datetime(2024, 1, 1, 3, 0, 0, tzinfo=timezone.utc)
+        night_ts = datetime(2024, 1, 1, 3, 0, 0, tzinfo=UTC)
         night_reading = simulator.generate_at(night_ts).value
 
         # Evening peak at 19:00
-        peak_ts = datetime(2024, 1, 1, 19, 0, 0, tzinfo=timezone.utc)
+        peak_ts = datetime(2024, 1, 1, 19, 0, 0, tzinfo=UTC)
         peak_reading = simulator.generate_at(peak_ts).value
 
         assert night_reading.price_eur_per_kwh < peak_reading.price_eur_per_kwh
@@ -180,14 +177,16 @@ class TestPricePatterns:
         # Collect prices at different times
         times_and_prices = []
         for hour in [3, 8, 12, 19]:  # Night, morning peak, midday, evening peak
-            ts = datetime(2024, 1, 1, hour, 0, 0, tzinfo=timezone.utc)
+            ts = datetime(2024, 1, 1, hour, 0, 0, tzinfo=UTC)
             reading = simulator.generate_at(ts).value
             times_and_prices.append((hour, reading.price_eur_per_kwh))
 
         # Evening peak (19:00) should be highest
         evening_peak_price = times_and_prices[3][1]
         for hour, price in times_and_prices[:3]:
-            assert evening_peak_price > price, f"Evening peak should be higher than hour {hour}"
+            assert (
+                evening_peak_price > price
+            ), f"Evening peak should be higher than hour {hour}"
 
     def test_morning_peak_rising(self) -> None:
         """Test that morning peak (~0.33 EUR/kWh) is elevated."""
@@ -195,11 +194,11 @@ class TestPricePatterns:
         simulator = EnergyPriceSimulator("epex-spot-de", rng)
 
         # Morning peak at 08:00
-        morning_ts = datetime(2024, 1, 1, 8, 0, 0, tzinfo=timezone.utc)
+        morning_ts = datetime(2024, 1, 1, 8, 0, 0, tzinfo=UTC)
         morning_reading = simulator.generate_at(morning_ts).value
 
         # Night at 03:00
-        night_ts = datetime(2024, 1, 1, 3, 0, 0, tzinfo=timezone.utc)
+        night_ts = datetime(2024, 1, 1, 3, 0, 0, tzinfo=UTC)
         night_reading = simulator.generate_at(night_ts).value
 
         assert morning_reading.price_eur_per_kwh > night_reading.price_eur_per_kwh
@@ -210,14 +209,14 @@ class TestPricePatterns:
         simulator = EnergyPriceSimulator("epex-spot-de", rng)
 
         # Midday at 12:00
-        midday_ts = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        midday_ts = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
         midday_reading = simulator.generate_at(midday_ts).value
 
         # Should be between night and evening peak (roughly)
-        night_ts = datetime(2024, 1, 1, 3, 0, 0, tzinfo=timezone.utc)
+        night_ts = datetime(2024, 1, 1, 3, 0, 0, tzinfo=UTC)
         night_reading = simulator.generate_at(night_ts).value
 
-        peak_ts = datetime(2024, 1, 1, 19, 0, 0, tzinfo=timezone.utc)
+        peak_ts = datetime(2024, 1, 1, 19, 0, 0, tzinfo=UTC)
         peak_reading = simulator.generate_at(peak_ts).value
 
         assert night_reading.price_eur_per_kwh < midday_reading.price_eur_per_kwh
@@ -238,11 +237,11 @@ class TestWeekendPricing:
         simulator = EnergyPriceSimulator("test", rng, config=config)
 
         # Monday 10:00 (weekday)
-        weekday_ts = datetime(2024, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
+        weekday_ts = datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC)
         weekday_reading = simulator.generate_at(weekday_ts).value
 
         # Saturday 10:00 (weekend)
-        weekend_ts = datetime(2024, 1, 6, 10, 0, 0, tzinfo=timezone.utc)
+        weekend_ts = datetime(2024, 1, 6, 10, 0, 0, tzinfo=UTC)
         weekend_reading = simulator.generate_at(weekend_ts).value
 
         # Weekend should be lower (without volatility, this is guaranteed)
@@ -259,14 +258,13 @@ class TestWeekendPricing:
         simulator = EnergyPriceSimulator("test", rng, config=config)
 
         # Same hour on weekday and weekend
-        weekday_ts = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
-        weekend_ts = datetime(2024, 1, 6, 12, 0, 0, tzinfo=timezone.utc)
+        weekday_ts = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
+        weekend_ts = datetime(2024, 1, 6, 12, 0, 0, tzinfo=UTC)
 
         weekday_price = simulator.generate_at(weekday_ts).value.price_eur_per_kwh
         weekend_price = simulator.generate_at(weekend_ts).value.price_eur_per_kwh
 
         # Weekend should be roughly 7.5% lower
-        expected_ratio = 1 - 0.075
         actual_ratio = weekend_price / weekday_price
 
         assert 0.90 <= actual_ratio <= 0.95
@@ -287,7 +285,7 @@ class TestVolatility:
         # Generate prices for same hour on different days
         prices = []
         for day in range(1, 8):  # 7 days
-            ts = datetime(2024, 1, day, 12, 0, 0, tzinfo=timezone.utc)
+            ts = datetime(2024, 1, day, 12, 0, 0, tzinfo=UTC)
             reading = simulator.generate_at(ts).value
             prices.append(reading.price_eur_per_kwh)
 
@@ -308,7 +306,7 @@ class TestVolatility:
         # Generate many readings
         prices = []
         for day in range(1, 32):  # 31 days
-            ts = datetime(2024, 1, day, 12, 0, 0, tzinfo=timezone.utc)
+            ts = datetime(2024, 1, day, 12, 0, 0, tzinfo=UTC)
             if ts.weekday() < 5:  # Only weekdays for consistency
                 reading = simulator.generate_at(ts).value
                 prices.append(reading.price_eur_per_kwh)
@@ -331,7 +329,7 @@ class TestPriceFloor:
         # Generate many readings
         for day in range(1, 32):
             for hour in range(24):
-                ts = datetime(2024, 1, day, hour, 0, 0, tzinfo=timezone.utc)
+                ts = datetime(2024, 1, day, hour, 0, 0, tzinfo=UTC)
                 reading = simulator.generate_at(ts).value
                 assert reading.price_eur_per_kwh >= 0
 
@@ -347,7 +345,7 @@ class TestPriceFloor:
         # Generate many readings
         for day in range(1, 32):
             for hour in range(24):
-                ts = datetime(2024, 1, day, hour, 0, 0, tzinfo=timezone.utc)
+                ts = datetime(2024, 1, day, hour, 0, 0, tzinfo=UTC)
                 reading = simulator.generate_at(ts).value
                 assert reading.price_eur_per_kwh >= 0.05
 
@@ -357,7 +355,7 @@ class TestDeterminism:
 
     def test_same_seed_produces_identical_prices(self) -> None:
         """Test that same seed produces identical prices."""
-        timestamp = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
 
         results = []
         for _ in range(5):
@@ -370,7 +368,7 @@ class TestDeterminism:
 
     def test_different_feeds_produce_different_prices(self) -> None:
         """Test that different feed IDs produce different prices."""
-        timestamp = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
         rng = DeterministicRNG(seed=12345)
 
         sim1 = EnergyPriceSimulator("feed-001", rng)
@@ -390,7 +388,7 @@ class TestJSONPayload:
         rng = DeterministicRNG(seed=12345)
         simulator = EnergyPriceSimulator("epex-spot-de", rng)
 
-        timestamp = datetime(2024, 1, 1, 14, 30, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2024, 1, 1, 14, 30, 0, tzinfo=UTC)
         reading = simulator.generate_at(timestamp).value
         payload = reading.to_json_payload()
 
@@ -411,7 +409,7 @@ class TestJSONPayload:
         rng = DeterministicRNG(seed=12345)
         simulator = EnergyPriceSimulator("epex-spot-de", rng)
 
-        timestamp = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
         reading = simulator.generate_at(timestamp).value
         payload = reading.to_json_payload()
 
@@ -432,7 +430,7 @@ class TestAnalyticsMethods:
         rng = DeterministicRNG(seed=12345)
         simulator = EnergyPriceSimulator("epex-spot-de", rng)
 
-        date = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        date = datetime(2024, 1, 1, tzinfo=UTC)
         avg_price = simulator.get_average_daily_price(date)
 
         # Average should be reasonable (between night and peak)
@@ -443,7 +441,7 @@ class TestAnalyticsMethods:
         rng = DeterministicRNG(seed=12345)
         simulator = EnergyPriceSimulator("epex-spot-de", rng)
 
-        date = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        date = datetime(2024, 1, 1, tzinfo=UTC)
         min_price, max_price = simulator.get_price_range(date)
 
         assert min_price < max_price

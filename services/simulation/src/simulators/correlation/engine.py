@@ -199,9 +199,11 @@ class CorrelationEngine:
         net_grid_power_kw = total_consumption_kw - total_generation_kw
 
         # Self-consumption ratio: how much of generation is self-consumed
-        # If generation > consumption, we export the excess (self-consumption = consumption/generation)
+        # If generation > consumption, we export the excess
+        # (self-consumption = consumption / generation)
         # If generation <= consumption, we use all generation (self-consumption = 1.0)
-        # If no generation, ratio is 0 (or could be defined as 1.0 since no generation to self-consume)
+        # If no generation, ratio is 0
+        # (or could be defined as 1.0 since no generation to self-consume)
         if total_generation_kw > 0:
             self_consumed_kw = min(total_generation_kw, total_consumption_kw)
             self_consumption_ratio = self_consumed_kw / total_generation_kw
@@ -217,7 +219,9 @@ class CorrelationEngine:
         # Export might have feed-in tariff but we charge 0 for simplicity
         if price_reading is not None and net_grid_power_kw > 0:
             # Cost = power (kW) * price (EUR/kWh) = EUR/hour
-            current_cost_eur_per_hour = net_grid_power_kw * price_reading.price_eur_per_kwh
+            current_cost_eur_per_hour = (
+                net_grid_power_kw * price_reading.price_eur_per_kwh
+            )
         else:
             # No cost if exporting or no price data
             current_cost_eur_per_hour = 0.0
@@ -307,7 +311,9 @@ class CorrelationEngine:
         # Get weather simulator
         weather_sim = None
         if config.weather_station_id:
-            weather_sim = simulation_state.get_weather_station(config.weather_station_id)
+            weather_sim = simulation_state.get_weather_station(
+                config.weather_station_id
+            )
 
         # Get PV simulators
         pv_sims = []

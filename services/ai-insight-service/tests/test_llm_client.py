@@ -38,7 +38,9 @@ def test_client_extracts_message_content(monkeypatch) -> None:
             },
         ),
     )
-    text, raw = client.create_chat_completion(messages=[{"role": "user", "content": "test"}])
+    text, raw = client.create_chat_completion(
+        messages=[{"role": "user", "content": "test"}]
+    )
     assert '"summary":"ok"' in text
     assert raw["model"] == "llama-2-7b-chat"
 

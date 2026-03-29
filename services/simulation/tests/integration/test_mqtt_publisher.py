@@ -15,6 +15,7 @@ import os
 import threading
 import time
 from collections import defaultdict
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
@@ -53,7 +54,9 @@ def mqtt_publisher(mqtt_broker_host: str, mqtt_broker_port: int) -> MQTTPublishe
     connected = publisher.connect()
 
     if not connected:
-        pytest.skip(f"Could not connect to MQTT broker at {mqtt_broker_host}:{mqtt_broker_port}")
+        pytest.skip(
+            f"Could not connect to MQTT broker at {mqtt_broker_host}:{mqtt_broker_port}"
+        )
 
     # Wait for connection
     for _ in range(50):  # 5 seconds max
@@ -152,6 +155,22 @@ class MQTTTestSubscriber:
             time.sleep(0.1)
         return []
 
+    def wait_for_message(
+        self,
+        topic: str,
+        predicate: Callable[[dict], bool] | None = None,
+        timeout: float = 2.0,
+    ) -> dict | None:
+        """Wait until a message on a topic matches a predicate."""
+        start = time.time()
+        while time.time() - start < timeout:
+            with self._lock:
+                for message in reversed(self.messages.get(topic, [])):
+                    if predicate is None or predicate(message):
+                        return message
+            time.sleep(0.05)
+        return None
+
     def clear(self) -> None:
         """Clear received messages."""
         with self._lock:
@@ -241,19 +260,39 @@ class TestMQTTTopics:
 class TestMQTTPublisherConnection:
     """Test MQTT publisher connection handling."""
 
-    def test_connect_success(self, mqtt_broker_host: str, mqtt_broker_port: int) -> None:
+    def test_connect_success(
+        self, mqtt_broker_host: str, mqtt_broker_port: int
+    ) -> None:
         """Test successful connection to broker."""
-        publisher = MQTTPublisher(
-            host=mqtt_broker_host,
-            port=mqtt_broker_port,
-            client_id=f"test-{time.time_ns()}",
-        )
+        publisher: MQTTPublisher | None = None
+        result = False
+        deadline = time.monotonic() + 5.0
 
-        result = publisher.connect()
-        assert result is True
+        # CI can start tests while the MQTT container is still booting.
+        while time.monotonic() < deadline:
+            if publisher is not None:
+                publisher.disconnect()
+            publisher = MQTTPublisher(
+                host=mqtt_broker_host,
+                port=mqtt_broker_port,
+                client_id=f"test-{time.time_ns()}",
+            )
+            result = publisher.connect()
+            if result:
+                break
+            time.sleep(0.25)
 
-        # Wait for connection
-        time.sleep(0.5)
+        if not result:
+            pytest.skip(
+                f"Could not connect to MQTT broker at {mqtt_broker_host}:{mqtt_broker_port}"
+            )
+        assert publisher is not None
+
+        # Wait for async callback to mark state as connected
+        for _ in range(50):  # 5 seconds max
+            if publisher.is_connected:
+                break
+            time.sleep(0.1)
         assert publisher.is_connected
 
         publisher.disconnect()
@@ -389,10 +428,13 @@ class TestMQTTPublishing:
         result = mqtt_publisher.publish_weather(reading)
         assert result.success is True
 
-        messages = mqtt_subscriber.get_messages(topic, timeout=2.0)
-        assert len(messages) >= 1
-        # Note: retained flag may be False for messages received after subscribe
-        assert messages[-1]["payload"]["conditions"]["temperature_c"] == 22.5
+        message = mqtt_subscriber.wait_for_message(
+            topic,
+            predicate=lambda m: m["payload"].get("conditions", {}).get("temperature_c")
+            == 22.5,
+            timeout=2.0,
+        )
+        assert message is not None
 
     def test_publish_spot_price(
         self,
@@ -414,9 +456,12 @@ class TestMQTTPublishing:
         result = mqtt_publisher.publish_spot_price(reading)
         assert result.success is True
 
-        messages = mqtt_subscriber.get_messages(topic, timeout=2.0)
-        assert len(messages) >= 1
-        assert messages[-1]["payload"]["price_eur_per_kwh"] == 0.2567
+        message = mqtt_subscriber.wait_for_message(
+            topic,
+            predicate=lambda m: m["payload"].get("price_eur_per_kwh") == 0.2567,
+            timeout=2.0,
+        )
+        assert message is not None
 
     def test_publish_price_forecast(
         self,
@@ -592,11 +637,15 @@ class TestMQTTFeedPublisher:
         assert len(meter_msgs) >= 1
 
         # Verify weather messages
-        weather_msgs = mqtt_subscriber.get_messages(MQTTTopics.weather_topic(), timeout=1.0)
+        weather_msgs = mqtt_subscriber.get_messages(
+            MQTTTopics.weather_topic(), timeout=1.0
+        )
         assert len(weather_msgs) >= 1
 
         # Verify price messages
-        price_msgs = mqtt_subscriber.get_messages(MQTTTopics.spot_price_topic(), timeout=1.0)
+        price_msgs = mqtt_subscriber.get_messages(
+            MQTTTopics.spot_price_topic(), timeout=1.0
+        )
         assert len(price_msgs) >= 1
 
     def test_publish_simulation_status(
@@ -628,9 +677,12 @@ class TestMQTTFeedPublisher:
 
         assert result.success is True
 
-        messages = mqtt_subscriber.get_messages(topic, timeout=2.0)
-        assert len(messages) >= 1
-        assert messages[-1]["payload"]["acceleration"] == 10
+        message = mqtt_subscriber.wait_for_message(
+            topic,
+            predicate=lambda m: m["payload"].get("acceleration") == 10,
+            timeout=2.0,
+        )
+        assert message is not None
 
 
 # =============================================================================

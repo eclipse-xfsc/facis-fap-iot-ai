@@ -59,7 +59,9 @@ def test_prompt_payload_renders_all_supported_insight_types() -> None:
         "smart_city_correlation",
         "energy_trend_forecast",
     ):
-        payload = build_prompt_payload(insight_type=insight_type, context={"summary": {}})
+        payload = build_prompt_payload(
+            insight_type=insight_type, context={"summary": {}}
+        )
         assert "Insight type:" in payload["system"]
         assert "Context JSON:" in payload["user"]
 

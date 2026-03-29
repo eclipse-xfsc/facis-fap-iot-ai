@@ -1,12 +1,10 @@
 """Tests for weather simulator."""
 
 import json
-from datetime import datetime, timezone
-
-import pytest
+from datetime import UTC, datetime
 
 from src.core.random_generator import DeterministicRNG
-from src.core.time_series import IntervalMinutes, TimeRange
+from src.core.time_series import TimeRange
 from src.models.weather import WeatherConfig, WeatherReading
 from src.simulators.weather import (
     WeatherSimulator,
@@ -24,31 +22,31 @@ class TestTemperatureCycles:
 
     def test_seasonal_factor_summer(self) -> None:
         """Test seasonal factor is positive in summer (July)."""
-        summer = datetime(2024, 7, 1, 12, 0, 0, tzinfo=timezone.utc)
+        summer = datetime(2024, 7, 1, 12, 0, 0, tzinfo=UTC)
         factor = get_seasonal_factor(summer)
         assert factor > 0.8  # Near peak summer
 
     def test_seasonal_factor_winter(self) -> None:
         """Test seasonal factor is negative in winter (January)."""
-        winter = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        winter = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
         factor = get_seasonal_factor(winter)
         assert factor < -0.8  # Near peak winter
 
     def test_seasonal_factor_range(self) -> None:
         """Test seasonal factor is always between -1 and 1."""
         for month in range(1, 13):
-            timestamp = datetime(2024, month, 15, 12, 0, 0, tzinfo=timezone.utc)
+            timestamp = datetime(2024, month, 15, 12, 0, 0, tzinfo=UTC)
             factor = get_seasonal_factor(timestamp)
             assert -1 <= factor <= 1
 
     def test_diurnal_factor_warmest_afternoon(self) -> None:
         """Test diurnal factor peaks around 15:00."""
         # Test at 15:00 (peak)
-        peak_time = datetime(2024, 7, 1, 15, 0, 0, tzinfo=timezone.utc)
+        peak_time = datetime(2024, 7, 1, 15, 0, 0, tzinfo=UTC)
         peak_factor = get_diurnal_factor(peak_time)
 
         # Test at 03:00 (minimum - 12 hours from peak)
-        min_time = datetime(2024, 7, 1, 3, 0, 0, tzinfo=timezone.utc)
+        min_time = datetime(2024, 7, 1, 3, 0, 0, tzinfo=UTC)
         min_factor = get_diurnal_factor(min_time)
 
         assert peak_factor > min_factor
@@ -58,19 +56,19 @@ class TestTemperatureCycles:
     def test_diurnal_factor_coldest_early_morning(self) -> None:
         """Test diurnal factor is lowest in early morning hours."""
         # 03:00 should be near coldest (12h from 15:00 peak)
-        early_morning = datetime(2024, 7, 1, 3, 0, 0, tzinfo=timezone.utc)
+        early_morning = datetime(2024, 7, 1, 3, 0, 0, tzinfo=UTC)
         early_factor = get_diurnal_factor(early_morning)
 
         # Noon should be warmer
-        noon = datetime(2024, 7, 1, 12, 0, 0, tzinfo=timezone.utc)
+        noon = datetime(2024, 7, 1, 12, 0, 0, tzinfo=UTC)
         noon_factor = get_diurnal_factor(noon)
 
         assert early_factor < noon_factor
 
     def test_temperature_summer_vs_winter(self) -> None:
         """Test temperature is higher in summer than winter."""
-        summer = datetime(2024, 7, 1, 12, 0, 0, tzinfo=timezone.utc)
-        winter = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        summer = datetime(2024, 7, 1, 12, 0, 0, tzinfo=UTC)
+        winter = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
 
         summer_temp = calculate_temperature(
             summer,
@@ -91,7 +89,7 @@ class TestTemperatureCycles:
 
     def test_temperature_daily_cycle(self) -> None:
         """Test temperature follows daily cycle."""
-        base_date = datetime(2024, 7, 1, 0, 0, 0, tzinfo=timezone.utc)
+        base_date = datetime(2024, 7, 1, 0, 0, 0, tzinfo=UTC)
 
         temps = []
         for hour in range(24):
@@ -121,7 +119,7 @@ class TestSolarIrradiance:
     def test_irradiance_zero_at_night(self) -> None:
         """Test irradiance is zero during nighttime."""
         # Berlin midnight in winter
-        midnight = datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+        midnight = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
         position = calculate_solar_position(midnight, latitude=52.52, longitude=13.405)
 
         assert not position.is_daylight
@@ -130,7 +128,9 @@ class TestSolarIrradiance:
     def test_irradiance_positive_during_day(self) -> None:
         """Test irradiance is positive during daylight."""
         # Berlin noon in summer
-        noon = datetime(2024, 7, 1, 11, 0, 0, tzinfo=timezone.utc)  # Solar noon ~11 UTC for Berlin
+        noon = datetime(
+            2024, 7, 1, 11, 0, 0, tzinfo=UTC
+        )  # Solar noon ~11 UTC for Berlin
         position = calculate_solar_position(noon, latitude=52.52, longitude=13.405)
 
         assert position.is_daylight
@@ -166,7 +166,7 @@ class TestSolarIrradiance:
 
     def test_irradiance_peak_around_noon(self) -> None:
         """Test peak irradiance occurs around solar noon."""
-        date = datetime(2024, 7, 1, tzinfo=timezone.utc)
+        date = datetime(2024, 7, 1, tzinfo=UTC)
         latitude = 52.52
         longitude = 13.405
 
@@ -230,7 +230,6 @@ class TestCloudFactor:
     def test_cloud_factor_reduces_irradiance(self) -> None:
         """Test that cloud cover reduces GHI."""
         rng = DeterministicRNG(seed=12345)
-        simulator = WeatherSimulator("station-001", rng)
 
         # Generate reading with low clouds
         config_clear = WeatherConfig(base_cloud_cover_percent=10.0)
@@ -241,7 +240,7 @@ class TestCloudFactor:
         sim_cloudy = WeatherSimulator("cloudy", rng, config=config_cloudy)
 
         # Midday in summer
-        timestamp = datetime(2024, 7, 1, 12, 0, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2024, 7, 1, 12, 0, 0, tzinfo=UTC)
 
         clear_reading = sim_clear.generate_at(timestamp).value
         cloudy_reading = sim_cloudy.generate_at(timestamp).value
@@ -260,7 +259,7 @@ class TestCloudFactor:
         )
         simulator = WeatherSimulator("station", rng, config=config)
 
-        timestamp = datetime(2024, 7, 1, 12, 0, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2024, 7, 1, 12, 0, 0, tzinfo=UTC)
         reading = simulator.generate_at(timestamp).value
 
         # Even at 100% cloud cover, GHI should be > 0 during day (factor >= 0.5)
@@ -298,7 +297,7 @@ class TestWeatherSimulator:
         rng = DeterministicRNG(seed=12345)
         simulator = WeatherSimulator("station-001", rng)
 
-        timestamp = datetime(2024, 7, 1, 12, 0, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2024, 7, 1, 12, 0, 0, tzinfo=UTC)
         point = simulator.generate_at(timestamp)
 
         reading = point.value
@@ -312,7 +311,7 @@ class TestWeatherSimulator:
         rng = DeterministicRNG(seed=12345)
         simulator = WeatherSimulator("station-001", rng)
 
-        timestamp = datetime(2024, 7, 1, 12, 0, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2024, 7, 1, 12, 0, 0, tzinfo=UTC)
         reading = simulator.generate_at(timestamp).value
 
         # Check all conditions are present
@@ -331,7 +330,7 @@ class TestWeatherSimulator:
         simulator = WeatherSimulator("station-001", rng)
 
         for day in range(1, 366, 30):  # Sample days across year
-            timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc).replace(
+            timestamp = datetime(2024, 1, 1, tzinfo=UTC).replace(
                 month=min((day // 30) + 1, 12)
             )
             for hour in [6, 12, 18]:
@@ -375,7 +374,7 @@ class TestIrradianceComponents:
         simulator = WeatherSimulator("station-001", rng)
 
         # Midday reading
-        timestamp = datetime(2024, 7, 1, 12, 0, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2024, 7, 1, 12, 0, 0, tzinfo=UTC)
         reading = simulator.generate_at(timestamp).value
 
         ghi = reading.conditions.ghi_w_m2
@@ -405,7 +404,7 @@ class TestIrradianceComponents:
         sim_clear = WeatherSimulator("clear", rng, config=config_clear)
         sim_cloudy = WeatherSimulator("cloudy", rng, config=config_cloudy)
 
-        timestamp = datetime(2024, 7, 1, 12, 0, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2024, 7, 1, 12, 0, 0, tzinfo=UTC)
 
         clear_reading = sim_clear.generate_at(timestamp).value
         cloudy_reading = sim_cloudy.generate_at(timestamp).value
@@ -430,7 +429,7 @@ class TestPVCorrelation:
         rng = DeterministicRNG(seed=12345)
         simulator = WeatherSimulator("station-001", rng)
 
-        timestamp = datetime(2024, 7, 1, 12, 0, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2024, 7, 1, 12, 0, 0, tzinfo=UTC)
         ghi = simulator.get_irradiance_for_pv(timestamp)
 
         # Should return positive GHI during day
@@ -441,7 +440,7 @@ class TestPVCorrelation:
         rng = DeterministicRNG(seed=12345)
         simulator = WeatherSimulator("station-001", rng)
 
-        timestamp = datetime(2024, 7, 1, 12, 0, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2024, 7, 1, 12, 0, 0, tzinfo=UTC)
         temp = simulator.get_temperature_for_pv(timestamp)
 
         # Should return reasonable temperature
@@ -453,7 +452,7 @@ class TestDeterminism:
 
     def test_same_seed_produces_identical_readings(self) -> None:
         """Test that same seed produces identical readings."""
-        timestamp = datetime(2024, 7, 1, 12, 0, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2024, 7, 1, 12, 0, 0, tzinfo=UTC)
 
         results = []
         for _ in range(5):
@@ -466,7 +465,7 @@ class TestDeterminism:
 
     def test_different_stations_produce_different_readings(self) -> None:
         """Test that different stations produce different readings."""
-        timestamp = datetime(2024, 7, 1, 12, 0, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2024, 7, 1, 12, 0, 0, tzinfo=UTC)
         rng = DeterministicRNG(seed=12345)
 
         sim1 = WeatherSimulator("station-001", rng)
@@ -487,7 +486,7 @@ class TestJSONPayload:
         rng = DeterministicRNG(seed=12345)
         simulator = WeatherSimulator("station-001", rng)
 
-        timestamp = datetime(2026, 1, 21, 14, 0, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2026, 1, 21, 14, 0, 0, tzinfo=UTC)
         reading = simulator.generate_at(timestamp).value
 
         payload = reading.to_json_payload()
@@ -524,7 +523,7 @@ class TestJSONPayload:
         rng = DeterministicRNG(seed=12345)
         simulator = WeatherSimulator("station-001", rng)
 
-        timestamp = datetime(2024, 7, 1, 12, 0, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2024, 7, 1, 12, 0, 0, tzinfo=UTC)
         reading = simulator.generate_at(timestamp).value
         payload = reading.to_json_payload()
 
@@ -542,7 +541,7 @@ class TestJSONPayload:
         config = WeatherConfig(latitude=52.52, longitude=13.405)
         simulator = WeatherSimulator("station-001", rng, config=config)
 
-        timestamp = datetime(2026, 1, 21, 14, 0, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2026, 1, 21, 14, 0, 0, tzinfo=UTC)
         reading = simulator.generate_at(timestamp).value
         payload = reading.to_json_payload()
 

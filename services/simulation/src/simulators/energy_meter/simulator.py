@@ -235,7 +235,8 @@ class EnergyMeterSimulator(BaseTimeSeriesGenerator[MeterReading]):
 
         avg_power_kw = (
             self._config.base_power_kw
-            + (self._config.peak_power_kw - self._config.base_power_kw) * avg_load_factor
+            + (self._config.peak_power_kw - self._config.base_power_kw)
+            * avg_load_factor
         )
 
         # Calculate energy: E = P_avg * t
@@ -273,7 +274,9 @@ class EnergyMeterSimulator(BaseTimeSeriesGenerator[MeterReading]):
                 + reading.readings.active_power_l3_w
             ) / 1000
 
-            energy_increment = self._calculate_energy_increment(total_power_kw, interval_hours)
+            energy_increment = self._calculate_energy_increment(
+                total_power_kw, interval_hours
+            )
             cumulative_energy += energy_increment
 
             # Update the reading with accurate cumulative energy
@@ -329,7 +332,9 @@ class EnergyMeterSimulator(BaseTimeSeriesGenerator[MeterReading]):
                 + reading.readings.active_power_l3_w
             ) / 1000
 
-            energy_increment = self._calculate_energy_increment(total_power_kw, interval_hours)
+            energy_increment = self._calculate_energy_increment(
+                total_power_kw, interval_hours
+            )
             cumulative_energy += energy_increment
 
             updated_readings = MeterReadings(

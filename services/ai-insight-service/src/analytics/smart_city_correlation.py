@@ -166,7 +166,9 @@ def analyze_event_infrastructure_correlation(
             sum(dimming_values) / len(dimming_values) if dimming_values else 0.0
         )
 
-        power_z = _safe_z(event_avg_power, baseline["power_median"], baseline["power_mad"])
+        power_z = _safe_z(
+            event_avg_power, baseline["power_median"], baseline["power_mad"]
+        )
         dimming_z = _safe_z(
             event_avg_dimming,
             baseline["dimming_median"],
@@ -197,7 +199,9 @@ def analyze_event_infrastructure_correlation(
         event_count = int(_to_float(group_rows[0].get("event_count")) or 0.0)
         active_count = int(_to_float(group_rows[0].get("active_count")) or 0.0)
         severity_factor = min(1.0, severity / 3.0)
-        activity_factor = min(1.0, active_count / max(1, event_count)) if event_count else 0.0
+        activity_factor = (
+            min(1.0, active_count / max(1, event_count)) if event_count else 0.0
+        )
         anomaly_strength = min(1.0, (abs(power_z) + abs(dimming_z)) / 6.0)
 
         response_score = (

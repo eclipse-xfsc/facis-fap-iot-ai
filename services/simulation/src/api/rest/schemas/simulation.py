@@ -45,7 +45,9 @@ class SimulationResetRequest(BaseModel):
     """Request to reset simulation."""
 
     seed: int | None = Field(default=None, description="New seed value")
-    start_time: str | None = Field(default=None, description="New start time (ISO 8601)")
+    start_time: str | None = Field(
+        default=None, description="New start time (ISO 8601)"
+    )
 
 
 class SimulationResetResponse(BaseModel):

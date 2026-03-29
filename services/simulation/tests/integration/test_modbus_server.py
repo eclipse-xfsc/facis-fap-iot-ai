@@ -154,7 +154,9 @@ class TestCreateModbusServer:
 class TestModbusClientConnection:
     """Integration tests with actual Modbus client connections."""
 
-    async def test_server_start_stop(self, free_tcp_port: int, meter_reading: MeterReading) -> None:
+    async def test_server_start_stop(
+        self, free_tcp_port: int, meter_reading: MeterReading
+    ) -> None:
         """Test server can start and stop."""
         server = await create_modbus_server(
             port=free_tcp_port,

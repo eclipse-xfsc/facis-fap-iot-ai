@@ -1,7 +1,7 @@
 """Unit tests for the time-series generator module."""
 
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -39,7 +39,7 @@ class TestTimeSeriesPoint:
 
     def test_point_creation(self) -> None:
         """Test creating a time-series point."""
-        ts = datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+        ts = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
         point = TimeSeriesPoint(timestamp=ts, value=42.0)
 
         assert point.timestamp == ts
@@ -47,14 +47,14 @@ class TestTimeSeriesPoint:
 
     def test_timestamp_iso_format(self) -> None:
         """Test timestamp ISO 8601 format."""
-        ts = datetime(2024, 1, 1, 12, 30, 0, tzinfo=timezone.utc)
+        ts = datetime(2024, 1, 1, 12, 30, 0, tzinfo=UTC)
         point = TimeSeriesPoint(timestamp=ts, value=0)
 
         assert point.timestamp_iso == "2024-01-01T12:30:00+00:00"
 
     def test_timestamp_ms(self) -> None:
         """Test timestamp as Unix milliseconds."""
-        ts = datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+        ts = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
         point = TimeSeriesPoint(timestamp=ts, value=0)
 
         expected_ms = 1704067200000
@@ -66,8 +66,8 @@ class TestTimeRange:
 
     def test_range_creation(self) -> None:
         """Test creating a time range."""
-        start = datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-        end = datetime(2024, 1, 2, 0, 0, 0, tzinfo=timezone.utc)
+        start = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
+        end = datetime(2024, 1, 2, 0, 0, 0, tzinfo=UTC)
         time_range = TimeRange(start=start, end=end)
 
         assert time_range.start == start
@@ -75,8 +75,8 @@ class TestTimeRange:
 
     def test_invalid_range_raises_error(self) -> None:
         """Test that start >= end raises error."""
-        start = datetime(2024, 1, 2, 0, 0, 0, tzinfo=timezone.utc)
-        end = datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+        start = datetime(2024, 1, 2, 0, 0, 0, tzinfo=UTC)
+        end = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
 
         with pytest.raises(ValueError, match="Start time must be before end time"):
             TimeRange(start=start, end=end)
@@ -124,7 +124,7 @@ class TestBaseTimeSeriesGenerator:
         generator = SimpleGenerator("entity-001", rng, IntervalMinutes.FIFTEEN_MINUTES)
 
         # 12:07:30 should align to 12:00:00
-        ts = datetime(2024, 1, 1, 12, 7, 30, tzinfo=timezone.utc)
+        ts = datetime(2024, 1, 1, 12, 7, 30, tzinfo=UTC)
         aligned = generator.align_timestamp(ts)
 
         assert aligned.hour == 12
@@ -137,7 +137,7 @@ class TestBaseTimeSeriesGenerator:
         generator = SimpleGenerator("entity-001", rng, IntervalMinutes.ONE_HOUR)
 
         # 12:45:30 should align to 12:00:00
-        ts = datetime(2024, 1, 1, 12, 45, 30, tzinfo=timezone.utc)
+        ts = datetime(2024, 1, 1, 12, 45, 30, tzinfo=UTC)
         aligned = generator.align_timestamp(ts)
 
         assert aligned.hour == 12
@@ -149,7 +149,7 @@ class TestBaseTimeSeriesGenerator:
         rng = DeterministicRNG(seed=12345)
         generator = SimpleGenerator("entity-001", rng)
 
-        ts = datetime(2024, 1, 1, 12, 7, 30, tzinfo=timezone.utc)
+        ts = datetime(2024, 1, 1, 12, 7, 30, tzinfo=UTC)
         point = generator.generate_at(ts)
 
         assert isinstance(point, TimeSeriesPoint)
@@ -172,7 +172,7 @@ class TestBaseTimeSeriesGenerator:
         rng = DeterministicRNG(seed=12345)
         generator = SimpleGenerator("entity-001", rng, IntervalMinutes.FIFTEEN_MINUTES)
 
-        start = datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+        start = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
         points = generator.generate_batch(start, count=4)
 
         assert len(points) == 4
@@ -189,7 +189,7 @@ class TestDeterminismGuarantees:
         """Test that same seed + entity + timestamp = identical value."""
         seed = 12345
         entity_id = "meter-001"
-        ts = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        ts = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
 
         # Generate value twice with fresh instances
         rng1 = DeterministicRNG(seed=seed)
@@ -205,7 +205,7 @@ class TestDeterminismGuarantees:
     def test_different_entities_produce_different_values(self) -> None:
         """Test that different entities produce different values."""
         seed = 12345
-        ts = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        ts = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
 
         rng = DeterministicRNG(seed=seed)
         generator1 = SimpleGenerator("meter-001", rng)
@@ -225,7 +225,9 @@ class TestDeterminismGuarantees:
         for _ in range(5):
             rng = DeterministicRNG(seed=seed)
             generator = SimpleGenerator(entity_id, rng)
-            time_range = TimeRange.from_iso("2024-01-01T00:00:00", "2024-01-01T06:00:00")
+            time_range = TimeRange.from_iso(
+                "2024-01-01T00:00:00", "2024-01-01T06:00:00"
+            )
             points = generator.generate_range(time_range)
             results.append([p.value for p in points])
 
@@ -237,7 +239,9 @@ class TestDeterminismGuarantees:
         """Test that query order doesn't affect values."""
         seed = 12345
         entity_id = "entity-001"
-        timestamps = [datetime(2024, 1, 1, hour, 0, 0, tzinfo=timezone.utc) for hour in range(24)]
+        timestamps = [
+            datetime(2024, 1, 1, hour, 0, 0, tzinfo=UTC) for hour in range(24)
+        ]
 
         # Generate in forward order
         rng1 = DeterministicRNG(seed=seed)
@@ -247,7 +251,9 @@ class TestDeterminismGuarantees:
         # Generate in reverse order
         rng2 = DeterministicRNG(seed=seed)
         generator2 = SimpleGenerator(entity_id, rng2)
-        reverse_values = [generator2.generate_at(ts).value for ts in reversed(timestamps)]
+        reverse_values = [
+            generator2.generate_at(ts).value for ts in reversed(timestamps)
+        ]
         reverse_values.reverse()
 
         assert forward_values == reverse_values
@@ -265,8 +271,8 @@ class TestPerformance:
         rng = DeterministicRNG(seed=12345)
         generator = SimpleGenerator("meter-001", rng, IntervalMinutes.FIFTEEN_MINUTES)
 
-        start = datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-        end = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+        start = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
+        end = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
         time_range = TimeRange(start=start, end=end)
 
         # 2024 is a leap year (366 days)
@@ -288,8 +294,8 @@ class TestPerformance:
         rng = DeterministicRNG(seed=12345)
         generator = SimpleGenerator("meter-001", rng, IntervalMinutes.ONE_HOUR)
 
-        start = datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-        end = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+        start = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
+        end = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
         time_range = TimeRange(start=start, end=end)
 
         # 2024 is a leap year (366 days)
@@ -337,8 +343,8 @@ class TestPerformance:
         rng = DeterministicRNG(seed=12345)
         generator = SimpleGenerator("meter-001", rng, IntervalMinutes.FIFTEEN_MINUTES)
 
-        start = datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-        end = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+        start = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
+        end = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
         time_range = TimeRange(start=start, end=end)
 
         # Iterate and count without storing all points

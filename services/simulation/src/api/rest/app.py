@@ -21,7 +21,9 @@ from src.core.engine import EngineState
 logger = logging.getLogger(__name__)
 
 # docs/openapi.yaml relative to project root (parent of src/)
-_OPENAPI_SPEC = Path(__file__).resolve().parent.parent.parent.parent / "docs" / "openapi.yaml"
+_OPENAPI_SPEC = (
+    Path(__file__).resolve().parent.parent.parent.parent / "docs" / "openapi.yaml"
+)
 
 
 class MQTTPublishTask:
@@ -180,7 +182,12 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     # title, description, version live in docs/openapi.yaml and are served at /docs
-    app = FastAPI(docs_url="/docs", redoc_url="/redoc", openapi_url="/openapi.json", lifespan=lifespan)
+    app = FastAPI(
+        docs_url="/docs",
+        redoc_url="/redoc",
+        openapi_url="/openapi.json",
+        lifespan=lifespan,
+    )
 
     # CORS middleware
     app.add_middleware(

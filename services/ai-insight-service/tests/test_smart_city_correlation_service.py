@@ -1,6 +1,6 @@
 """Unit tests for Smart City correlation service orchestration."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from src.services.smart_city_correlation_service import SmartCityCorrelationService
 
@@ -24,8 +24,8 @@ def test_generate_correlation_context_handles_empty_rows() -> None:
         trino_client=_FakeTrinoClient(rows=[])  # type: ignore[arg-type]
     )
     context = service.generate_correlation_context(
-        start_ts=datetime(2026, 3, 1, tzinfo=timezone.utc),
-        end_ts=datetime(2026, 3, 2, tzinfo=timezone.utc),
+        start_ts=datetime(2026, 3, 1, tzinfo=UTC),
+        end_ts=datetime(2026, 3, 2, tzinfo=UTC),
         timezone="UTC",
     )
 
@@ -41,8 +41,8 @@ def test_generate_correlation_context_validates_time_window() -> None:
 
     try:
         service.generate_correlation_context(
-            start_ts=datetime(2026, 3, 2, tzinfo=timezone.utc),
-            end_ts=datetime(2026, 3, 1, tzinfo=timezone.utc),
+            start_ts=datetime(2026, 3, 2, tzinfo=UTC),
+            end_ts=datetime(2026, 3, 1, tzinfo=UTC),
             timezone="UTC",
         )
         assert False, "expected ValueError for invalid time window"
@@ -68,8 +68,8 @@ def test_generate_correlation_context_invokes_trino_with_bounds() -> None:
         ]
     )
     service = SmartCityCorrelationService(trino_client=fake)  # type: ignore[arg-type]
-    start_ts = datetime(2026, 3, 2, tzinfo=timezone.utc)
-    end_ts = datetime(2026, 3, 3, tzinfo=timezone.utc)
+    start_ts = datetime(2026, 3, 2, tzinfo=UTC)
+    end_ts = datetime(2026, 3, 3, tzinfo=UTC)
 
     context = service.generate_correlation_context(
         start_ts=start_ts,

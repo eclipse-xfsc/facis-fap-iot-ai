@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-from datetime import timezone as dt_timezone
+from datetime import UTC, datetime
 from typing import Any
 
-import requests
+import requests  # type: ignore[import-untyped]
 import trino
 from trino.auth import JWTAuthentication
 
@@ -44,7 +43,9 @@ class TrinoQueryClient:
         if not client_id:
             raise ValueError("Trino OIDC password flow requires trino.oidc_client_id")
         if not client_secret:
-            raise ValueError("Trino OIDC password flow requires trino.oidc_client_secret")
+            raise ValueError(
+                "Trino OIDC password flow requires trino.oidc_client_secret"
+            )
         if not username:
             raise ValueError("Trino OIDC password flow requires trino.oidc_username")
         if not password:
@@ -84,7 +85,7 @@ class TrinoQueryClient:
             port=self._config.port,
             user=self._config.user,
             catalog=self._config.catalog,
-            schema=self._config.schema,
+            schema=self._config.schema_name,
             http_scheme=self._config.http_scheme,
             auth=auth,
             verify=self._normalize_verify(self._config.verify),
@@ -117,8 +118,8 @@ class TrinoQueryClient:
     @staticmethod
     def _to_utc_iso8601(value: datetime) -> str:
         """Normalize datetimes to UTC ISO-8601 (`...Z`) for Trino predicates."""
-        normalized = value if value.tzinfo is not None else value.replace(tzinfo=dt_timezone.utc)
-        utc_value = normalized.astimezone(dt_timezone.utc)
+        normalized = value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+        utc_value = normalized.astimezone(UTC)
         return utc_value.isoformat(timespec="seconds").replace("+00:00", "Z")
 
     def fetch_net_grid_hourly(
@@ -131,7 +132,9 @@ class TrinoQueryClient:
         """Fetch rows for the selected time range and return rows + timestamp column."""
         timestamp_col = timestamp_column
         selected_columns = list(dict.fromkeys([timestamp_col, *metric_columns]))
-        projected_sql = ", ".join(self._quote_ident(column) for column in selected_columns)
+        projected_sql = ", ".join(
+            self._quote_ident(column) for column in selected_columns
+        )
 
         start_iso = self._to_utc_iso8601(start_ts)
         end_iso = self._to_utc_iso8601(end_ts)
@@ -163,7 +166,9 @@ class TrinoQueryClient:
         start_iso = self._to_utc_iso8601(start_ts)
         end_iso = self._to_utc_iso8601(end_ts)
         event_table = self._qualified_gold_table(self._config.table_event_impact_daily)
-        streetlight_table = self._qualified_gold_table(self._config.table_streetlight_zone_hourly)
+        streetlight_table = self._qualified_gold_table(
+            self._config.table_streetlight_zone_hourly
+        )
 
         query = (
             "SELECT "
@@ -214,7 +219,9 @@ class TrinoQueryClient:
         net_grid_table = self._qualified_gold_table(self._config.table_net_grid_hourly)
         weather_table = self._qualified_gold_table(self._config.table_weather_hourly)
         cost_table = self._qualified_gold_table(self._config.table_energy_cost_daily)
-        pv_table = self._qualified_gold_table(self._config.table_pv_self_consumption_daily)
+        pv_table = self._qualified_gold_table(
+            self._config.table_pv_self_consumption_daily
+        )
 
         hourly_query = (
             "SELECT "

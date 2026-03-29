@@ -17,7 +17,11 @@ from typing import Any, ClassVar
 
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
-from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
+from pydantic_settings import (
+    BaseSettings,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -447,16 +451,22 @@ class Settings(BaseSettings):
 
     simulation: SimulationConfig = Field(default_factory=SimulationConfig)
     meters: list[MeterConfig] = Field(
-        default_factory=lambda: [MeterConfig(id="meter-001", base_load_kw=10.0, peak_load_kw=25.0)],
+        default_factory=lambda: [
+            MeterConfig(id="meter-001", base_load_kw=10.0, peak_load_kw=25.0)
+        ],
         description="List of energy meter configurations",
     )
     pv_systems: list[PVSystemConfig] = Field(
-        default_factory=lambda: [PVSystemConfig(id="pv-system-001", nominal_capacity_kw=10.0)],
+        default_factory=lambda: [
+            PVSystemConfig(id="pv-system-001", nominal_capacity_kw=10.0)
+        ],
         description="List of PV system configurations",
     )
     consumers: list[ConsumerConfig] = Field(
         default_factory=lambda: [
-            ConsumerConfig(id="oven-001", rated_power_kw=3.5, device_type="industrial_oven"),
+            ConsumerConfig(
+                id="oven-001", rated_power_kw=3.5, device_type="industrial_oven"
+            ),
             ConsumerConfig(id="hvac-001", rated_power_kw=2.0, device_type="hvac"),
         ],
         description="List of consumer device configurations",

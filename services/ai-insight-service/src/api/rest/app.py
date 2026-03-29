@@ -11,7 +11,9 @@ from src.api.rest.routes.insights import insights_router, outputs_router
 logger = logging.getLogger(__name__)
 
 # docs/openapi.yaml relative to project root (parent of src/)
-_OPENAPI_SPEC = Path(__file__).resolve().parent.parent.parent.parent / "docs" / "openapi.yaml"
+_OPENAPI_SPEC = (
+    Path(__file__).resolve().parent.parent.parent.parent / "docs" / "openapi.yaml"
+)
 
 
 def create_app() -> FastAPI:

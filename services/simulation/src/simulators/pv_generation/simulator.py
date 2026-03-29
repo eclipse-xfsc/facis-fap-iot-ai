@@ -97,7 +97,9 @@ class PVGenerationSimulator(BaseTimeSeriesGenerator[PVReading]):
         """Return the nominal capacity in kWp."""
         return self._config.nominal_capacity_kwp
 
-    def calculate_module_temperature(self, ambient_temp_c: float, irradiance_w_m2: float) -> float:
+    def calculate_module_temperature(
+        self, ambient_temp_c: float, irradiance_w_m2: float
+    ) -> float:
         """
         Calculate module temperature based on ambient temperature and irradiance.
 
@@ -132,11 +134,15 @@ class PVGenerationSimulator(BaseTimeSeriesGenerator[PVReading]):
         """
         temp_diff = module_temp_c - self._config.reference_temperature_c
         # Temperature coefficient is negative (e.g., -0.4 means -0.4%/°C)
-        derating = 1.0 + (self._config.temperature_coefficient_pct_per_c / 100.0) * temp_diff
+        derating = (
+            1.0 + (self._config.temperature_coefficient_pct_per_c / 100.0) * temp_diff
+        )
         # Clamp to reasonable range (can't generate negative power, but can exceed at low temps)
         return max(0.0, min(1.2, derating))
 
-    def calculate_power_output(self, irradiance_w_m2: float, module_temp_c: float) -> float:
+    def calculate_power_output(
+        self, irradiance_w_m2: float, module_temp_c: float
+    ) -> float:
         """
         Calculate PV power output.
 
@@ -161,12 +167,19 @@ class PVGenerationSimulator(BaseTimeSeriesGenerator[PVReading]):
         loss_factor = 1.0 - (self._config.system_losses_percent / 100.0)
 
         # Calculate power
-        power_kw = self._config.nominal_capacity_kwp * irradiance_factor * temp_factor * loss_factor
+        power_kw = (
+            self._config.nominal_capacity_kwp
+            * irradiance_factor
+            * temp_factor
+            * loss_factor
+        )
 
         # Cap at nominal capacity (can't exceed rated power)
         return min(power_kw, self._config.nominal_capacity_kwp)
 
-    def calculate_efficiency(self, power_output_kw: float, irradiance_w_m2: float) -> float:
+    def calculate_efficiency(
+        self, power_output_kw: float, irradiance_w_m2: float
+    ) -> float:
         """
         Calculate current system efficiency.
 
@@ -246,13 +259,17 @@ class PVGenerationSimulator(BaseTimeSeriesGenerator[PVReading]):
         ambient_temp_c = weather_reading.conditions.temperature_c
 
         # Calculate module temperature
-        module_temp_c = self.calculate_module_temperature(ambient_temp_c, irradiance_w_m2)
+        module_temp_c = self.calculate_module_temperature(
+            ambient_temp_c, irradiance_w_m2
+        )
 
         # Calculate power output
         power_kw = self.calculate_power_output(irradiance_w_m2, module_temp_c)
 
         # Update daily energy
-        daily_energy_kwh = self._update_daily_energy(timestamp, power_kw, self._interval.value)
+        daily_energy_kwh = self._update_daily_energy(
+            timestamp, power_kw, self._interval.value
+        )
 
         # Calculate efficiency
         efficiency = self.calculate_efficiency(power_kw, irradiance_w_m2)
@@ -292,9 +309,9 @@ class PVGenerationSimulator(BaseTimeSeriesGenerator[PVReading]):
         if date.tzinfo is None:
             start = datetime(date.year, date.month, date.day, tzinfo=UTC)
         else:
-            start = datetime(date.year, date.month, date.day, tzinfo=date.tzinfo).replace(
-                hour=0, minute=0, second=0, microsecond=0
-            )
+            start = datetime(
+                date.year, date.month, date.day, tzinfo=date.tzinfo
+            ).replace(hour=0, minute=0, second=0, microsecond=0)
 
         readings = []
         interval_delta = timedelta(minutes=self._interval.value)

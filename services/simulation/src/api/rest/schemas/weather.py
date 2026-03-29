@@ -48,7 +48,9 @@ class WeatherStationInfo(BaseModel):
 class WeatherListResponse(BaseModel):
     """Weather stations list response."""
 
-    stations: list[WeatherStationInfo] = Field(..., description="List of weather stations")
+    stations: list[WeatherStationInfo] = Field(
+        ..., description="List of weather stations"
+    )
     count: int = Field(..., description="Number of stations")
 
 
@@ -56,7 +58,9 @@ class WeatherHistoryResponse(BaseModel):
     """Weather history API response."""
 
     station_id: str = Field(..., description="Weather station identifier")
-    readings: list[WeatherReadingResponse] = Field(..., description="Historical readings")
+    readings: list[WeatherReadingResponse] = Field(
+        ..., description="Historical readings"
+    )
     count: int = Field(..., description="Number of readings returned")
     limit: int = Field(..., description="Requested limit")
     has_more: bool = Field(..., description="Whether more results exist")

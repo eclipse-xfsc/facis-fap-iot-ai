@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Iterator
+from collections.abc import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
@@ -172,7 +172,9 @@ def integration_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
 
 
 @pytest.fixture()
-def governed_integration_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
+def governed_integration_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[TestClient]:
     """Integration client with real policy/rate-limit checks enabled."""
     env_map = {
         **_base_env(),

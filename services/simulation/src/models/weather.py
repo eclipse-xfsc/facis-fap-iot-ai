@@ -20,15 +20,23 @@ class WeatherConditions(BaseModel):
     """Weather measurement values."""
 
     temperature_c: float = Field(..., description="Temperature in Celsius")
-    humidity_percent: float = Field(..., ge=0, le=100, description="Relative humidity percentage")
+    humidity_percent: float = Field(
+        ..., ge=0, le=100, description="Relative humidity percentage"
+    )
     wind_speed_ms: float = Field(..., ge=0, description="Wind speed in m/s")
     wind_direction_deg: float = Field(
         ..., ge=0, lt=360, description="Wind direction in degrees (0=N, 90=E)"
     )
-    cloud_cover_percent: float = Field(..., ge=0, le=100, description="Cloud cover percentage")
-    ghi_w_m2: float = Field(..., ge=0, description="Global Horizontal Irradiance in W/m²")
+    cloud_cover_percent: float = Field(
+        ..., ge=0, le=100, description="Cloud cover percentage"
+    )
+    ghi_w_m2: float = Field(
+        ..., ge=0, description="Global Horizontal Irradiance in W/m²"
+    )
     dni_w_m2: float = Field(..., ge=0, description="Direct Normal Irradiance in W/m²")
-    dhi_w_m2: float = Field(..., ge=0, description="Diffuse Horizontal Irradiance in W/m²")
+    dhi_w_m2: float = Field(
+        ..., ge=0, description="Diffuse Horizontal Irradiance in W/m²"
+    )
 
 
 class WeatherReading(BaseModel):
@@ -67,23 +75,39 @@ class WeatherConfig(BaseModel):
     longitude: float = Field(default=13.405, ge=-180, le=180, description="Longitude")
 
     # Temperature parameters (Celsius)
-    base_temperature_summer_c: float = Field(default=20.0, description="Base summer temperature")
-    base_temperature_winter_c: float = Field(default=2.0, description="Base winter temperature")
-    daily_temp_amplitude_c: float = Field(default=8.0, description="Daily temperature amplitude")
-    temperature_variance_c: float = Field(default=2.0, description="Random temperature variance")
+    base_temperature_summer_c: float = Field(
+        default=20.0, description="Base summer temperature"
+    )
+    base_temperature_winter_c: float = Field(
+        default=2.0, description="Base winter temperature"
+    )
+    daily_temp_amplitude_c: float = Field(
+        default=8.0, description="Daily temperature amplitude"
+    )
+    temperature_variance_c: float = Field(
+        default=2.0, description="Random temperature variance"
+    )
 
     # Solar parameters
-    max_clear_sky_ghi_w_m2: float = Field(default=1000.0, ge=0, description="Maximum clear sky GHI")
+    max_clear_sky_ghi_w_m2: float = Field(
+        default=1000.0, ge=0, description="Maximum clear sky GHI"
+    )
 
     # Cloud parameters
     base_cloud_cover_percent: float = Field(
         default=40.0, ge=0, le=100, description="Average cloud cover"
     )
-    cloud_variance_percent: float = Field(default=20.0, ge=0, description="Cloud cover variance")
+    cloud_variance_percent: float = Field(
+        default=20.0, ge=0, description="Cloud cover variance"
+    )
 
     # Wind parameters
-    base_wind_speed_ms: float = Field(default=4.0, ge=0, description="Average wind speed")
-    wind_variance_ms: float = Field(default=3.0, ge=0, description="Wind speed variance")
+    base_wind_speed_ms: float = Field(
+        default=4.0, ge=0, description="Average wind speed"
+    )
+    wind_variance_ms: float = Field(
+        default=3.0, ge=0, description="Wind speed variance"
+    )
     prevailing_wind_direction_deg: float = Field(
         default=270.0, ge=0, lt=360, description="Prevailing wind direction"
     )
@@ -92,5 +116,9 @@ class WeatherConfig(BaseModel):
     )
 
     # Humidity parameters
-    base_humidity_percent: float = Field(default=65.0, ge=0, le=100, description="Average humidity")
-    humidity_variance_percent: float = Field(default=15.0, ge=0, description="Humidity variance")
+    base_humidity_percent: float = Field(
+        default=65.0, ge=0, le=100, description="Average humidity"
+    )
+    humidity_variance_percent: float = Field(
+        default=15.0, ge=0, description="Humidity variance"
+    )

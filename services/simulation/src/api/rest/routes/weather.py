@@ -108,9 +108,13 @@ async def get_weather_current(
 @router.get("/weather/{station_id}/history", response_model=WeatherHistoryResponse)
 async def get_weather_history(
     station_id: str,
-    start_time: datetime | None = Query(default=None, description="Start time (ISO 8601)"),
+    start_time: datetime | None = Query(
+        default=None, description="Start time (ISO 8601)"
+    ),
     end_time: datetime | None = Query(default=None, description="End time (ISO 8601)"),
-    interval: IntervalParam = Query(default=IntervalParam.FIFTEEN_MIN, description="Data interval"),
+    interval: IntervalParam = Query(
+        default=IntervalParam.FIFTEEN_MIN, description="Data interval"
+    ),
     limit: int = Query(default=100, ge=1, le=1000, description="Maximum results"),
     state: SimulationState = Depends(get_simulation_state),
 ) -> WeatherHistoryResponse:
