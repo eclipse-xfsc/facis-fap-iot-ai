@@ -200,10 +200,9 @@ class CorrelationEngine:
 
         # Self-consumption ratio: how much of generation is self-consumed
         # If generation > consumption, we export the excess
-        # (self-consumption = consumption / generation)
+        # (self-consumption = consumption/generation)
         # If generation <= consumption, we use all generation (self-consumption = 1.0)
-        # If no generation, ratio is 0
-        # (or could be defined as 1.0 since no generation to self-consume)
+        # If no generation, ratio is 0 (or 1.0 if defined as no generation to self-consume)
         if total_generation_kw > 0:
             self_consumed_kw = min(total_generation_kw, total_consumption_kw)
             self_consumption_ratio = self_consumed_kw / total_generation_kw

@@ -266,9 +266,9 @@ class TestMQTTPublisherConnection:
         """Test successful connection to broker."""
         publisher: MQTTPublisher | None = None
         result = False
-        deadline = time.monotonic() + 5.0
+        deadline = time.monotonic() + 10.0
 
-        # CI can start tests while the MQTT container is still booting.
+        # CI may start tests before the MQTT container listens; retry briefly.
         while time.monotonic() < deadline:
             if publisher is not None:
                 publisher.disconnect()
@@ -288,8 +288,8 @@ class TestMQTTPublisherConnection:
             )
         assert publisher is not None
 
-        # Wait for async callback to mark state as connected
-        for _ in range(50):  # 5 seconds max
+        # Wait for async on_connect
+        for _ in range(50):
             if publisher.is_connected:
                 break
             time.sleep(0.1)
@@ -578,9 +578,15 @@ class TestMQTTPublishing:
         result = mqtt_publisher.publish_simulation_status(status)
         assert result.success is True
 
-        messages = mqtt_subscriber.get_messages(topic, timeout=2.0)
-        assert len(messages) >= 1
-        assert messages[-1]["payload"]["state"] == "running"
+        message = mqtt_subscriber.wait_for_message(
+            topic,
+            predicate=lambda m: (
+                m["payload"].get("state") == "running"
+                and m["payload"].get("acceleration") == 1
+            ),
+            timeout=2.0,
+        )
+        assert message is not None
 
 
 # =============================================================================
@@ -770,13 +776,17 @@ class TestMQTTPayloadStructure:
         result = mqtt_publisher.publish_pv_reading(system_id, payload)
         assert result.success is True
 
-        messages = mqtt_subscriber.get_messages(topic, timeout=2.0)
-        assert len(messages) >= 1
-
-        received = messages[-1]["payload"]
+        message = mqtt_subscriber.wait_for_message(
+            topic,
+            predicate=lambda m: m["payload"].get("pv_system_id") == system_id,
+            timeout=2.0,
+        )
+        assert message is not None
+        received = message["payload"]
 
         assert "timestamp" in received
-        assert "system_id" in received
+        assert received.get("pv_system_id") == system_id
+        assert received.get("asset_id") == system_id
         assert "readings" in received
 
         readings = received["readings"]
