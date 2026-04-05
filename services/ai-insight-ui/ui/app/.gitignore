@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.vite/
+*.local
+
+# vue-tsc compiled output (must NOT exist — Vite uses these over .ts sources)
+src/**/*.js
+src/**/*.d.ts
+!src/env.d.ts

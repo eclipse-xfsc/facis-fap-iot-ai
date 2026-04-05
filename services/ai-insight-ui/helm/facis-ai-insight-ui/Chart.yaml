@@ -1,0 +1,30 @@
+apiVersion: v2
+name: facis-ai-insight-ui
+description: >-
+  Vue.js + UIBUILDER AI Insight dashboard for the FACIS FAP IoT & AI
+  demonstrator. Deploys as Node-RED flows and UI static files (ConfigMaps)
+  into the existing ORCE deployment. Includes a Secret for LLM API keys.
+  Does NOT create a Deployment or Service — the UI runs inside ORCE.
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+kubeVersion: ">=1.25.0"
+home: https://github.com/eclipse-xfsc/facis-fap-iot-ai
+sources:
+  - https://github.com/eclipse-xfsc/facis-fap-iot-ai
+maintainers:
+  - name: ATLAS IoT Lab GmbH
+    url: https://atlas-iot-lab.com
+keywords:
+  - facis
+  - iot
+  - ai
+  - vue
+  - uibuilder
+  - node-red
+  - orce
+  - llm
+  - dashboard
+annotations:
+  org.opencontainers.image.licenses: Apache-2.0
+  eclipse.org/project: facis

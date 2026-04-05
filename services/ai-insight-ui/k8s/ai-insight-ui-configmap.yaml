@@ -1,0 +1,64 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-insight-ui-flows
+  namespace: facis
+  labels:
+    app: orce
+    component: ai-insight-ui
+data:
+  # Import flows into ORCE via the Node-RED admin API:
+  #   kubectl get configmap ai-insight-ui-flows -n facis -o jsonpath='{.data.flows\.json}' | \
+  #     curl -X POST http://orce:1880/flows -H 'Content-Type: application/json' -d @-
+  #
+  # Or mount this ConfigMap as a volume and load on ORCE startup.
+  flows.json: |
+    # Contents of flows/flows.full.json should be placed here.
+    # Use: kubectl create configmap ai-insight-ui-flows --from-file=flows.json=flows/flows.full.json -n facis
+
+---
+# Secret for LLM API keys (create manually, do not commit keys)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: orce-llm-secrets
+  namespace: facis
+type: Opaque
+stringData:
+  openai-api-key: ""       # Set via: kubectl edit secret orce-llm-secrets -n facis
+  anthropic-api-key: ""    # Or: kubectl create secret generic orce-llm-secrets --from-literal=openai-api-key=sk-... -n facis
+  custom-llm-key: ""
+
+---
+# Patch for the existing ORCE deployment to add LLM env vars
+# Apply via: kubectl patch deployment orce -n facis --patch-file ai-insight-ui-configmap.yaml
+# Or add these env vars manually to the ORCE deployment.
+#
+# Required additions to orce-deployment.yaml env section:
+#
+# - name: AI_INSIGHT_BASE_URL
+#   value: "http://ai-insight-service:8080"
+# - name: FACIS_OPENAI_API_KEY
+#   valueFrom:
+#     secretKeyRef:
+#       name: orce-llm-secrets
+#       key: openai-api-key
+# - name: FACIS_OPENAI_MODEL
+#   value: "gpt-4.1-mini"
+# - name: FACIS_ANTHROPIC_API_KEY
+#   valueFrom:
+#     secretKeyRef:
+#       name: orce-llm-secrets
+#       key: anthropic-api-key
+# - name: FACIS_ANTHROPIC_MODEL
+#   value: "claude-sonnet-4-20250514"
+# - name: FACIS_CUSTOM_LLM_URL
+#   value: ""
+# - name: FACIS_CUSTOM_LLM_KEY
+#   valueFrom:
+#     secretKeyRef:
+#       name: orce-llm-secrets
+#       key: custom-llm-key
+#       optional: true
+# - name: FACIS_CUSTOM_LLM_MODEL
+#   value: "custom"

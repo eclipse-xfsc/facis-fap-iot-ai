@@ -19,6 +19,7 @@ dependencies = [
     "trino>=0.336.0",
     "redis",
     "pyyaml>=6.0.0",
+    "python-json-logger>=3.0.0",
 ]
 
 [project.optional-dependencies]

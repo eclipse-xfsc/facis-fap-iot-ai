@@ -42,6 +42,7 @@ trino:
   schema: default
   http_scheme: http
   verify: true
+  request_timeout_seconds: 120
 
 policy:
   enabled: true

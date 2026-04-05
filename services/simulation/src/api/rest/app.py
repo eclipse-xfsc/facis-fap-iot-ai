@@ -18,7 +18,19 @@ from src.api.mqtt import MQTTFeedPublisher, MQTTPublisher
 from src.api.orce.client import OrceClient
 from src.api.orce.envelope import build_tick_envelope
 from src.api.rest.dependencies import SimulationState
-from src.api.rest.routes import health, loads, meters, prices, pv, simulation, weather
+from src.api.rest.routes import (
+    city_events,
+    city_weather,
+    health,
+    loads,
+    meters,
+    prices,
+    pv,
+    simulation,
+    streetlights,
+    traffic,
+    weather,
+)
 from src.core.engine import EngineState
 
 logger = logging.getLogger(__name__)
@@ -340,6 +352,16 @@ def create_app() -> FastAPI:
     app.include_router(weather.router, prefix="/api/v1", tags=["Weather Data"])
     app.include_router(pv.router, prefix="/api/v1", tags=["PV Generation"])
     app.include_router(simulation.router, prefix="/api/v1", tags=["Simulation Control"])
+    app.include_router(
+        streetlights.router, prefix="/api/v1", tags=["Smart City - Streetlights"]
+    )
+    app.include_router(traffic.router, prefix="/api/v1", tags=["Smart City - Traffic"])
+    app.include_router(
+        city_events.router, prefix="/api/v1", tags=["Smart City - Events"]
+    )
+    app.include_router(
+        city_weather.router, prefix="/api/v1", tags=["Smart City - Weather"]
+    )
 
     with open(_OPENAPI_SPEC, encoding="utf-8") as f:
         app.openapi_schema = yaml.safe_load(f)

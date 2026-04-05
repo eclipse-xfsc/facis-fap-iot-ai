@@ -8,7 +8,7 @@
 # ---------------------------------------------------------------------------
 image:
   # -- Container registry and repository
-  repository: ghcr.io/siemens-2/facis/simulation-service
+  repository: ghcr.io/eclipse-xfsc/facis-fap-iot-ai/simulation-service
   # -- Image tag (defaults to Chart appVersion)
   tag: ""
   # -- Image pull policy

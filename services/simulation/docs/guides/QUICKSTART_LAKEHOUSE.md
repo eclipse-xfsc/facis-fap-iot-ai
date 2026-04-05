@@ -19,7 +19,7 @@ This guide walks through setting up, validating, and querying the FACIS Lakehous
 ## Step 1: Install Dependencies
 
 ```bash
-cd "FAP/IOT & AI over Trusted Zones/implementation/simulation-service"
+cd services/simulation
 
 # Install the simulation-service package with lakehouse extras
 pip install -e ".[lakehouse]"

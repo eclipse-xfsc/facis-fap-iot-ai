@@ -127,9 +127,12 @@ jobs:
     if: github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-      
-      - name: Build Docker image
+
+      - name: Build simulation image
         run: docker build -t facis-simulation:${{ github.sha }} -f services/simulation/Dockerfile services/simulation
+
+      - name: Build AI insight service image
+        run: docker build -t facis-ai-insight-service:${{ github.sha }} -f services/ai-insight-service/Dockerfile services/ai-insight-service
