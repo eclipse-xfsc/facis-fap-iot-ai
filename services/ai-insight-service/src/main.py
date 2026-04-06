@@ -6,11 +6,9 @@ import uvicorn
 
 from src.api.rest.app import create_app
 from src.config import load_config
+from src.logging_config import configure_logging
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
+configure_logging(service_name="facis-ai-insight")
 logger = logging.getLogger(__name__)
 
 
@@ -19,7 +17,7 @@ def main() -> None:
     settings = load_config()
     logger.info("Starting FACIS AI Insight Service...")
     app = create_app()
-    uvicorn.run(app, host=settings.http.host, port=settings.http.port)
+    uvicorn.run(app, host=settings.http.host, port=settings.http.port, log_config=None)
 
 
 if __name__ == "__main__":

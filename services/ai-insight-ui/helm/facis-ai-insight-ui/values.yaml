@@ -1,0 +1,142 @@
+# =============================================================================
+# FACIS AI Insight UI — Helm Values
+# =============================================================================
+# This chart deploys ConfigMaps and Secrets only. It does NOT create a
+# Deployment or Service — the UI runs inside the existing ORCE (Node-RED)
+# deployment.
+#
+# All values are documented inline. Override any value with --set or -f.
+
+# -- Override the chart name
+nameOverride: ""
+# -- Override the full release name
+fullnameOverride: ""
+
+# ---------------------------------------------------------------------------
+# ORCE (Node-RED Orchestration Engine) reference
+# ---------------------------------------------------------------------------
+orce:
+  # -- Name of the existing ORCE Deployment in the same namespace.
+  #    Used in NOTES.txt to build kubectl patch / port-forward commands.
+  deploymentName: orce
+  # -- ORCE service name (used to build the admin API URL in NOTES.txt)
+  serviceName: orce
+  # -- ORCE Node-RED admin API port
+  port: 1880
+  # -- ORCE Node-RED admin API base URL (cluster-internal)
+  #    Override if ORCE is in a different namespace: http://orce.orce.svc.cluster.local:1880
+  adminUrl: http://orce:1880
+
+# ---------------------------------------------------------------------------
+# Node-RED Flows ConfigMap
+# ---------------------------------------------------------------------------
+flows:
+  # -- ConfigMap name for the Node-RED flows JSON
+  configMapName: ai-insight-ui-flows
+  # -- Path to flows.full.json relative to the chart root (used with .Files.Get).
+  #    The file must be present inside the chart package or in the files/ directory.
+  #    If empty, a placeholder value is rendered and the operator must patch the
+  #    ConfigMap manually (see NOTES.txt).
+  filePath: "files/flows.full.json"
+  # -- Inline flows JSON content (takes precedence over filePath when non-empty).
+  #    Paste the full flows.full.json content here or supply via --set-file.
+  inlineContent: ""
+
+# ---------------------------------------------------------------------------
+# UIBUILDER Static Files ConfigMap
+# ---------------------------------------------------------------------------
+uiFiles:
+  # -- ConfigMap name for the UIBUILDER static assets
+  configMapName: ai-insight-ui-files
+  # -- Path prefix inside the chart's files/ directory for the built Vue SPA.
+  #    The build script (scripts/build-and-package.sh) copies dist/* here before packaging.
+  #    Expected entry point: files/ui/index.html
+  #    The full dist/assets/ directory must also be mounted (see NOTES.txt).
+  #
+  #    Build process:
+  #      cd services/ai-insight-ui && ./scripts/build-and-package.sh
+  #      helm upgrade <release> helm/facis-ai-insight-ui -n <namespace>
+  dirPath: "files/ui"
+  # -- Inline file overrides (take precedence over dirPath when non-empty).
+  #    Supply the built index.html content here or via --set-file for CI/CD pipelines.
+  #    Example: helm upgrade ... --set-file uiFiles.inline.indexHtml=ui/app/dist/index.html
+  inline:
+    indexHtml: ""
+
+# ---------------------------------------------------------------------------
+# LLM API Keys Secret
+# ---------------------------------------------------------------------------
+llmSecret:
+  # -- Whether to create the orce-llm-secrets Secret.
+  #    Set to false if the Secret is managed externally (e.g., External Secrets Operator).
+  create: true
+  # -- Secret name (must match what the ORCE deployment env vars reference)
+  name: orce-llm-secrets
+  # -- OpenAI API key  (set via --set llmSecret.openaiApiKey=sk-... or a values file)
+  openaiApiKey: ""
+  # -- Anthropic API key
+  anthropicApiKey: ""
+  # -- Custom/self-hosted LLM key (optional — leave empty to disable)
+  customLlmKey: ""
+  # -- Annotations for the Secret (e.g. for reloader.stakater.com/match: "true")
+  annotations: {}
+
+# ---------------------------------------------------------------------------
+# LLM Model Selection
+# ---------------------------------------------------------------------------
+llm:
+  # -- OpenAI model identifier
+  openaiModel: "gpt-4.1-mini"
+  # -- Anthropic model identifier
+  anthropicModel: "claude-sonnet-4-20250514"
+  # -- URL for a custom / self-hosted LLM endpoint (empty = disabled)
+  customLlmUrl: ""
+  # -- Custom LLM model identifier
+  customLlmModel: "custom"
+
+# ---------------------------------------------------------------------------
+# AI Insight Backend Service
+# ---------------------------------------------------------------------------
+aiInsight:
+  # -- Cluster-internal base URL of the AI Insight backend service.
+  #    Injected into ORCE via AI_INSIGHT_BASE_URL env var.
+  serviceUrl: "http://ai-insight-service:8080"
+
+# ---------------------------------------------------------------------------
+# Keycloak / OIDC settings
+# ---------------------------------------------------------------------------
+keycloak:
+  # -- Enable Keycloak OIDC integration (injects env vars into patch snippet)
+  enabled: false
+  # -- Keycloak realm URL  e.g. https://keycloak.example.com/realms/facis
+  realmUrl: ""
+  # -- OIDC client ID registered in Keycloak
+  clientId: "facis-ai-insight"
+  # -- OIDC client secret (leave empty for public clients)
+  clientSecret: ""
+
+# ---------------------------------------------------------------------------
+# Trino query backend
+# ---------------------------------------------------------------------------
+trino:
+  # -- Trino coordinator hostname (cluster-internal DNS or external)
+  host: "trino.stackable.svc.cluster.local"
+  # -- Trino HTTP port
+  port: 8080
+  # -- Trino catalog to query
+  catalog: "iceberg"
+  # -- Trino schema (database) to query
+  schema: "facis"
+
+# ---------------------------------------------------------------------------
+# Extra labels applied to all resources created by this chart
+# ---------------------------------------------------------------------------
+extraLabels: {}
+# example:
+#   environment: production
+#   team: iot-platform
+
+# ---------------------------------------------------------------------------
+# Extra annotations applied to all resources created by this chart
+# ---------------------------------------------------------------------------
+extraAnnotations: {}

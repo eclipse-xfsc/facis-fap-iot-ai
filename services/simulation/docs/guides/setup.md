@@ -30,7 +30,7 @@ Optional (for cluster deployment):
 ```bash
 # Clone the repository
 git clone <repo-url> facis
-cd facis/FAP/IOT\ \&\ AI\ over\ Trusted\ Zones/implementation/simulation-service
+cd services/simulation
 ```
 
 All commands below assume you are in the `simulation-service/` directory.

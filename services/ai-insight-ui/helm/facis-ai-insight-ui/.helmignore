@@ -1,0 +1,54 @@
+# Patterns to ignore when building packages.
+# This supports shell glob matching, relative path matching, and
+# negation (prefixed with !). Only one pattern per line.
+
+# Common VCS dirs
+.git/
+.gitignore
+.gitmodules
+.bzr/
+.bzrignore
+.hg/
+.hgignore
+.svn/
+
+# Common backup files
+*.swp
+*.bak
+*.tmp
+*.orig
+*~
+
+# macOS metadata
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+
+# Windows metadata
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Editor directories and files
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+.editorconfig
+
+# Node / build artefacts (should not appear here but guard anyway)
+node_modules/
+dist/
+build/
+
+# Test / CI files
+.github/
+.travis.yml
+.circleci/
+
+# Development notes and scratch files
+*.md.bak
+scratch/
+TODO

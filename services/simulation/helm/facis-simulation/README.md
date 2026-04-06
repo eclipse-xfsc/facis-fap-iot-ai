@@ -46,7 +46,7 @@ helm uninstall facis-sim -n facis
 
 | Parameter          | Description              | Default                                         |
 |--------------------|--------------------------|--------------------------------------------------|
-| `image.repository` | Container image registry | `ghcr.io/siemens-2/facis/simulation-service`    |
+| `image.repository` | Container image registry | `ghcr.io/eclipse-xfsc/facis-fap-iot-ai/simulation-service`    |
 | `image.tag`        | Image tag                | Chart `appVersion`                               |
 | `image.pullPolicy` | Pull policy              | `IfNotPresent`                                   |
 

@@ -6,7 +6,7 @@ A deterministic simulation service for the FACIS IoT & AI demonstrator. Generate
 
 ```bash
 # Navigate to the simulation service root
-cd FAP/IOT\ \&\ AI\ over\ Trusted\ Zones/implementation/simulation-service
+cd services/simulation
 
 # Install in editable mode
 pip install -e .

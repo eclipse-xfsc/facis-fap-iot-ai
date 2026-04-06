@@ -13,7 +13,7 @@ FastAPI service for governed AI insight generation from energy and IoT datasets.
 ## Quick Start (Local)
 
 ```bash
-cd FAP/IOT\ \&\ AI\ over\ Trusted\ Zones/implementation/ai-insight-service
+cd services/ai-insight-service
 cp .env.example .env
 pip install -e ".[dev]"
 python -m src.main
@@ -33,7 +33,7 @@ API docs:
 ## Quick Start (Docker Compose)
 
 ```bash
-cd FAP/IOT\ \&\ AI\ over\ Trusted\ Zones/implementation/ai-insight-service
+cd services/ai-insight-service
 cp .env.example .env
 docker compose up --build
 ```

@@ -4,17 +4,25 @@ on:
   release:
     types: [published]
   workflow_dispatch:
-  
+
 jobs:
-  dockerbuild:
+  dockerbuild-simulation:
     uses: eclipse-xfsc/dev-ops/.github/workflows/dockerbuild.yml@main
     secrets: inherit
-    with: 
+    with:
       dockerfile: "services/simulation/Dockerfile"
       harbor_config: "deployment/harbor.config"
-  # helm:
-  #   uses: eclipse-xfsc/dev-ops/.github/workflows/helm.yml@main
-  #   secrets: inherit
-  #   with: 
-  #     buildContext:  "deployment/helm"
-  #     harbor_config: "deployment/harbor.config"
+
+  dockerbuild-ai-insight:
+    uses: eclipse-xfsc/dev-ops/.github/workflows/dockerbuild.yml@main
+    secrets: inherit
+    with:
+      dockerfile: "services/ai-insight-service/Dockerfile"
+      harbor_config: "deployment/harbor.config"
+
+  helm:
+    uses: eclipse-xfsc/dev-ops/.github/workflows/helm.yml@main
+    secrets: inherit
+    with:
+      buildContext: "deployment/helm"
+      harbor_config: "deployment/harbor.config"

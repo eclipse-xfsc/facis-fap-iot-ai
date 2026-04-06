@@ -1,0 +1,19 @@
+[
+    {
+        "id": "tab-session",
+        "type": "tab",
+        "label": "Session Context",
+        "disabled": false,
+        "info": "Manages per-client conversation history and session state"
+    },
+    {
+        "id": "comment-session",
+        "type": "comment",
+        "z": "tab-session",
+        "name": "Session Management",
+        "info": "This tab manages conversation history stored in flow context.\nSession data is keyed by _socketId and includes:\n- Connection timestamp\n- Conversation history (last 20 messages)\n- User preferences (selected LLM, time range)\n\nSession cleanup runs when client disconnects.",
+        "x": 200,
+        "y": 80,
+        "wires": []
+    }
+]

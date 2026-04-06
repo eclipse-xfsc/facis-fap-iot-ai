@@ -280,28 +280,23 @@ class TrinoQueryClient:
             "ORDER BY sc_date"
         )
 
-        conn = self._connect()
-        cursor = conn.cursor()
-        try:
-            cursor.execute(hourly_query)
-            hourly_rows = cursor.fetchall()
-            hourly_names = [desc[0] for desc in cursor.description]
-            hourly = [dict(zip(hourly_names, row)) for row in hourly_rows]
+        def _run_query(query: str) -> list[dict[str, Any]]:
+            conn = self._connect()
+            cursor = conn.cursor()
+            try:
+                cursor.execute(query)
+                rows = cursor.fetchall()
+                names = [desc[0] for desc in cursor.description]
+                return [dict(zip(names, row)) for row in rows]
+            finally:
+                cursor.close()
+                conn.close()
 
-            cursor.execute(daily_cost_query)
-            daily_cost_rows = cursor.fetchall()
-            daily_cost_names = [desc[0] for desc in cursor.description]
-            daily_cost = [dict(zip(daily_cost_names, row)) for row in daily_cost_rows]
-
-            cursor.execute(daily_pv_query)
-            daily_pv_rows = cursor.fetchall()
-            daily_pv_names = [desc[0] for desc in cursor.description]
-            daily_pv = [dict(zip(daily_pv_names, row)) for row in daily_pv_rows]
-            return {
-                "hourly": hourly,
-                "daily_cost": daily_cost,
-                "daily_pv": daily_pv,
-            }
-        finally:
-            cursor.close()
-            conn.close()
+        hourly = _run_query(hourly_query)
+        daily_cost = _run_query(daily_cost_query)
+        daily_pv = _run_query(daily_pv_query)
+        return {
+            "hourly": hourly,
+            "daily_cost": daily_cost,
+            "daily_pv": daily_pv,
+        }

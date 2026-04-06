@@ -11,11 +11,16 @@ docs/
 |- openapi.yaml                   OpenAPI source of truth
 |- api/
 |  `- rest-api.md                 Human-readable REST API guide
-`- guides/
-   |- index.md                    Developer guide entrypoint
-   |- setup.md                    Local and container setup
-   |- architecture.md             Service architecture and request flow
-   `- configuration.md            Configuration model and key variables
+|- guides/
+|  |- index.md                    Developer guide entrypoint
+|  |- setup.md                    Local and container setup
+|  |- architecture.md             Service architecture and request flow
+|  |- configuration.md            Configuration model and key variables
+|  |- testing.md                  Test suite structure and quality tools
+|  `- troubleshooting.md          Common issues and diagnostic commands
+`- deployment/
+   |- ops-runbook.md              Operations runbook for DevOps
+   `- deployment-operations.md    Deployment procedures and validation
 ```
 
 ## Conventions

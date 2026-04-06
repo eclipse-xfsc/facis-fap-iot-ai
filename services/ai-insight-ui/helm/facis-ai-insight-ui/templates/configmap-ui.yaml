@@ -1,0 +1,71 @@
+{{/*
+ConfigMap: UIBUILDER static assets (Vue SPA)
+─────────────────────────────────────────────
+Holds the built Vue.js SPA entry-point served by node-red-contrib-uibuilder
+from inside the ORCE pod.
+
+Build process:
+  1. Run: services/ai-insight-ui/scripts/build-and-package.sh
+  2. This builds the Vue app with `npm run build` and copies dist/* into:
+       helm/facis-ai-insight-ui/files/ui/
+  3. The chart's .Files.Get helper then embeds the built index.html here.
+
+UIBUILDER serve path:
+  The SPA is served by UIBUILDER from /aiInsight/ (configurable via urlPath).
+  All asset references in the built index.html use relative paths (base: './')
+  so they resolve correctly regardless of the subpath.
+
+Mount this ConfigMap into the ORCE pod at the UIBUILDER root directory:
+  volumeMounts:
+    - name: ai-insight-ui-files
+      mountPath: /data/uibuilder/aiInsight/src
+      readOnly: true
+  volumes:
+    - name: ai-insight-ui-files
+      configMap:
+        name: {{ include "facis-ai-insight-ui.uiFilesConfigMapName" . }}
+
+Note: The built JS/CSS assets referenced by index.html are large and must be
+served from a static file server or mounted separately. The recommended approach
+is to mount the full dist/ directory (including the assets/ subfolder) at the
+UIBUILDER src path. See NOTES.txt for the full kubectl patch command.
+*/}}
+
+{{- $indexHtml := "" }}
+
+{{- if .Values.uiFiles.inline.indexHtml }}
+{{-   $indexHtml = .Values.uiFiles.inline.indexHtml }}
+{{- else }}
+{{-   $path := printf "%s/index.html" .Values.uiFiles.dirPath }}
+{{-   $indexHtml = .Files.Get $path }}
+{{- end }}
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "facis-ai-insight-ui.uiFilesConfigMapName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "facis-ai-insight-ui.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+    facis.io/mount-in: {{ .Values.orce.deploymentName | quote }}
+    facis.io/uibuilder-path: "/data/uibuilder/aiInsight/src"
+    facis.io/build-instructions: "Run scripts/build-and-package.sh before helm upgrade"
+    {{- include "facis-ai-insight-ui.annotations" . | nindent 4 }}
+data:
+  index.html: |
+    {{- if $indexHtml }}
+    {{- $indexHtml | nindent 4 }}
+    {{- else }}
+    <!DOCTYPE html>
+    <!-- PLACEHOLDER: Built app not bundled yet.
+         Run: services/ai-insight-ui/scripts/build-and-package.sh
+         Then: helm upgrade {{ .Release.Name }} . -n {{ .Release.Namespace }}
+         Or patch manually:
+           kubectl create configmap {{ include "facis-ai-insight-ui.uiFilesConfigMapName" . }} \
+             --from-file=index.html=services/ai-insight-ui/ui/app/dist/index.html \
+             -n {{ .Release.Namespace }} --dry-run=client -o yaml | kubectl apply -f -
+    -->
+    <html><body><p>FACIS AI Insight UI — build not packaged. See Helm chart NOTES.txt.</p></body></html>
+    {{- end }}

@@ -27,8 +27,15 @@ Important defaults from `config/default.yaml`:
 | `policy.enabled` | `true` |
 | `rate_limit.enabled` | `true` |
 | `rate_limit.requests_per_minute` | `10` |
+| `trino.http_scheme` | `http` |
+| `trino.verify` | `true` |
+| `trino.request_timeout_seconds` | `120` |
 | `cache.enabled` | `false` |
 | `audit.enabled` | `true` |
+
+> **Note on Trino port:** The default in `config/default.yaml` is `8080` (plain HTTP, for local
+> dev). The Helm chart default is `8443` (HTTPS, for cluster deployments with Stackable Trino).
+> Always set `AI_INSIGHT_TRINO__PORT` explicitly to match your Trino coordinator's actual port.
 
 ## Key Environment Variable Groups
 
@@ -63,13 +70,19 @@ Important defaults from `config/default.yaml`:
 - `AI_INSIGHT_TRINO__OIDC_USERNAME`
 - `AI_INSIGHT_TRINO__OIDC_PASSWORD`
 - `AI_INSIGHT_TRINO__OIDC_SCOPE`
+- `AI_INSIGHT_TRINO__HTTP_SCHEME` — `http` (dev) or `https` (cluster)
 - `AI_INSIGHT_TRINO__OIDC_VERIFY`
-- `AI_INSIGHT_TRINO__VERIFY`
-- `AI_INSIGHT_TRINO__REQUEST_TIMEOUT_SECONDS`
+- `AI_INSIGHT_TRINO__VERIFY` — `true`, `false`, or path to CA cert (e.g. `/app/certs/trino-ca.crt`)
+- `AI_INSIGHT_TRINO__REQUEST_TIMEOUT_SECONDS` — default `120`
 - `AI_INSIGHT_TRINO__CATALOG`
 - `AI_INSIGHT_TRINO__SCHEMA`
 - `AI_INSIGHT_TRINO__TARGET_SCHEMA`
-- `AI_INSIGHT_TRINO__TABLE_*`
+- `AI_INSIGHT_TRINO__TABLE_NET_GRID_HOURLY` — default `net_grid_hourly`
+- `AI_INSIGHT_TRINO__TABLE_EVENT_IMPACT_DAILY` — default `event_impact_daily`
+- `AI_INSIGHT_TRINO__TABLE_STREETLIGHT_ZONE_HOURLY` — default `streetlight_zone_hourly`
+- `AI_INSIGHT_TRINO__TABLE_WEATHER_HOURLY` — default `weather_hourly`
+- `AI_INSIGHT_TRINO__TABLE_ENERGY_COST_DAILY` — default `energy_cost_daily`
+- `AI_INSIGHT_TRINO__TABLE_PV_SELF_CONSUMPTION_DAILY` — default `pv_self_consumption_daily`
 
 ### Policy and Rate Limiting
 

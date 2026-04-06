@@ -1,0 +1,10 @@
+ui/app/node_modules
+ui/app/dist
+ui/app/.vite
+ui/src
+flows
+k8s
+helm
+docs
+.git
+*.md

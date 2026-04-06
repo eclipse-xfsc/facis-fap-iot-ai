@@ -1,0 +1,124 @@
+[
+    {
+        "id": "ai-insight-uibuilder",
+        "type": "uibuilder",
+        "z": "tab-ui",
+        "name": "AI Insight Dashboard",
+        "url": "aiInsight",
+        "fwdInMessages": false,
+        "allowScripts": false,
+        "allowStyles": false,
+        "copyIndex": true,
+        "templateFolder": "blank",
+        "extTemplate": "",
+        "showfolder": false,
+        "useSecurity": false,
+        "sessionLength": 604800,
+        "tokenAutoExtend": false,
+        "x": 180,
+        "y": 200,
+        "wires": [
+            ["route-outbound"],
+            ["session-init"]
+        ]
+    },
+    {
+        "id": "tab-ui",
+        "type": "tab",
+        "label": "AI Insight UI",
+        "disabled": false,
+        "info": "UIBUILDER entry point and message routing for the AI Insight Dashboard"
+    },
+    {
+        "id": "route-outbound",
+        "type": "function",
+        "z": "tab-ui",
+        "name": "Route by Topic",
+        "func": "// Route UI messages to appropriate flow tabs\nconst topic = msg?.data?.topic;\nif (!topic) return null;\n\n// Preserve socketId for response routing\nmsg._socketId = msg._socketId || msg?.data?.session?._socketId;\n\nswitch(topic) {\n    case 'insight.request':\n    case 'init':\n        return [msg, null, null];\n    case 'llm.freeform':\n        return [null, null, msg];\n    case 'trino.query':\n        return [null, msg, null];\n    default:\n        node.warn('Unknown topic: ' + topic);\n        return null;\n}\n",
+        "outputs": 3,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 420,
+        "y": 180,
+        "wires": [
+            ["link-to-insight-proxy"],
+            ["link-to-trino-query"],
+            ["link-to-llm-router"]
+        ]
+    },
+    {
+        "id": "session-init",
+        "type": "function",
+        "z": "tab-ui",
+        "name": "Session Init",
+        "func": "// Handle client connect/disconnect\nconst action = msg?.uibuilderCtrl;\nif (action === 'client connect') {\n    node.log('Client connected: ' + msg._socketId);\n    // Store session in flow context\n    const sessions = flow.get('sessions') || {};\n    sessions[msg._socketId] = {\n        connected: new Date().toISOString(),\n        conversationHistory: []\n    };\n    flow.set('sessions', sessions);\n}\nreturn null;\n",
+        "outputs": 1,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 420,
+        "y": 280,
+        "wires": [[]]
+    },
+    {
+        "id": "link-to-insight-proxy",
+        "type": "link out",
+        "z": "tab-ui",
+        "name": "→ AI Insight Proxy",
+        "mode": "link",
+        "links": ["link-from-ui-insight"],
+        "x": 675,
+        "y": 140,
+        "wires": []
+    },
+    {
+        "id": "link-to-trino-query",
+        "type": "link out",
+        "z": "tab-ui",
+        "name": "→ Trino Query",
+        "mode": "link",
+        "links": ["link-from-ui-trino"],
+        "x": 675,
+        "y": 200,
+        "wires": []
+    },
+    {
+        "id": "link-to-llm-router",
+        "type": "link out",
+        "z": "tab-ui",
+        "name": "→ LLM Router",
+        "mode": "link",
+        "links": ["link-from-ui-llm"],
+        "x": 675,
+        "y": 260,
+        "wires": []
+    },
+    {
+        "id": "link-from-response",
+        "type": "link in",
+        "z": "tab-ui",
+        "name": "← Response to UI",
+        "links": ["link-response-insight", "link-response-llm", "link-response-error"],
+        "x": 115,
+        "y": 380,
+        "wires": [["merge-session-send"]]
+    },
+    {
+        "id": "merge-session-send",
+        "type": "function",
+        "z": "tab-ui",
+        "name": "Merge Session & Send to Client",
+        "func": "// Ensure _socketId is set for routing to correct client\nif (msg._socketId) {\n    msg._uib = { clientId: msg._socketId };\n}\nreturn msg;\n",
+        "outputs": 1,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 370,
+        "y": 380,
+        "wires": [["ai-insight-uibuilder"]]
+    }
+]

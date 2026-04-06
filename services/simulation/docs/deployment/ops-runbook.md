@@ -48,10 +48,10 @@ The service produces 5 Smart Energy feeds per simulation tick (default: once per
 
 ```bash
 # Build the production image
-docker build -t ghcr.io/siemens-2/facis/simulation-service:1.0.0 .
+docker build -t ghcr.io/eclipse-xfsc/facis-fap-iot-ai/simulation-service:1.0.0 .
 
 # Push to container registry
-docker push ghcr.io/siemens-2/facis/simulation-service:1.0.0
+docker push ghcr.io/eclipse-xfsc/facis-fap-iot-ai/simulation-service:1.0.0
 ```
 
 ### 2.3 Install the Chart
@@ -246,7 +246,7 @@ open http://localhost:8090
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `image.repository` | string | `ghcr.io/siemens-2/facis/simulation-service` | Container registry/repo |
+| `image.repository` | string | `ghcr.io/eclipse-xfsc/facis-fap-iot-ai/simulation-service` | Container registry/repo |
 | `image.tag` | string | Chart appVersion (`1.0.0`) | Image tag |
 | `image.pullPolicy` | string | `IfNotPresent` | `Always`, `IfNotPresent`, `Never` |
 | `imagePullSecrets` | list | `[]` | Registry pull secrets |

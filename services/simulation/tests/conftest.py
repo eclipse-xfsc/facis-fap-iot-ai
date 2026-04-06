@@ -13,6 +13,27 @@ from src.api.rest.dependencies import SimulationState
 from src.config import Settings
 
 
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """Add --run-integration flag to pytest CLI."""
+    parser.addoption(
+        "--run-integration",
+        action="store_true",
+        default=False,
+        help="Run integration tests that require a live Kubernetes cluster",
+    )
+
+
+def pytest_collection_modifyitems(
+    config: pytest.Config, items: list[pytest.Item]
+) -> None:
+    """Skip integration tests unless --run-integration is passed."""
+    if not config.getoption("--run-integration"):
+        skip_mark = pytest.mark.skip(reason="needs --run-integration flag to run")
+        for item in items:
+            if "integration" in item.keywords:
+                item.add_marker(skip_mark)
+
+
 @pytest.fixture(scope="session")
 def test_settings() -> Settings:
     """Create test settings."""
