@@ -119,6 +119,21 @@ policy:
   roleHeader: x-user-roles
 
 # ---------------------------------------------------------------------------
+# HMAC Signed URLs (DSP HTTP Pull Profile)
+# ---------------------------------------------------------------------------
+hmac:
+  # -- Enable HMAC-signed URL validation for DSP pull requests
+  enabled: true
+  # -- HMAC signing secret (stored in Secret; auto-generated if empty)
+  secret: ""
+  # -- Base URL for generated signed URLs
+  baseUrl: "https://ai-insight.facis.cloud"
+  # -- Default TTL for signed URLs in seconds
+  defaultTtlSeconds: 3600
+  # -- Maximum TTL allowed for signed URLs in seconds
+  maxTtlSeconds: 86400
+
+# ---------------------------------------------------------------------------
 # Rate Limiting
 # ---------------------------------------------------------------------------
 rateLimit:
