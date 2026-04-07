@@ -1,0 +1,44 @@
+[project]
+name = "facis-sftp-ingestion-service"
+version = "1.0.0"
+description = "SFTP file ingestion service for the FACIS FAP IoT & AI platform"
+requires-python = ">=3.11"
+license = {text = "Apache-2.0"}
+authors = [
+    {name = "ATLAS IoT Lab GmbH"},
+]
+
+dependencies = [
+    "fastapi>=0.109.0",
+    "uvicorn>=0.27.0",
+    "paramiko>=3.4.0",
+    "confluent-kafka>=2.3.0",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    "prometheus-client>=0.20.0",
+    "python-json-logger>=3.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    "ruff>=0.2.0",
+    "mypy>=1.8.0",
+]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
