@@ -7,6 +7,7 @@ import yaml
 from fastapi import FastAPI
 
 from src.api.rest.routes.insights import insights_router, outputs_router
+from src.observability.metrics import create_metrics_app
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,9 @@ def create_app() -> FastAPI:
 
     app.include_router(insights_router)
     app.include_router(outputs_router)
+
+    # Prometheus metrics endpoint at /metrics
+    app.mount("/metrics", create_metrics_app())
 
     if _OPENAPI_SPEC.exists():
         with open(_OPENAPI_SPEC, encoding="utf-8") as file:

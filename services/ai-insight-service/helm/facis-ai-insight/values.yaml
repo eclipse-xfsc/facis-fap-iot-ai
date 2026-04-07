@@ -332,6 +332,38 @@ tolerations: []
 affinity: {}
 
 # ---------------------------------------------------------------------------
+# Prometheus Metrics
+# ---------------------------------------------------------------------------
+metrics:
+  # -- Path where Prometheus metrics are served
+  path: /metrics
+  # -- ServiceMonitor configuration (requires Prometheus Operator)
+  serviceMonitor:
+    # -- Enable ServiceMonitor resource
+    enabled: false
+    # -- Scrape interval
+    interval: 30s
+    # -- Scrape timeout
+    scrapeTimeout: 10s
+    # -- Additional labels for ServiceMonitor (e.g. for Prometheus selector)
+    additionalLabels: {}
+
+# ---------------------------------------------------------------------------
+# Autoscaling (HPA)
+# ---------------------------------------------------------------------------
+autoscaling:
+  # -- Enable Horizontal Pod Autoscaler (overrides replicaCount when true)
+  enabled: false
+  # -- Minimum number of replicas
+  minReplicas: 1
+  # -- Maximum number of replicas
+  maxReplicas: 5
+  # -- Target CPU utilization percentage (0 to disable)
+  targetCPUUtilizationPercentage: 70
+  # -- Target memory utilization percentage (0 to disable)
+  targetMemoryUtilizationPercentage: 80
+
+# ---------------------------------------------------------------------------
 # Additional environment variables
 # ---------------------------------------------------------------------------
 # -- Extra environment variables injected verbatim into the container.

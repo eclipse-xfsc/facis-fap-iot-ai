@@ -130,9 +130,12 @@ const avgDimming = computed(() => {
 const activeEventsCount = computed(() => Object.values(liveEvents.value).filter(e => e.active).length)
 const energyEfficiency = computed(() => zones.value.length > 0 ? Math.round(100 - avgDimming.value * 0.38) : null)
 
-const weatherVisibility = computed(() =>
-  liveWeather.value ? `${liveWeather.value.visibility.toFixed(1)} km` : '—'
-)
+const weatherVisibility = computed(() => {
+  const v = liveWeather.value?.visibility
+  if (v == null) return '—'
+  const num = typeof v === 'number' ? v : parseFloat(String(v))
+  return isNaN(num) ? String(v) : `${num.toFixed(1)} km`
+})
 
 const kpis = computed(() => [
   { label: 'Active Zones', value: activeZones.value, unit: '', trend: 'stable' as const, icon: 'pi-map', color: '#22c55e' },

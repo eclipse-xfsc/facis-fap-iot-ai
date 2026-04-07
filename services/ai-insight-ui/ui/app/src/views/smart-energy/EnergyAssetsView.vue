@@ -169,7 +169,6 @@ function onRowSelect(row: Record<string, unknown>): void {
       :breadcrumbs="[{ label: 'Use Cases' }, { label: 'Smart Energy' }, { label: 'Assets' }]"
     >
       <template #actions>
-        <Button label="Export" icon="pi pi-download" size="small" outlined />
         <Button icon="pi pi-refresh" size="small" text :loading="loading" @click="fetchData()" />
       </template>
     </PageHeader>

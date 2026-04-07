@@ -234,9 +234,6 @@ const recentAlerts = computed(() =>
 )
 
 const userMenuItems = ref([
-  { label: 'Profile', icon: 'pi pi-user', command: () => {} },
-  { label: 'Preferences', icon: 'pi pi-sliders-h', command: () => {} },
-  { separator: true },
   { label: 'Sign out', icon: 'pi pi-sign-out', command: () => logout() }
 ])
 

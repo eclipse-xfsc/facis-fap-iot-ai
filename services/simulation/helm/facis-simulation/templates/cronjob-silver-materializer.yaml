@@ -1,0 +1,87 @@
+{{- if .Values.silverMaterializer.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "facis-simulation.fullname" . }}-silver-materializer
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "facis-simulation.labels" . | nindent 4 }}
+    app.kubernetes.io/component: lakehouse
+spec:
+  schedule: {{ .Values.silverMaterializer.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: {{ .Values.silverMaterializer.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.silverMaterializer.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      backoffLimit: {{ .Values.silverMaterializer.backoffLimit }}
+      activeDeadlineSeconds: {{ .Values.silverMaterializer.activeDeadlineSeconds }}
+      template:
+        metadata:
+          labels:
+            {{- include "facis-simulation.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: silver-materializer
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+          initContainers:
+          - name: install-deps
+            image: {{ .Values.silverMaterializer.image.repository }}:{{ .Values.silverMaterializer.image.tag }}
+            command: ["/bin/sh", "-c"]
+            args:
+            - pip install --target=/deps trino requests tabulate 2>&1 | tail -1
+            volumeMounts:
+            - name: deps
+              mountPath: /deps
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: false
+              capabilities:
+                drop: [ALL]
+          containers:
+          - name: materializer
+            image: {{ .Values.silverMaterializer.image.repository }}:{{ .Values.silverMaterializer.image.tag }}
+            command: ["/bin/sh", "-c"]
+            args:
+            - |
+              export PYTHONPATH=/deps:/scripts
+              python /scripts/materialize_silver.py --env-file /config/.env
+            env:
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+            resources:
+              {{- toYaml .Values.silverMaterializer.resources | nindent 14 }}
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop: [ALL]
+            volumeMounts:
+            - name: deps
+              mountPath: /deps
+              readOnly: true
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+            - name: credentials
+              mountPath: /config
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          volumes:
+          - name: deps
+            emptyDir: {}
+          - name: tmp
+            emptyDir:
+              sizeLimit: 64Mi
+          - name: scripts
+            configMap:
+              name: {{ .Values.silverMaterializer.scriptsConfigMap }}
+          - name: credentials
+            secret:
+              secretName: {{ .Values.silverMaterializer.credentialsSecret }}
+{{- end }}

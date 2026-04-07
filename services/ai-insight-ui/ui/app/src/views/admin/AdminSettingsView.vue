@@ -130,7 +130,6 @@ function saveSettings(): void {
       :breadcrumbs="[{ label: 'Administration' }, { label: 'Settings' }]"
     >
       <template #actions>
-        <Button label="Reset to Defaults" icon="pi pi-refresh" size="small" outlined />
         <Button label="Save Settings" icon="pi pi-save" size="small" :loading="saving" @click="saveSettings" />
       </template>
     </PageHeader>
@@ -331,7 +330,6 @@ function saveSettings(): void {
       <!-- Save button row -->
       <div class="settings-actions">
         <Button label="Save All Settings" icon="pi pi-save" :loading="saving" @click="saveSettings" />
-        <Button label="Reset to Defaults" icon="pi pi-refresh" outlined />
       </div>
     </div>
   </div>

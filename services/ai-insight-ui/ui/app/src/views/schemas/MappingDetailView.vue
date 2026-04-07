@@ -311,8 +311,6 @@ function formatDate(iso: string): string {
     >
       <template #actions>
         <StatusBadge :status="mapping?.validationStatus ?? 'invalid'" />
-        <Button label="Re-validate" icon="pi pi-check-circle" size="small" outlined />
-        <Button label="Edit Rules" icon="pi pi-pencil" size="small" />
       </template>
     </PageHeader>
 
