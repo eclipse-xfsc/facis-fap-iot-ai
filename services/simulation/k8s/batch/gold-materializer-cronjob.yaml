@@ -49,7 +49,7 @@ spec:
             fsGroup: 1000
           initContainers:
           - name: install-deps
-            image: python:3.11-slim
+            image: python:3.11-slim@sha256:b1b81d67b8df73bf6067191790c233ef9e598b863fc1ccf447956138ca466d99
             command: ["/bin/sh", "-c"]
             args:
             - pip install --target=/deps trino requests tabulate 2>&1 | tail -1
@@ -63,7 +63,7 @@ spec:
                 drop: [ALL]
           containers:
           - name: materializer
-            image: python:3.11-slim
+            image: python:3.11-slim@sha256:b1b81d67b8df73bf6067191790c233ef9e598b863fc1ccf447956138ca466d99
             command: ["/bin/sh", "-c"]
             args:
             - |

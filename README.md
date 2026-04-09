@@ -13,6 +13,8 @@ Part of the [Eclipse XFSC](https://github.com/eclipse-xfsc) project under [IPCEI
 | Simulation | `services/simulation/` | Deterministic IoT simulation (9 correlated feeds) | v1.0.0 |
 | AI Insight Service | `services/ai-insight-service/` | FastAPI backend for governed AI insights | v0.1.0 |
 | AI Insight UI | `services/ai-insight-ui/` | Vue.js + UIBUILDER dashboard | v0.1.0 |
+| SFTP Ingestion | `services/sftp-ingestion-service/` | Polls SFTP directories, publishes to Kafka Bronze layer | v1.0.0 |
+| DSP Connector | `services/dsp-connector/` | Eclipse Dataspace Protocol connector (catalogue, transfers) | v1.0.0 |
 
 ## Quick Start
 
@@ -28,6 +30,17 @@ python -m src.main
 cd services/ai-insight-service
 pip install -e ".[dev]"
 python -m src.main
+
+# SFTP Ingestion Service
+cd services/sftp-ingestion-service
+pip install -e ".[dev]"
+python -m src.main
+
+# DSP Connector
+cd services/dsp-connector
+pip install -e ".[dev]"
+export DSP_HMAC_SECRET=$(openssl rand -hex 32)
+python -m src.main
 ```
 
 ### Kubernetes (Production)
@@ -37,6 +50,7 @@ python -m src.main
 helm install facis-simulation services/simulation/helm/facis-simulation/ -n facis --create-namespace
 helm install facis-ai-insight services/ai-insight-service/helm/facis-ai-insight/ -n facis
 helm install facis-ai-insight-ui services/ai-insight-ui/helm/facis-ai-insight-ui/ -n facis
+helm install facis-sftp-ingestion services/sftp-ingestion-service/helm/facis-sftp-ingestion/ -n facis
 ```
 
 See [docs/deployment.md](docs/deployment.md) for full deployment instructions.
@@ -58,6 +72,8 @@ See [docs/deployment.md](docs/deployment.md) for full deployment instructions.
 - **Simulation:** [services/simulation/docs/](services/simulation/docs/)
 - **AI Insight Service:** [services/ai-insight-service/docs/](services/ai-insight-service/docs/)
 - **AI Insight UI:** [services/ai-insight-ui/docs/](services/ai-insight-ui/docs/)
+- **SFTP Ingestion:** [services/sftp-ingestion-service/README.md](services/sftp-ingestion-service/README.md)
+- **DSP Connector:** [services/dsp-connector/README.md](services/dsp-connector/README.md)
 
 ## Architecture
 

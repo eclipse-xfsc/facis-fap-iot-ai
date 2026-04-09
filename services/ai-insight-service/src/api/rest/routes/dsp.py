@@ -80,19 +80,40 @@ class CreatePullUrlRequest(BaseModel):
     response_model=SignedUrlResponse,
     summary="Generate a time-windowed HMAC-signed pull URL",
 )
-async def create_pull_url(body: CreatePullUrlRequest) -> SignedUrlResponse:
+async def create_pull_url(
+    request: Request,
+    body: CreatePullUrlRequest,
+) -> SignedUrlResponse:
     """
     Generate an HMAC-SHA256 signed URL for data access.
 
     The returned URL contains a time-windowed token that grants
     temporary access to the specified resource. The token encodes
     the HTTP method, path, data time window (from/to), and expiry.
+
+    Requires a valid agreement and asset via policy headers.
     """
     if _signer is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="DSP signing not configured",
         )
+
+    # Enforce policy — caller must present valid agreement/asset/role headers
+    if _validator is not None and _validator._enabled:
+        from src.config import load_config
+        from src.security.policy import PolicyEnforcer
+
+        config = load_config()
+        enforcer = PolicyEnforcer(config.policy)
+        ctx = enforcer.build_context(dict(request.headers))
+        try:
+            enforcer.enforce(ctx)
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=str(e),
+            ) from e
 
     return _signer.generate_signed_url(
         base_url=_base_url,
@@ -110,7 +131,7 @@ async def create_pull_url(body: CreatePullUrlRequest) -> SignedUrlResponse:
 )
 async def pull(
     request: Request,
-    verified: dict[str, str] = Depends(lambda: _get_validator()),
+    verified: dict[str, str] = Depends(_get_validator),
 ) -> dict[str, Any]:
     """
     Validate an HMAC-signed pull URL.

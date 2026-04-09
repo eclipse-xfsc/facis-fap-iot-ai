@@ -142,7 +142,7 @@ class OpenAICompatibleClient:
                 max=self._config.retry_max_delay_seconds,
             ),
             retry=retry_if_exception_type((_RetryableError,)),
-            reraise=True,
+            reraise=False,
         )
         def _do_request() -> tuple[str, dict[str, Any]]:
             try:

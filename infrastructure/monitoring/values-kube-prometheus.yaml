@@ -45,9 +45,16 @@ prometheus:
 # ---------------------------------------------------------------------------
 grafana:
   enabled: true
-  # Default admin credentials (override in production)
-  adminUser: admin
-  adminPassword: facis-monitoring
+  # REQUIRED: Supply Grafana admin credentials via an existing Kubernetes Secret.
+  # Create it before deploying:
+  #   kubectl create secret generic grafana-admin-credentials \
+  #     --from-literal=admin-user=admin \
+  #     --from-literal=admin-password=<YOUR_SECURE_PASSWORD> \
+  #     -n monitoring
+  admin:
+    existingSecret: grafana-admin-credentials
+    userKey: admin-user
+    passwordKey: admin-password
   # Persistence
   persistence:
     enabled: true

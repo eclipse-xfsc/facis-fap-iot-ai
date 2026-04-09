@@ -6,7 +6,8 @@
 # ---------------------------------------------------------------------------
 # Stage 1 — Builder
 # ---------------------------------------------------------------------------
-FROM python:3.11-slim AS builder
+# Pin to digest for supply-chain safety (python:3.11-slim as of 2026-04-09)
+FROM python:3.11-slim@sha256:b1b81d67b8df73bf6067191790c233ef9e598b863fc1ccf447956138ca466d99 AS builder
 
 WORKDIR /build
 
@@ -22,7 +23,7 @@ RUN pip install --no-cache-dir build && \
 # ---------------------------------------------------------------------------
 # Stage 2 — Runtime
 # ---------------------------------------------------------------------------
-FROM python:3.11-slim AS runtime
+FROM python:3.11-slim@sha256:b1b81d67b8df73bf6067191790c233ef9e598b863fc1ccf447956138ca466d99 AS runtime
 
 LABEL org.opencontainers.image.title="facis-sftp-ingestion-service" \
       org.opencontainers.image.description="SFTP file ingestion service for the FACIS FAP IoT & AI platform" \

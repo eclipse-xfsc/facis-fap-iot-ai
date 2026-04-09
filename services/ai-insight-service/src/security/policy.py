@@ -83,18 +83,26 @@ class PolicyEnforcer:
         Return the list of columns accessible for a given table and roles.
 
         Returns None if no restrictions are configured (all columns allowed).
-        Returns an empty list if the role cannot access this table.
+        Returns None if any matching role has an empty column list (= unrestricted).
+        Returns an empty list if the role cannot access this table at all.
         """
         if not self._config.role_table_access:
             return None  # No restrictions configured
 
         columns: set[str] = set()
+        has_table_access = False
         for role in context.roles:
             role_access = self._config.role_table_access.get(role, {})
             table_columns = role_access.get(table)
-            if table_columns:
+            if table_columns is not None:
+                has_table_access = True
+                if len(table_columns) == 0:
+                    # Empty list means unrestricted (all columns allowed)
+                    return None
                 columns.update(table_columns)
-        return list(columns) if columns else []
+        if not has_table_access:
+            return []
+        return list(columns)
 
     def enforce_table_access(self, context: AccessContext, table: str) -> None:
         """Raise PolicyDeniedError if the context cannot access the given table."""

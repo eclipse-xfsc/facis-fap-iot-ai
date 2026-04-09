@@ -70,10 +70,14 @@ def ensure_watermark_table(conn, catalog: str, s3_bucket: str) -> None:
 
 def get_watermark(conn, catalog: str, table_name: str) -> str | None:
     """Return the last watermark timestamp for a table, or None."""
+    # table_name comes from the hardcoded SILVER_VIEWS dict — validated below
+    if table_name not in SILVER_VIEWS:
+        raise ValueError(f"Invalid table name: {table_name}")
     rows = execute(
         conn,
-        f"""SELECT last_watermark FROM "{catalog}".silver._watermarks
-            WHERE table_name = '{table_name}'""",
+        f'SELECT last_watermark FROM "{catalog}".silver._watermarks'
+        f" WHERE table_name = ?",
+        params=(table_name,),
     )
     if rows and rows[0][0]:
         return str(rows[0][0])
@@ -82,6 +86,8 @@ def get_watermark(conn, catalog: str, table_name: str) -> str | None:
 
 def update_watermark(conn, catalog: str, table_name: str) -> None:
     """Set the watermark to the max ingestion_timestamp in the Silver table."""
+    if table_name not in SILVER_VIEWS:
+        raise ValueError(f"Invalid table name: {table_name}")
     rows = execute(
         conn,
         f'SELECT MAX(ingestion_timestamp) FROM "{catalog}".silver.{table_name}',
@@ -93,15 +99,16 @@ def update_watermark(conn, catalog: str, table_name: str) -> None:
     # Delete old watermark row, then insert new one
     execute(
         conn,
-        f"""DELETE FROM "{catalog}".silver._watermarks
-            WHERE table_name = '{table_name}'""",
+        f'DELETE FROM "{catalog}".silver._watermarks WHERE table_name = ?',
+        params=(table_name,),
     )
     execute(
         conn,
-        f"""INSERT INTO "{catalog}".silver._watermarks
-            VALUES ('{table_name}', TIMESTAMP '{max_ts}', CURRENT_TIMESTAMP)""",
+        f'INSERT INTO "{catalog}".silver._watermarks'
+        f" VALUES (?, TIMESTAMP ?, CURRENT_TIMESTAMP)",
+        params=(table_name, max_ts),
     )
-    logger.info(f"  Watermark for {table_name} updated to {max_ts}")
+    logger.info("  Watermark for %s updated to %s", table_name, max_ts)
 
 
 # ---------------------------------------------------------------------------
@@ -133,6 +140,9 @@ def build_insert_sql(catalog: str, table: str, watermark: str | None) -> str:
     select_sql = _extract_select(view_sql)
 
     # Add watermark filter for incremental load
+    # NOTE: watermark comes from our own Trino watermark table (trusted internal value),
+    # and table comes from the hardcoded SILVER_VIEWS dict.  Trino does not support
+    # parameterized DDL identifiers, so table names are validated against SILVER_VIEWS.
     if watermark:
         # Append to existing WHERE clause
         select_sql = select_sql.rstrip().rstrip(";")

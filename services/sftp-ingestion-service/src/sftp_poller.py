@@ -11,6 +11,7 @@ import stat
 import time
 from datetime import datetime, timezone
 from pathlib import PurePosixPath
+from typing import Any
 
 import paramiko
 
@@ -41,19 +42,36 @@ class SftpPoller:
         )
 
     def _connect(self) -> paramiko.SFTPClient:
-        """Open an SFTP connection."""
-        transport = paramiko.Transport((self._sftp_config.host, self._sftp_config.port))
+        """Open an SFTP connection with host key verification."""
+        client = paramiko.SSHClient()
 
-        if self._sftp_config.key_filename:
-            pkey = paramiko.RSAKey.from_private_key_file(self._sftp_config.key_filename)
-            transport.connect(username=self._sftp_config.username, pkey=pkey)
+        # Load host keys for server identity verification
+        if self._sftp_config.known_hosts_file:
+            client.load_host_keys(self._sftp_config.known_hosts_file)
+            client.set_missing_host_key_policy(paramiko.RejectPolicy())
         else:
-            transport.connect(
-                username=self._sftp_config.username,
-                password=self._sftp_config.password,
+            logger.warning(
+                "No known_hosts_file configured — using RejectPolicy. "
+                "Set SFTP_KNOWN_HOSTS_FILE to enable host key verification."
             )
+            client.set_missing_host_key_policy(paramiko.RejectPolicy())
 
-        return paramiko.SFTPClient.from_transport(transport)
+        connect_kwargs: dict[str, Any] = {
+            "hostname": self._sftp_config.host,
+            "port": self._sftp_config.port,
+            "username": self._sftp_config.username,
+        }
+        if self._sftp_config.key_filename:
+            connect_kwargs["key_filename"] = self._sftp_config.key_filename
+        else:
+            connect_kwargs["password"] = self._sftp_config.password
+
+        client.connect(**connect_kwargs)
+        sftp = client.open_sftp()
+
+        # Store client reference on the SFTPClient so we can close it properly
+        sftp._ssh_client = client  # type: ignore[attr-defined]
+        return sftp
 
     def _ensure_archive_dir(self, sftp: paramiko.SFTPClient) -> None:
         """Create the archive directory if it doesn't exist."""
@@ -171,5 +189,9 @@ class SftpPoller:
 
         finally:
             sftp.close()
+            # Close the underlying SSH client to prevent transport leaks
+            ssh_client = getattr(sftp, "_ssh_client", None)
+            if ssh_client is not None:
+                ssh_client.close()
 
         return envelopes
