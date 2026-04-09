@@ -158,7 +158,6 @@ function relativeTime(iso: string): string {
       <div class="card card-body">
         <div class="events-header">
           <h3 class="section-label">Recent Access Events</h3>
-          <Button label="Export Audit" icon="pi pi-download" size="small" text />
         </div>
 
         <div class="events-list">

@@ -91,10 +91,6 @@ function formatDate(ts: string): string {
       subtitle="Published energy domain data products — derived from live simulation source inventory"
       :breadcrumbs="[{ label: 'Use Cases' }, { label: 'Smart Energy' }, { label: 'Data Products' }]"
     >
-      <template #actions>
-        <Button label="API Docs" icon="pi pi-code" size="small" outlined />
-        <Button label="New Product" icon="pi pi-plus" size="small" />
-      </template>
     </PageHeader>
 
     <div v-if="isLive" class="live-banner">

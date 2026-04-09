@@ -116,9 +116,6 @@ function getExpandedEntry(row: Record<string, unknown>): AuditEntry | undefined 
       subtitle="Immutable chronological record of all platform actions, schema changes, and access events"
       :breadcrumbs="[{ label: 'Provenance & Audit' }, { label: 'Audit Log' }]"
     >
-      <template #actions>
-        <Button label="Export CSV" icon="pi pi-download" size="small" outlined />
-      </template>
     </PageHeader>
 
     <div class="view-body">

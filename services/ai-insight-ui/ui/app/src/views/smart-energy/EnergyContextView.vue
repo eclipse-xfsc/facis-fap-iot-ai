@@ -1,5 +1,13 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+
+/** Safely format a value that might be null, undefined, or a string */
+function fmt(v: unknown, decimals: number): string {
+  if (v == null) return '—'
+  const n = typeof v === 'number' ? v : parseFloat(String(v))
+  return isNaN(n) ? '—' : n.toFixed(decimals)
+}
+
 import PageHeader from '@/components/common/PageHeader.vue'
 import KpiCard from '@/components/common/KpiCard.vue'
 import TimeSeriesChart from '@/components/common/TimeSeriesChart.vue'
@@ -137,9 +145,9 @@ const peakPrice = computed((): number | null => {
 })
 
 const priceKpis = computed(() => [
-  { label: 'Current Price', value: currentPrice.value !== null ? currentPrice.value.toFixed(4) : '—', unit: currentPrice.value !== null ? '€/kWh' : '', trend: 'stable' as const, icon: 'pi-euro', color: '#8b5cf6' },
-  { label: 'Avg Price (24h)', value: avgPrice.value !== null ? avgPrice.value.toFixed(4) : '—', unit: avgPrice.value !== null ? '€/kWh' : '', trend: 'stable' as const, icon: 'pi-chart-line', color: '#3b82f6' },
-  { label: 'Peak Price', value: peakPrice.value !== null ? peakPrice.value.toFixed(4) : '—', unit: peakPrice.value !== null ? '€/kWh' : '', trend: 'stable' as const, icon: 'pi-arrow-up', color: '#ef4444' }
+  { label: 'Current Price', value: fmt(currentPrice.value, 4), unit: currentPrice.value != null ? '€/kWh' : '', trend: 'stable' as const, icon: 'pi-euro', color: '#8b5cf6' },
+  { label: 'Avg Price (24h)', value: fmt(avgPrice.value, 4), unit: avgPrice.value != null ? '€/kWh' : '', trend: 'stable' as const, icon: 'pi-chart-line', color: '#3b82f6' },
+  { label: 'Peak Price', value: fmt(peakPrice.value, 4), unit: peakPrice.value != null ? '€/kWh' : '', trend: 'stable' as const, icon: 'pi-arrow-up', color: '#ef4444' }
 ])
 
 const priceDatasets = computed(() => [
@@ -171,13 +179,14 @@ const latestWeatherGHI = computed((): number | null =>
 )
 const avgWind = computed((): string => {
   if (liveWeatherHistory.value.length > 0) {
-    return (liveWeatherHistory.value.reduce((s, r) => s + r.wind_speed_ms, 0) / liveWeatherHistory.value.length).toFixed(1)
+    const avg = liveWeatherHistory.value.reduce((s, r) => s + (r.wind_speed_ms ?? 0), 0) / liveWeatherHistory.value.length
+    return avg.toFixed(1)
   }
   return '—'
 })
 
 const weatherKpis = computed(() => [
-  { label: 'Temperature', value: latestWeatherTemp.value !== null ? latestWeatherTemp.value.toFixed(1) : '—', unit: latestWeatherTemp.value !== null ? '°C' : '', trend: 'stable' as const, icon: 'pi-sun', color: '#f59e0b' },
+  { label: 'Temperature', value: fmt(latestWeatherTemp.value, 1), unit: latestWeatherTemp.value != null ? '°C' : '', trend: 'stable' as const, icon: 'pi-sun', color: '#f59e0b' },
   { label: 'Irradiance (GHI)', value: latestWeatherGHI.value !== null ? Math.round(latestWeatherGHI.value) : '—', unit: latestWeatherGHI.value !== null ? 'W/m²' : '', trend: 'stable' as const, icon: 'pi-bolt', color: '#f59e0b' },
   { label: 'Wind Speed', value: avgWind.value, unit: avgWind.value !== '—' ? 'm/s' : '', trend: 'stable' as const, icon: 'pi-send', color: '#3b82f6' }
 ])
@@ -225,14 +234,14 @@ const peakPV = computed((): number | null => {
   return null
 })
 const totalPV_kWh = computed((): string => {
-  if (livePVHistory.value.length > 0) return livePVHistory.value.reduce((s, r) => s + r.power_kw, 0).toFixed(0)
+  if (livePVHistory.value.length > 0) return livePVHistory.value.reduce((s, r) => s + (r.power_kw ?? 0), 0).toFixed(0)
   return '—'
 })
 
 const pvKpis = computed(() => [
-  { label: 'Current PV Power', value: latestPVPower.value !== null ? latestPVPower.value.toFixed(1) : '—', unit: latestPVPower.value !== null ? 'kW' : '', trend: 'stable' as const, icon: 'pi-sun', color: '#22c55e' },
+  { label: 'Current PV Power', value: fmt(latestPVPower.value, 1), unit: latestPVPower.value != null ? 'kW' : '', trend: 'stable' as const, icon: 'pi-sun', color: '#22c55e' },
   { label: 'History Sum', value: totalPV_kWh.value, unit: totalPV_kWh.value !== '—' ? 'kWh' : '', trend: 'stable' as const, icon: 'pi-chart-bar', color: '#22c55e' },
-  { label: 'Peak Output', value: peakPV.value !== null ? peakPV.value.toFixed(1) : '—', unit: peakPV.value !== null ? 'kW' : '', trend: 'stable' as const, icon: 'pi-arrow-up', color: '#22c55e' }
+  { label: 'Peak Output', value: fmt(peakPV.value, 1), unit: peakPV.value != null ? 'kW' : '', trend: 'stable' as const, icon: 'pi-arrow-up', color: '#22c55e' }
 ])
 
 const pvLabels = computed((): string[] => {
@@ -266,7 +275,7 @@ const displayPVRecords = computed(() =>
 const latestConsumers = computed(() => liveDevices.value)
 
 const activeDevices = computed(() => latestConsumers.value.filter(r => r.state === 'on').length)
-const totalLoad = computed(() => latestConsumers.value.reduce((s, r) => s + r.powerKw, 0).toFixed(1))
+const totalLoad = computed(() => latestConsumers.value.reduce((s, r) => s + (r.powerKw ?? 0), 0).toFixed(1))
 
 const consumerKpis = computed(() => [
   { label: 'Active Devices', value: activeDevices.value, unit: '', trend: 'stable' as const, icon: 'pi-desktop', color: '#3b82f6' },
@@ -360,7 +369,7 @@ function fmtTs(iso: string): string {
             class="data-table__row"
           >
             <span class="text-muted">{{ fmtTs(rec.timestamp) }}</span>
-            <span class="font-semibold" style="color: #8b5cf6">{{ rec.priceEurPerKwh.toFixed(4) }}</span>
+            <span class="font-semibold" style="color: #8b5cf6">{{ rec.priceEurPerKwh?.toFixed(4) ?? '—' }}</span>
             <StatusBadge :status="rec.tariffType === 'peak' ? 'warning' : 'info'" size="sm" :show-dot="false" />
           </div>
         </div>
@@ -417,10 +426,10 @@ function fmtTs(iso: string): string {
             class="data-table__row data-table__row--5"
           >
             <span class="text-muted">{{ fmtTs(rec.timestamp) }}</span>
-            <span>{{ rec.temperature_c.toFixed(1) }}</span>
-            <span>{{ Math.round(rec.solarIrradiance_w_m2) }}</span>
-            <span>{{ rec.windSpeed_ms.toFixed(1) }}</span>
-            <span>{{ Math.round(rec.cloudCover_pct) }}%</span>
+            <span>{{ rec.temperature_c?.toFixed(1) ?? '—' }}</span>
+            <span>{{ rec.solarIrradiance_w_m2 != null ? Math.round(rec.solarIrradiance_w_m2) : '—' }}</span>
+            <span>{{ rec.windSpeed_ms?.toFixed(1) ?? '—' }}</span>
+            <span>{{ rec.cloudCover_pct != null ? Math.round(rec.cloudCover_pct) + '%' : '—' }}</span>
           </div>
         </div>
       </section>
@@ -475,9 +484,9 @@ function fmtTs(iso: string): string {
             class="data-table__row data-table__row--4"
           >
             <span class="text-muted">{{ fmtTs(rec.timestamp) }}</span>
-            <span class="font-semibold" style="color: #22c55e">{{ rec.pvPower_kW.toFixed(2) }}</span>
-            <span>{{ Math.round(rec.irradiance_w_m2) }}</span>
-            <span>{{ rec.temperature_c.toFixed(1) }}</span>
+            <span class="font-semibold" style="color: #22c55e">{{ rec.pvPower_kW?.toFixed(2) ?? '—' }}</span>
+            <span>{{ rec.irradiance_w_m2 != null ? Math.round(rec.irradiance_w_m2) : '—' }}</span>
+            <span>{{ rec.temperature_c?.toFixed(1) ?? '—' }}</span>
           </div>
         </div>
       </section>
@@ -532,10 +541,10 @@ function fmtTs(iso: string): string {
                 }"
               >
                 <span class="state-dot" :style="{ background: STATE_COLOR[rec.state] ?? '#94a3b8' }"></span>
-                {{ rec.state.toUpperCase() }}
+                {{ (rec.state ?? 'unknown').toUpperCase() }}
               </span>
             </span>
-            <span class="font-semibold">{{ rec.powerKw.toFixed(2) }}</span>
+            <span class="font-semibold">{{ rec.powerKw?.toFixed(2) ?? '—' }}</span>
             <span class="text-muted">{{ fmtTs(rec.timestamp) }}</span>
           </div>
         </div>

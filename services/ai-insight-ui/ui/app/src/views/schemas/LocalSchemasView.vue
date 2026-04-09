@@ -97,9 +97,6 @@ const stats = computed(() => ({
       subtitle="Platform-managed canonical schemas for harmonised data representation"
       :breadcrumbs="[{ label: 'Schema & Mapping' }, { label: 'Local Schemas' }]"
     >
-      <template #actions>
-        <Button label="New Schema" icon="pi pi-plus" size="small" />
-      </template>
     </PageHeader>
 
     <div class="view-body">
@@ -131,7 +128,6 @@ const stats = computed(() => ({
       >
         <template #actions>
           <Button icon="pi pi-eye" text size="small" v-tooltip.top="'View Schema'" />
-          <Button icon="pi pi-download" text size="small" v-tooltip.top="'Download'" />
         </template>
       </DataTablePage>
     </div>

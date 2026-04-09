@@ -20,6 +20,9 @@ dependencies = [
     "redis",
     "pyyaml>=6.0.0",
     "python-json-logger>=3.0.0",
+    "prometheus-client>=0.20.0",
+    "tenacity>=8.2.0",
+    "confluent-kafka>=2.3.0",
 ]
 
 [project.optional-dependencies]

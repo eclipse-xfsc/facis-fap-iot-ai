@@ -1,0 +1,87 @@
+{{- if .Values.goldMaterializer.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "facis-simulation.fullname" . }}-gold-materializer
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "facis-simulation.labels" . | nindent 4 }}
+    app.kubernetes.io/component: lakehouse
+spec:
+  schedule: {{ .Values.goldMaterializer.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: {{ .Values.goldMaterializer.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.goldMaterializer.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      backoffLimit: {{ .Values.goldMaterializer.backoffLimit }}
+      activeDeadlineSeconds: {{ .Values.goldMaterializer.activeDeadlineSeconds }}
+      template:
+        metadata:
+          labels:
+            {{- include "facis-simulation.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: gold-materializer
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+          initContainers:
+          - name: install-deps
+            image: {{ .Values.goldMaterializer.image.repository }}:{{ .Values.goldMaterializer.image.tag }}
+            command: ["/bin/sh", "-c"]
+            args:
+            - pip install --target=/deps trino requests tabulate 2>&1 | tail -1
+            volumeMounts:
+            - name: deps
+              mountPath: /deps
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: false
+              capabilities:
+                drop: [ALL]
+          containers:
+          - name: materializer
+            image: {{ .Values.goldMaterializer.image.repository }}:{{ .Values.goldMaterializer.image.tag }}
+            command: ["/bin/sh", "-c"]
+            args:
+            - |
+              export PYTHONPATH=/deps:/scripts
+              python /scripts/materialize_gold.py --env-file /config/.env
+            env:
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+            resources:
+              {{- toYaml .Values.goldMaterializer.resources | nindent 14 }}
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop: [ALL]
+            volumeMounts:
+            - name: deps
+              mountPath: /deps
+              readOnly: true
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+            - name: credentials
+              mountPath: /config
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          volumes:
+          - name: deps
+            emptyDir: {}
+          - name: tmp
+            emptyDir:
+              sizeLimit: 64Mi
+          - name: scripts
+            configMap:
+              name: {{ .Values.goldMaterializer.scriptsConfigMap }}
+          - name: credentials
+            secret:
+              secretName: {{ .Values.goldMaterializer.credentialsSecret }}
+{{- end }}

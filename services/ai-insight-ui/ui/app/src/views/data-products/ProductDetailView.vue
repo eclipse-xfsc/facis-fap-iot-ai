@@ -497,7 +497,6 @@ function categoryColor(cat: string): string {
                     <span class="export-card__desc">Flat file, UTF-8 encoded</span>
                   </div>
                   <StatusBadge :status="product?.exportStatus ?? 'processing'" size="sm" />
-                  <Button icon="pi pi-download" label="Export" size="small" outlined />
                 </div>
                 <div class="export-card">
                   <div class="export-card__icon" style="background:#dbeafe; color:#1d4ed8"><i class="pi pi-code"></i></div>
@@ -506,7 +505,6 @@ function categoryColor(cat: string): string {
                     <span class="export-card__desc">Schema-validated JSON</span>
                   </div>
                   <StatusBadge :status="product?.exportStatus ?? 'processing'" size="sm" />
-                  <Button icon="pi pi-download" label="Export" size="small" outlined />
                 </div>
                 <div class="export-card">
                   <div class="export-card__icon" style="background:#f3e8ff; color:#7c3aed"><i class="pi pi-table"></i></div>
@@ -515,7 +513,6 @@ function categoryColor(cat: string): string {
                     <span class="export-card__desc">Columnar binary format</span>
                   </div>
                   <StatusBadge :status="product?.exportStatus ?? 'processing'" size="sm" />
-                  <Button icon="pi pi-download" label="Export" size="small" outlined />
                 </div>
               </div>
             </div>

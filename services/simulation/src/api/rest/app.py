@@ -32,6 +32,7 @@ from src.api.rest.routes import (
     weather,
 )
 from src.core.engine import EngineState
+from src.observability.metrics import create_metrics_app
 
 logger = logging.getLogger(__name__)
 
@@ -362,6 +363,9 @@ def create_app() -> FastAPI:
     app.include_router(
         city_weather.router, prefix="/api/v1", tags=["Smart City - Weather"]
     )
+
+    # Prometheus metrics endpoint at /metrics
+    app.mount("/metrics", create_metrics_app())
 
     with open(_OPENAPI_SPEC, encoding="utf-8") as f:
         app.openapi_schema = yaml.safe_load(f)

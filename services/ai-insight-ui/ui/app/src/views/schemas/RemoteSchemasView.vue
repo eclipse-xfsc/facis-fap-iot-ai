@@ -126,9 +126,6 @@ const filters = [
       subtitle="External and third-party schemas integrated via protocol adapters"
       :breadcrumbs="[{ label: 'Schema & Mapping' }, { label: 'Remote Schemas' }]"
     >
-      <template #actions>
-        <Button label="Import Schema" icon="pi pi-cloud-download" size="small" />
-      </template>
     </PageHeader>
 
     <div class="view-body">
@@ -169,10 +166,6 @@ const filters = [
         empty-icon="pi-cloud"
         empty-title="No remote schemas"
       >
-        <template #actions>
-          <Button icon="pi pi-arrows-h" text size="small" v-tooltip.top="'View Mapping'" />
-          <Button icon="pi pi-refresh" text size="small" v-tooltip.top="'Refresh Schema'" />
-        </template>
       </DataTablePage>
     </div>
   </div>

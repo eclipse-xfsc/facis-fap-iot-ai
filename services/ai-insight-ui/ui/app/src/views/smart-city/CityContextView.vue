@@ -191,14 +191,18 @@ const weatherChartLabels = computed(() => liveWeatherChartLabels.value)
 
 // Live weather table rows
 const liveWeatherRows = computed(() =>
-  liveWeatherHistory.value.slice(0, 10).map((r, i) => ({
-    id: `WX-${i + 1}`,
-    timestamp: r.timestamp,
-    visibility: r.visibility.toFixed(1),
-    fogIndex: (r.fog_index * 100).toFixed(1),
-    sunrise: r.sunrise_time,
-    sunset: r.sunset_time
-  }))
+  liveWeatherHistory.value.slice(0, 10).map((r, i) => {
+    const vis = typeof r.visibility === 'number' ? r.visibility : parseFloat(String(r.visibility ?? ''))
+    const fog = typeof r.fog_index === 'number' ? r.fog_index : parseFloat(String(r.fog_index ?? ''))
+    return {
+      id: `WX-${i + 1}`,
+      timestamp: r.timestamp,
+      visibility: isNaN(vis) ? '—' : vis.toFixed(1),
+      fogIndex: isNaN(fog) ? '—' : (fog * 100).toFixed(1),
+      sunrise: r.sunrise_time,
+      sunset: r.sunset_time
+    }
+  })
 )
 
 const weatherTableRows = computed(() => liveWeatherRows.value)
@@ -215,8 +219,18 @@ const weatherColumns = [
 // ─── Sunrise / Sunset — from live weather only ────────────────────────────────
 const todaySunrise = computed(() => liveWeatherCurrent.value?.sunrise_time ?? '—')
 const todaySunset = computed(() => liveWeatherCurrent.value?.sunset_time ?? '—')
-const currentVisibility = computed(() => liveWeatherCurrent.value ? `${liveWeatherCurrent.value.visibility.toFixed(1)} km` : '—')
-const currentFogIndex = computed(() => liveWeatherCurrent.value ? `${(liveWeatherCurrent.value.fog_index * 100).toFixed(0)}%` : '—')
+const currentVisibility = computed(() => {
+  const v = liveWeatherCurrent.value?.visibility
+  if (v == null) return '—'
+  const n = typeof v === 'number' ? v : parseFloat(String(v))
+  return isNaN(n) ? '—' : `${n.toFixed(1)} km`
+})
+const currentFogIndex = computed(() => {
+  const v = liveWeatherCurrent.value?.fog_index
+  if (v == null) return '—'
+  const n = typeof v === 'number' ? v : parseFloat(String(v))
+  return isNaN(n) ? '—' : `${(n * 100).toFixed(0)}%`
+})
 
 function eventSeverityBadge(s: string): string {
   return s === 'high' ? 'error' : s === 'medium' ? 'warning' : 'info'

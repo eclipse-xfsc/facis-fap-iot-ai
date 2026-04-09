@@ -80,9 +80,6 @@ function navigateToDetail(row: Record<string, unknown>): void {
       subtitle="Transformation rules between external and canonical schemas"
       :breadcrumbs="[{ label: 'Schema & Mapping' }, { label: 'Mappings' }]"
     >
-      <template #actions>
-        <Button label="New Mapping" icon="pi pi-plus" size="small" />
-      </template>
     </PageHeader>
 
     <div class="view-body">

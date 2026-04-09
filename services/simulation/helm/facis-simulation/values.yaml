@@ -247,6 +247,104 @@ tolerations: []
 affinity: {}
 
 # ---------------------------------------------------------------------------
+# Prometheus Metrics
+# ---------------------------------------------------------------------------
+metrics:
+  # -- Path where Prometheus metrics are served
+  path: /metrics
+  # -- ServiceMonitor configuration (requires Prometheus Operator)
+  serviceMonitor:
+    # -- Enable ServiceMonitor resource
+    enabled: false
+    # -- Scrape interval
+    interval: 30s
+    # -- Scrape timeout
+    scrapeTimeout: 10s
+    # -- Additional labels for ServiceMonitor (e.g. for Prometheus selector)
+    additionalLabels: {}
+
+# ---------------------------------------------------------------------------
+# Autoscaling (HPA)
+# ---------------------------------------------------------------------------
+autoscaling:
+  # -- Enable Horizontal Pod Autoscaler (overrides replicaCount when true)
+  enabled: false
+  # -- Minimum number of replicas
+  minReplicas: 1
+  # -- Maximum number of replicas
+  maxReplicas: 5
+  # -- Target CPU utilization percentage (0 to disable)
+  targetCPUUtilizationPercentage: 70
+  # -- Target memory utilization percentage (0 to disable)
+  targetMemoryUtilizationPercentage: 80
+
+# ---------------------------------------------------------------------------
+# Silver Materializer CronJob
+# ---------------------------------------------------------------------------
+silverMaterializer:
+  # -- Enable Silver materializer CronJob (incremental Bronze → Silver)
+  enabled: false
+  # -- Cron schedule (default: every 10 minutes)
+  schedule: "*/10 * * * *"
+  # -- Container image for materializer jobs
+  image:
+    repository: python
+    tag: "3.11-slim"
+  # -- ConfigMap containing materialize_silver.py and setup_lakehouse.py
+  scriptsConfigMap: facis-silver-scripts
+  # -- Secret containing .env.cluster credentials
+  credentialsSecret: facis-lakehouse-credentials
+  # -- Resource requests/limits for materializer container
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+  # -- Number of successful jobs to retain
+  successfulJobsHistoryLimit: 3
+  # -- Number of failed jobs to retain
+  failedJobsHistoryLimit: 3
+  # -- Number of retries on failure
+  backoffLimit: 1
+  # -- Maximum job runtime in seconds
+  activeDeadlineSeconds: 540
+
+# ---------------------------------------------------------------------------
+# Gold Materializer CronJob
+# ---------------------------------------------------------------------------
+goldMaterializer:
+  # -- Enable Gold materializer CronJob (Silver views → Gold Iceberg tables)
+  enabled: false
+  # -- Cron schedule (default: every 6 hours at minute 30)
+  schedule: "30 */6 * * *"
+  # -- Container image for materializer jobs
+  image:
+    repository: python
+    tag: "3.11-slim"
+  # -- ConfigMap containing materialize_gold.py and setup_lakehouse.py
+  scriptsConfigMap: facis-gold-scripts
+  # -- Secret containing .env.cluster credentials
+  credentialsSecret: facis-lakehouse-credentials
+  # -- Resource requests/limits for materializer container
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+  # -- Number of successful jobs to retain
+  successfulJobsHistoryLimit: 3
+  # -- Number of failed jobs to retain
+  failedJobsHistoryLimit: 3
+  # -- Number of retries on failure
+  backoffLimit: 2
+  # -- Maximum job runtime in seconds
+  activeDeadlineSeconds: 1800
+
+# ---------------------------------------------------------------------------
 # Additional environment variables
 # ---------------------------------------------------------------------------
 # -- Extra environment variables injected into the container

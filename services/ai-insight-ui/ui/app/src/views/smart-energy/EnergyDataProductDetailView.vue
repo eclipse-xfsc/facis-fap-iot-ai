@@ -174,8 +174,6 @@ function fmtTs(iso: string): string {
     >
       <template #actions>
         <StatusBadge :status="product?.apiStatus ?? 'unavailable'" />
-        <Button label="Download Schema" icon="pi pi-download" size="small" outlined />
-        <Button label="API Reference" icon="pi pi-code" size="small" />
       </template>
     </PageHeader>
 

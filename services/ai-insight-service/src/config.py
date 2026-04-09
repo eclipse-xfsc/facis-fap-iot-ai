@@ -87,6 +87,9 @@ class PolicyConfig(BaseModel):
     required_roles: list[str] = Field(default_factory=lambda: ["ai_insight_consumer"])
     allowed_agreement_ids: list[str] = Field(default_factory=list)
     allowed_asset_ids: list[str] = Field(default_factory=list)
+    # Table/column-level ABAC: role -> allowed tables -> allowed columns
+    # Example: {"analyst": {"net_grid_hourly": ["hour", "avg_consumption_kw"]}}
+    role_table_access: dict[str, dict[str, list[str]]] = Field(default_factory=dict)
 
 
 class RateLimitConfig(BaseModel):
@@ -105,6 +108,16 @@ class CacheConfig(BaseModel):
     ttl_seconds: int = Field(default=300, ge=1, le=86400)
     key_prefix: str = Field(default="ai-insight:cache:v1")
     connect_timeout_seconds: float = Field(default=1.0, gt=0, le=30)
+
+
+class HmacConfig(BaseModel):
+    """HMAC-SHA256 signed URL settings for DSP HTTP Pull Profile."""
+
+    enabled: bool = Field(default=True)
+    secret: str | None = Field(default=None)
+    base_url: str = Field(default="https://ai-insight.facis.cloud")
+    default_ttl_seconds: int = Field(default=3600, ge=60, le=86400)
+    max_ttl_seconds: int = Field(default=86400, ge=60, le=604800)
 
 
 class AuditConfig(BaseModel):
@@ -158,6 +171,7 @@ class Settings(BaseSettings):
     llm: LlmConfig = Field(default_factory=LlmConfig)
     trino: TrinoConfig = Field(default_factory=TrinoConfig)
     policy: PolicyConfig = Field(default_factory=PolicyConfig)
+    hmac: HmacConfig = Field(default_factory=HmacConfig)
     rate_limit: RateLimitConfig = Field(default_factory=RateLimitConfig)
     cache: CacheConfig = Field(default_factory=CacheConfig)
     audit: AuditConfig = Field(default_factory=AuditConfig)

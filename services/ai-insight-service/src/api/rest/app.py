@@ -6,7 +6,9 @@ from pathlib import Path
 import yaml
 from fastapi import FastAPI
 
+from src.api.rest.routes.dsp import configure_dsp_router, dsp_router
 from src.api.rest.routes.insights import insights_router, outputs_router
+from src.observability.metrics import create_metrics_app
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +32,19 @@ def create_app() -> FastAPI:
 
     app.include_router(insights_router)
     app.include_router(outputs_router)
+    app.include_router(dsp_router)
+
+    # Initialize DSP HMAC signing (uses HMAC_SECRET env var or generates ephemeral key)
+    import os
+
+    configure_dsp_router(
+        secret=os.getenv("AI_INSIGHT_HMAC__SECRET"),
+        base_url=os.getenv("AI_INSIGHT_HMAC__BASE_URL", "https://ai-insight.facis.cloud"),
+        enabled=os.getenv("AI_INSIGHT_HMAC__ENABLED", "true").lower() == "true",
+    )
+
+    # Prometheus metrics endpoint at /metrics
+    app.mount("/metrics", create_metrics_app())
 
     if _OPENAPI_SPEC.exists():
         with open(_OPENAPI_SPEC, encoding="utf-8") as file:
