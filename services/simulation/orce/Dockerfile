@@ -45,9 +45,22 @@ RUN mkdir -p /opt/jsonforms-staging && \
         @emotion/styled \
         node-red-contrib-uibuilder
 
+# ── Simulation runtime modules ──────────────────────────────────────
+# node-red-contrib-modbus: Modbus TCP master + slave nodes used by the
+#   ORCE-native Modbus adapter (replaces src/api/modbus/server.py).
+# seedrandom: deterministic JS-native PRNG used by the simulation engine
+#   subflows. Same (base_seed, entity_id, ts_ms) → same float sequence,
+#   byte-stable across pod restarts.
+RUN mkdir -p /opt/sim-runtime-staging && \
+    cd /opt/sim-runtime-staging && \
+    npm init -y && \
+    npm install \
+        node-red-contrib-modbus \
+        seedrandom
+
 # ── Custom entrypoint ───────────────────────────────────────────────
-# Copies rdkafka + jsonforms into /data/node_modules at startup,
-# applies SSL patch, then delegates to the original ORCE entrypoint.
+# Copies rdkafka + jsonforms + sim-runtime modules into /data/node_modules
+# at startup, applies SSL patch, then delegates to the original ORCE entrypoint.
 COPY entrypoint.sh /usr/local/bin/entrypoint-rdkafka.sh
 RUN chmod +x /usr/local/bin/entrypoint-rdkafka.sh
 
