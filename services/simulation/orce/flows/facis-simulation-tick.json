@@ -1,0 +1,40 @@
+[
+  {
+    "id": "tab-tick",
+    "type": "tab",
+    "label": "FACIS Simulation \u2014 Tick Loop",
+    "disabled": false,
+    "info": "FACIS Simulation \u2014 Tick Loop\n\nSelf-adjusting wall-clock timer that fires a tick whenever\n  real_interval_ms = (interval_minutes * 60_000) / acceleration\nelapses. Honours the FSM in the Engine tab \u2014 if engine.state !== 'running'\nthe timer keeps spinning but emits no tick message.\n\nEach tick advances flow.engine.simulation_time by interval_minutes * 60s\nand emits a `sim.tick.trigger` message via link-out so the Feeds tab can\ndrive the simulators (Phase 8)."
+  },
+  {
+    "id": "fn-tick-scheduler",
+    "type": "function",
+    "z": "tab-tick",
+    "name": "tick scheduler",
+    "func": "// Manual trigger: any incoming msg is ignored \u2014 the tick loop is driven\n// by the recursive setTimeout established in the On Start handler.\nreturn null;\n",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "// FACIS tick scheduler \u2014 recursive setTimeout to honour speed-factor\n// changes without a redeploy.\nconst intervalMinutes = Number(env.get('INTERVAL_MINUTES') || 1);\nconst minRealMs = Number(env.get('MIN_REAL_INTERVAL_MS') || 50);\nconst advanceMs = intervalMinutes * 60000;\n\nfunction realIntervalMs() {\n    const engine = flow.get('engine');\n    const speed = (engine && engine.acceleration) ? engine.acceleration : 1;\n    return Math.max(minRealMs, advanceMs / Math.max(0.001, speed));\n}\n\nfunction fireTick() {\n    const engine = flow.get('engine');\n    if (!engine || engine.state !== 'running') return;\n\n    const prevIso = engine.simulation_time || new Date().toISOString();\n    const nextMs = new Date(prevIso).getTime() + advanceMs;\n    const nextIso = new Date(nextMs).toISOString();\n\n    engine.simulation_time = nextIso;\n    engine.tick_index = (engine.tick_index || 0) + 1;\n    flow.set('engine', engine);\n\n    node.send({\n        payload: {\n            type: 'sim.tick.trigger',\n            tick_index: engine.tick_index,\n            timestamp: nextIso,\n            timestamp_ms: nextMs,\n            base_seed: engine.seed,\n            site_id: env.get('SITE_ID') || 'site-default',\n            acceleration: engine.acceleration,\n            mode: env.get('MODE') || 'normal'\n        }\n    });\n}\n\nfunction loop() {\n    try { fireTick(); } catch (err) { node.error('tick error: ' + err.message); }\n    const t = setTimeout(loop, realIntervalMs());\n    flow.set('__tick_timer', t);\n}\n\n// Start the loop after a short delay so the engine has a chance to load\n// its persisted state.\nconst initial = setTimeout(loop, 1000);\nflow.set('__tick_timer', initial);\nnode.log('tick scheduler initialised: interval=' + intervalMinutes + 'min, advance=' + advanceMs + 'ms');\n",
+    "finalize": "const t = flow.get('__tick_timer');\nif (t) {\n    clearTimeout(t);\n    flow.set('__tick_timer', null);\n    node.log('tick scheduler stopped');\n}\n",
+    "libs": [],
+    "x": 320,
+    "y": 200,
+    "wires": [
+      [
+        "link-out-tick"
+      ]
+    ]
+  },
+  {
+    "id": "link-out-tick",
+    "type": "link out",
+    "z": "tab-tick",
+    "name": "tick.trigger \u2192",
+    "mode": "link",
+    "links": [],
+    "x": 540,
+    "y": 200,
+    "wires": []
+  }
+]
