@@ -7,12 +7,12 @@
     "node": ">=20.0.0"
   },
   "dependencies": {
-    "node-red-contrib-rdkafka": "*",
     "node-red-contrib-modbus": "*",
+    "node-red-contrib-rdkafka": "*",
     "node-red-contrib-uibuilder": "*",
     "seedrandom": "^3.0.5"
   },
   "devDependencies": {
-    "node-red-test-helper": "^0.3.4"
+    "node-red-node-test-helper": "^0.3.4"
   }
 }
