@@ -1,0 +1,67 @@
+[
+  {
+    "id": "subflow-facis-consumer",
+    "type": "subflow",
+    "name": "FACIS Consumer Load",
+    "info": "FACIS Simulation \u2014 Consumer load (industrial oven / HVAC / etc.).\nMirrors src/simulators/consumer_load/{simulator,schedule}.py.\nSchedule + duty-cycle gating preserved.\nPhysics duplicated in tests/flows/smart-energy.spec.js.",
+    "category": "FACIS Simulation",
+    "in": [
+      {
+        "x": 50,
+        "y": 80,
+        "wires": [
+          {
+            "id": "fn-consumer-compute"
+          }
+        ]
+      }
+    ],
+    "out": [
+      {
+        "x": 600,
+        "y": 80,
+        "wires": [
+          {
+            "id": "fn-consumer-compute",
+            "port": 0
+          }
+        ]
+      }
+    ],
+    "env": [],
+    "meta": {
+      "module": "facis-simulation-orce",
+      "version": "0.1.0",
+      "license": "Apache-2.0"
+    },
+    "color": "#B0BEC5",
+    "icon": "font-awesome/fa-plug"
+  },
+  {
+    "id": "fn-consumer-compute",
+    "type": "function",
+    "z": "subflow-facis-consumer",
+    "name": "consumer-load-simulator compute",
+    "func": "function makeRng(baseSeed, entityId, tag, tsMs) {\n    const key = String(baseSeed) + ':' + String(entityId) + ':' + String(tag) + ':' + String(tsMs);\n    const seedHex = crypto.createHash('sha256').update(key).digest('hex').slice(0, 16);\n    return seedrandom.alea(seedHex);\n}\nfunction uniform(rng, min, max) { return min + (max - min) * rng(); }\nfunction normal(rng, mean, stddev) {\n    let u = 0; let v = 0;\n    while (u === 0) u = rng();\n    while (v === 0) v = rng();\n    const z = Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);\n    return mean + stddev * z;\n}\nfunction isWeekend(d) { const w = d.getUTCDay(); return w === 0 || w === 6; }\n\nconst DEFAULT_CFG = {\n    device_id: 'device-default',\n    device_type: 'industrial_oven',\n    rated_power_kw: 3.0,\n    duty_cycle_pct: 70.0,\n    power_variance_pct: 5.0,\n    operate_on_weekends: false,\n    operating_windows: [{ start_hour: 6, end_hour: 18 }]\n};\n\nfunction inWindow(hour, windows) {\n    for (const w of windows) {\n        if (w.start_hour <= w.end_hour) {\n            if (hour >= w.start_hour && hour < w.end_hour) return true;\n        } else {\n            // Overnight wrap\n            if (hour >= w.start_hour || hour < w.end_hour) return true;\n        }\n    }\n    return false;\n}\n\nfunction shouldOperate(date, cfg) {\n    if (isWeekend(date) && !cfg.operate_on_weekends) return false;\n    return inWindow(date.getUTCHours(), cfg.operating_windows);\n}\n\nfunction generateConsumer(payload) {\n    const baseSeed = (typeof payload.base_seed === 'number') ? payload.base_seed : 12345;\n    const entityId = payload.entity_id || 'device-default';\n    const tsMs = (typeof payload.timestamp_ms === 'number') ? payload.timestamp_ms : 0;\n    const isoTs = payload.timestamp || new Date(tsMs).toISOString();\n    const siteId = payload.site_id || '';\n    const cfg = Object.assign({}, DEFAULT_CFG, payload.config || {});\n    const mode = payload.mode || 'normal';\n    const date = new Date(isoTs);\n    const rng = makeRng(baseSeed, entityId, 'consumer', tsMs);\n\n    let state = 'OFF';\n    if (shouldOperate(date, cfg)) {\n        const dutyFrac = cfg.duty_cycle_pct / 100;\n        if (rng() < dutyFrac) state = 'ON';\n    }\n    if (mode === 'event') {\n        const minOfDay = date.getUTCHours() * 60 + date.getUTCMinutes();\n        if (minOfDay >= 1020 && minOfDay < 1140) state = 'ON';\n    }\n\n    let power = 0;\n    if (state === 'ON') {\n        const variance = cfg.rated_power_kw * (cfg.power_variance_pct / 100);\n        const noise = uniform(rng, -variance, variance);\n        power = Math.max(0, cfg.rated_power_kw + noise);\n    }\n\n    return {\n        site_id: siteId,\n        timestamp: isoTs,\n        device_id: cfg.device_id || entityId,\n        device_type: cfg.device_type,\n        device_state: state,\n        device_power_kw: power\n    };\n}\n\nmsg.payload = generateConsumer(msg.payload || {});\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [
+      {
+        "var": "seedrandom",
+        "module": "seedrandom"
+      },
+      {
+        "var": "crypto",
+        "module": "crypto"
+      }
+    ],
+    "x": 320,
+    "y": 80,
+    "wires": [
+      []
+    ]
+  }
+]
