@@ -1,0 +1,67 @@
+[
+  {
+    "id": "subflow-facis-city-events",
+    "type": "subflow",
+    "name": "FACIS City Events",
+    "info": "FACIS Simulation \u2014 Smart-city events.\nNormal mode: no events. Event mode: 3 deterministic events with \u00b11h jitter.\nMirrors src/simulators/smart_city/event.py.",
+    "category": "FACIS Simulation",
+    "in": [
+      {
+        "x": 50,
+        "y": 80,
+        "wires": [
+          {
+            "id": "fn-city-event-compute"
+          }
+        ]
+      }
+    ],
+    "out": [
+      {
+        "x": 600,
+        "y": 80,
+        "wires": [
+          {
+            "id": "fn-city-event-compute",
+            "port": 0
+          }
+        ]
+      }
+    ],
+    "env": [],
+    "meta": {
+      "module": "facis-simulation-orce",
+      "version": "0.1.0",
+      "license": "Apache-2.0"
+    },
+    "color": "#EF9A9A",
+    "icon": "font-awesome/fa-exclamation-triangle"
+  },
+  {
+    "id": "fn-city-event-compute",
+    "type": "function",
+    "z": "subflow-facis-city-events",
+    "name": "city event compute",
+    "func": "function makeRng(baseSeed, entityId, tag, tsMs) {\n    const key = String(baseSeed) + ':' + String(entityId) + ':' + String(tag) + ':' + String(tsMs);\n    const seedHex = crypto.createHash('sha256').update(key).digest('hex').slice(0, 16);\n    return seedrandom.alea(seedHex);\n}\nfunction uniform(rng, a, b) { return a + (b - a) * rng(); }\nfunction isWeekend(d) { const w = d.getUTCDay(); return w === 0 || w === 6; }\nfunction dayOfYear(d) {\n    const start = Date.UTC(d.getUTCFullYear(), 0, 0);\n    return Math.floor((d.getTime() - start) / 86400000);\n}\nfunction calcSunTimes(date, latitude, longitude) {\n    const doy = dayOfYear(date);\n    const decl = 23.45 * Math.sin((Math.PI / 180) * (360 / 365) * (doy - 81));\n    const declRad = decl * Math.PI / 180;\n    const latRad = latitude * Math.PI / 180;\n    let cosHa = -Math.tan(latRad) * Math.tan(declRad);\n    cosHa = Math.max(-1, Math.min(1, cosHa));\n    const haDeg = Math.acos(cosHa) * 180 / Math.PI;\n    const noonH = 12 - longitude / 15;\n    let sunriseH = Math.max(0, Math.min(23.99, noonH - haDeg / 15));\n    let sunsetH = Math.max(0, Math.min(23.99, noonH + haDeg / 15));\n    function fmt(h) {\n        const hh = Math.floor(h);\n        const mm = Math.floor((h - hh) * 60);\n        return String(hh).padStart(2, '0') + ':' + String(mm).padStart(2, '0');\n    }\n    return [fmt(sunriseH), fmt(sunsetH), sunriseH, sunsetH];\n}\n\nconst EVENT_DAY_SCHEDULE = [\n    { hour: 9, duration: 30, type: 'ACCIDENT', severity: 'MEDIUM', severity_num: 2 },\n    { hour: 14, duration: 45, type: 'EMERGENCY', severity: 'HIGH', severity_num: 3 },\n    { hour: 20, duration: 20, type: 'EVENT', severity: 'LOW', severity_num: 1 }\n];\n\nfunction dayOrdinal(date) {\n    // Days since 0001-01-01 (Python date.toordinal proxy)\n    const epoch = Date.UTC(1, 0, 1);\n    return Math.floor((Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()) - epoch) / 86400000) + 1;\n}\n\nfunction generateEvent(payload) {\n    const baseSeed = (typeof payload.base_seed === 'number') ? payload.base_seed : 12345;\n    const entityId = payload.entity_id || 'event-default';\n    const tsMs = (typeof payload.timestamp_ms === 'number') ? payload.timestamp_ms : 0;\n    const isoTs = payload.timestamp || new Date(tsMs).toISOString();\n    const cityId = payload.city_id || 'city-berlin';\n    const zoneId = payload.zone_id || 'zone-001';\n    const mode = payload.mode || 'normal';\n    const date = new Date(isoTs);\n    if (mode !== 'event') {\n        return {\n            city_id: cityId, zone_id: zoneId, timestamp: isoTs,\n            event_type: 'EVENT', severity: 'LOW', severity_num: 1, active: false\n        };\n    }\n    const daySeed = dayOrdinal(date);\n    const rng = makeRng(baseSeed, entityId, 'event-day', daySeed);\n    const events = EVENT_DAY_SCHEDULE.map(e => {\n        const jitter = Math.floor(uniform(rng, -1, 2));\n        const hour = Math.max(0, Math.min(23, e.hour + jitter));\n        return Object.assign({}, e, { hour });\n    });\n    const minOfDay = date.getUTCHours() * 60 + date.getUTCMinutes();\n    for (const e of events) {\n        const start = e.hour * 60;\n        const end = start + e.duration;\n        if (minOfDay >= start && minOfDay < end) {\n            return {\n                city_id: cityId, zone_id: zoneId, timestamp: isoTs,\n                event_type: e.type, severity: e.severity, severity_num: e.severity_num,\n                active: true\n            };\n        }\n    }\n    return {\n        city_id: cityId, zone_id: zoneId, timestamp: isoTs,\n        event_type: 'EVENT', severity: 'LOW', severity_num: 1, active: false\n    };\n}\n\nmsg.payload = generateEvent(msg.payload || {});\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [
+      {
+        "var": "seedrandom",
+        "module": "seedrandom"
+      },
+      {
+        "var": "crypto",
+        "module": "crypto"
+      }
+    ],
+    "x": 320,
+    "y": 80,
+    "wires": [
+      []
+    ]
+  }
+]
