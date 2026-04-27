@@ -13,10 +13,19 @@ pip install -e .
 
 # Run with default configuration
 python -m src.main
-
-# Or use Docker (full stack with Mosquitto, Kafka, ORCE)
-docker compose up --build
 ```
+
+Per the FACIS Technical Development Requirements, the supported runtime is
+Kubernetes + Helm; **Docker Compose is not permitted**. For local stack
+testing use a kind/k3d cluster and the bundled Helm chart:
+
+```bash
+helm install facis-simulation services/simulation/helm/facis-simulation/ \
+  --namespace facis --create-namespace
+```
+
+ORCE-native runtime is the default (`compatibilityMode=orce`); see
+[`docs/orce-runtime/architecture.md`](docs/orce-runtime/architecture.md).
 
 Verify the REST API: `curl http://localhost:8080/api/v1/health`
 

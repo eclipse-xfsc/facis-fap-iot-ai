@@ -26,6 +26,49 @@ service to the ORCE-native runtime introduced on the
 - Modbus TCP register addresses (Janitza UMG 96RM layout).
 - The Stackable Kafka, NiFi, Trino, and MinIO/S3 backends.
 
+## SRS § 9.1.1 vs Technical Development Requirements
+
+The FACIS SRS § 9.1.1 lists "Docker Compose (Development) or Kubernetes
+(K3S, KIND)" as an exemplary single-host development profile, and § 11.5
+Test 22 asserts "Docker Compose deployment starts successfully".
+
+The FACIS Technical Development Requirements supersede the SRS for delivery
+rules and explicitly state: **"Kubernetes v1.29 or higher on IONOS Cloud /
+Helm for deployments / ORCE runtime for Builder execution / No Docker
+Compose permitted."**
+
+**Position taken by this migration**: we follow the TDR's stricter rule.
+Concretely:
+
+- The simulation service no longer ships any `docker-compose*.yml` file.
+- The BDD `docker_deployment.feature` retains only the container-level
+  scenarios (image build, env-driven config, volume mount); the multi-service
+  compose scenario has been dropped.
+- Local development uses kind/k3d clusters with the bundled Helm chart, not
+  Docker Compose.
+
+If a reviewer flags SRS Test 22 as an acceptance gap, point to the TDR's
+"No Docker Compose permitted" clause and the corresponding statement in the
+Change Request acceptance criteria. The TDR is the source of truth for
+delivery rules.
+
+### Pre-existing compose references still in the tree
+
+The simulation service still contains compose-related references in legacy
+documentation that are *not* in scope for this migration:
+
+- `services/simulation/README.md` (updated in this branch)
+- `services/simulation/docs/guides/{setup,index}.md`
+- `services/simulation/docs/pipeline/mqtt-kafka-bronze-pipeline.md`
+- `services/simulation/docs/deployment/{deployment-operations,ops-runbook,infrastructure-prerequisites,orce-cluster-deployment}.md`
+- `services/simulation/docs/architecture/system-architecture.md` (§9 Docker Compose Topology)
+- `services/simulation/scripts/{generate_presentation,demo_e2e,setup_nifi_mqtt_to_kafka}.py`
+- `services/simulation/tests/integration/test_mqtt_{kafka_pipeline,publisher}.py` (docstrings; the tests themselves use `testcontainers`)
+
+These should be cleaned up in a dedicated `chore/tdr-compose-cleanup` PR
+rather than expanding this migration. They do not affect runtime behaviour
+or the TDR-compliant delivery surface.
+
 ## Controlled break: numeric determinism
 
 The ORCE-native engine uses a JS-native `seedrandom('alea')` PRNG seeded via

@@ -4,9 +4,12 @@ These steps target an ORCE pod that hosts the FACIS simulation flows.
 The host/port are taken from environment variables so the same suite can be
 run against:
 
-  - a local docker-compose pod (default ``http://localhost:1880``)
+  - a local kind/k3d cluster (``http://localhost:1880`` via port-forward)
   - the IONOS cluster via ``kubectl port-forward`` (``http://localhost:1880``)
   - an Ingress-exposed deployment (``https://simulation.facis.cloud``)
+
+Per the FACIS Technical Development Requirements ("No Docker Compose
+permitted"), no compose-based local stack is supported.
 
 Tests will be skipped when ``FACIS_ORCE_BASE_URL`` is unset, so the suite
 remains green on CI runners without an ORCE backend.
