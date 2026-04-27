@@ -4,7 +4,7 @@ FACIS IoT-AI Federated Architecture Pattern (IoT-AI FAP) enables secure IoT data
 dataspace-compliant transfer, data-lake aggregation, AI-supported analytics, and dashboard
 visualization across on-premise and air-gapped environments.
 
-Part of the [Eclipse XFSC](https://github.com/eclipse-xfsc) project under [IPCEI-CIS](https://www.ipcei-cis.eu/).
+Part of the [FACIS](https://github.com/eclipse-xfsc/facis) project under [IPCEI-CIS](https://www.ipcei-cis.eu/).
 
 ## Services
 
