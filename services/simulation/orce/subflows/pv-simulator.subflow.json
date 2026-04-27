@@ -1,0 +1,58 @@
+[
+  {
+    "id": "subflow-facis-pv",
+    "type": "subflow",
+    "name": "FACIS PV",
+    "info": "FACIS Simulation \u2014 PV generation subflow\n\nMirrors `src/simulators/pv_generation/simulator.py`:\n  P_kw = P_nom * (G/1000) * (1 + \u03b3*(T_mod - 25)) * (1 - losses)\n  T_mod = T_amb + (NOCT - 20) * G/800\n\nInput msg.payload:\n  base_seed, entity_id, timestamp_ms, timestamp (ISO), site_id\n  weather: { conditions: { ghi_w_m2, temperature_c } }\n  optional config: { nominal_capacity_kwp, noct_c, temperature_coefficient_pct_per_c,\n                     reference_temperature_c, system_losses_percent, system_id }\n\nOutput msg.payload (PVReading):\n  { site_id, system_id, timestamp,\n    readings: { power_output_kw, daily_energy_kwh, irradiance_w_m2,\n                module_temperature_c, efficiency_percent } }\n\nDaily energy is accumulated in flow context `pv_daily[entity_id]` keyed\non the UTC date string; resets at midnight UTC.\n\nPhysics duplicated in tests/flows/pv.spec.js \u2014 keep in sync.",
+    "category": "FACIS Simulation",
+    "in": [
+      {
+        "x": 50,
+        "y": 80,
+        "wires": [
+          {
+            "id": "fn-pv-compute"
+          }
+        ]
+      }
+    ],
+    "out": [
+      {
+        "x": 600,
+        "y": 80,
+        "wires": [
+          {
+            "id": "fn-pv-compute",
+            "port": 0
+          }
+        ]
+      }
+    ],
+    "env": [],
+    "meta": {
+      "module": "facis-simulation-orce",
+      "version": "0.1.0",
+      "license": "Apache-2.0"
+    },
+    "color": "#FFD700",
+    "icon": "font-awesome/fa-sun-o"
+  },
+  {
+    "id": "fn-pv-compute",
+    "type": "function",
+    "z": "subflow-facis-pv",
+    "name": "pv compute",
+    "func": "// === FACIS PV subflow physics ===============================================\n// Mirrors src/simulators/pv_generation/simulator.py.\n// Keep tests/flows/pv.spec.js in sync.\n\nconst STC = 1000.0; // W/m\u00b2 Standard Test Conditions\n\nconst DEFAULT_CFG = {\n    system_id: 'pv-default',\n    nominal_capacity_kwp: 50.0,\n    noct_c: 45.0,\n    temperature_coefficient_pct_per_c: -0.4,\n    reference_temperature_c: 25.0,\n    system_losses_percent: 14.0,\n    interval_minutes: 15\n};\n\nfunction moduleTemperature(ambientC, ghiWm2, cfg) {\n    if (ghiWm2 <= 0) return ambientC;\n    const noctRise = (cfg.noct_c - 20.0) * (ghiWm2 / 800.0);\n    return ambientC + noctRise;\n}\n\nfunction temperatureDerating(moduleTempC, cfg) {\n    const diff = moduleTempC - cfg.reference_temperature_c;\n    const derating = 1.0 + (cfg.temperature_coefficient_pct_per_c / 100.0) * diff;\n    return Math.max(0.0, Math.min(1.2, derating));\n}\n\nfunction powerOutput(ghiWm2, moduleTempC, cfg) {\n    if (ghiWm2 <= 0) return 0.0;\n    const irrFactor = ghiWm2 / STC;\n    const tempFactor = temperatureDerating(moduleTempC, cfg);\n    const lossFactor = 1.0 - (cfg.system_losses_percent / 100.0);\n    const power = cfg.nominal_capacity_kwp * irrFactor * tempFactor * lossFactor;\n    return Math.min(power, cfg.nominal_capacity_kwp);\n}\n\nfunction efficiencyPercent(powerKw, ghiWm2, cfg) {\n    if (ghiWm2 <= 0 || powerKw <= 0) return 0.0;\n    const theoretical = cfg.nominal_capacity_kwp * (ghiWm2 / STC);\n    if (theoretical <= 0) return 0.0;\n    return Math.min(100.0, (powerKw / theoretical) * 100.0);\n}\n\nfunction utcDateKey(isoTs) {\n    return isoTs.slice(0, 10); // YYYY-MM-DD\n}\n\nfunction generatePv(payload) {\n    const baseSeed = (typeof payload.base_seed === 'number') ? payload.base_seed : 12345;\n    const entityId = payload.entity_id || 'pv-default';\n    const tsMs = (typeof payload.timestamp_ms === 'number') ? payload.timestamp_ms : 0;\n    const isoTs = payload.timestamp || new Date(tsMs).toISOString();\n    const siteId = payload.site_id || '';\n    const cfg = Object.assign({}, DEFAULT_CFG, payload.config || {});\n    const weather = payload.weather || { conditions: { ghi_w_m2: 0, temperature_c: 15 } };\n\n    const ghi = (weather.conditions && typeof weather.conditions.ghi_w_m2 === 'number')\n        ? weather.conditions.ghi_w_m2 : 0;\n    const ambient = (weather.conditions && typeof weather.conditions.temperature_c === 'number')\n        ? weather.conditions.temperature_c : 15;\n\n    const moduleT = moduleTemperature(ambient, ghi, cfg);\n    const power = powerOutput(ghi, moduleT, cfg);\n    const efficiency = efficiencyPercent(power, ghi, cfg);\n\n    // Daily energy accumulation in flow context, keyed by entity + date.\n    const dateKey = utcDateKey(isoTs);\n    const dailyKey = 'pv_daily';\n    const all = flow.get(dailyKey) || {};\n    const entityState = all[entityId] || { date: dateKey, kwh: 0 };\n    if (entityState.date !== dateKey) {\n        entityState.date = dateKey;\n        entityState.kwh = 0;\n    }\n    const intervalH = (cfg.interval_minutes || 15) / 60.0;\n    entityState.kwh += power * intervalH;\n    all[entityId] = entityState;\n    flow.set(dailyKey, all);\n\n    return {\n        site_id: siteId,\n        system_id: cfg.system_id || entityId,\n        timestamp: isoTs,\n        readings: {\n            power_output_kw: power,\n            daily_energy_kwh: entityState.kwh,\n            irradiance_w_m2: ghi,\n            module_temperature_c: moduleT,\n            efficiency_percent: efficiency\n        }\n    };\n}\n\nmsg.payload = generatePv(msg.payload || {});\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 320,
+    "y": 80,
+    "wires": [
+      []
+    ]
+  }
+]
