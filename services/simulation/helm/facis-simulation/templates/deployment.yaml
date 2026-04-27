@@ -6,7 +6,10 @@ metadata:
   labels:
     {{- include "facis-simulation.labels" . | nindent 4 }}
 spec:
-  {{- if not .Values.autoscaling.enabled }}
+  {{- if eq (default "orce" .Values.compatibilityMode) "orce" }}
+  # ORCE-native runtime owns the simulation; the Python pod is a rollback fallback.
+  replicas: 0
+  {{- else if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
   {{- end }}
   selector:

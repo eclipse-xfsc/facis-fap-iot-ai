@@ -1,0 +1,3 @@
+# Synced flow files — populated by ../../sync-flows.sh
+# Don't commit; the canonical copies live under services/simulation/orce/{flows,subflows}/.
+*.json
