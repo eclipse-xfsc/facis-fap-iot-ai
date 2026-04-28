@@ -119,7 +119,9 @@ if [ -f /data/package.json ]; then
             'node-red-contrib-rdkafka': '*',
             'node-red-contrib-uibuilder': '*',
             'node-red-contrib-modbus': '*',
-            'seedrandom': '*'
+            'seedrandom': '*',
+            'ssh2-sftp-client': '*',
+            'csv-parse': '*'
         };
         for (const [name, ver] of Object.entries(deps)) {
             if (!pkg.dependencies[name]) {

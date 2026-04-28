@@ -1,0 +1,155 @@
+[
+  {
+    "id": "tab-dsp-negotiations",
+    "type": "tab",
+    "label": "FACIS DSP — Negotiations",
+    "disabled": false,
+    "info": "FR-DSP-002 — Contract Negotiation. Out of scope per SRS §3.2; this is a\nminimal stub that auto-finalises so transfer requests have a valid\nagreementId to reference.\n\n  POST   /dsp/negotiations              — auto-finalise; 202 + {negotiationId}\n  GET    /dsp/negotiations/:id          — return NegotiationProcess; 404 if missing\n  POST   /dsp/negotiations/:id/terminate — set state TERMINATED; 200\n\nID format mirrors Python: neg-<12 lowercase hex>, agr-<12 lowercase hex>.\nState machine: REQUESTED → FINALIZED (immediate) → TERMINATED.\nAfter every mutation, fires dsp.persist.negotiations to checkpoint the\nflow.get('negotiations') map to disk."
+  },
+  {
+    "id": "dsp-neg-in-create",
+    "type": "http in",
+    "z": "tab-dsp-negotiations",
+    "name": "POST /dsp/negotiations",
+    "url": "/dsp/negotiations",
+    "method": "post",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 180,
+    "y": 80,
+    "wires": [
+      [
+        "dsp-neg-create"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-neg-create",
+    "type": "function",
+    "z": "tab-dsp-negotiations",
+    "name": "auto-finalise",
+    "func": "const body = (msg.payload && typeof msg.payload === 'object') ? msg.payload : {};\nif (!body.counterparty || !body.offerId) {\n    msg.statusCode = 422;\n    msg.payload = { detail: 'counterparty and offerId are required' };\n    return [msg, null];\n}\nconst now = new Date().toISOString();\nconst negId = 'neg-' + crypto.randomBytes(6).toString('hex');\nconst agrId = 'agr-' + crypto.randomBytes(6).toString('hex');\n\nconst negotiation = {\n    id: negId,\n    state: 'FINALIZED',\n    agreementId: agrId,\n    offerId: body.offerId,\n    counterparty: body.counterparty,\n    createdAt: now,\n    updatedAt: now\n};\n\nconst negs = flow.get('negotiations') || {};\nnegs[negId] = negotiation;\nflow.set('negotiations', negs);\n\nnode.log('Negotiation ' + negId + ' auto-finalised → agreement ' + agrId);\n\nmsg.payload = { negotiationId: negId };\nmsg.headers = { 'Content-Type': 'application/json' };\nmsg.statusCode = 202;\nreturn [msg, { payload: '' }];\n",
+    "outputs": 2,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [
+      {
+        "var": "crypto",
+        "module": "crypto"
+      }
+    ],
+    "x": 430,
+    "y": 80,
+    "wires": [
+      [
+        "dsp-neg-response"
+      ],
+      [
+        "dsp-neg-link-out-persist"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-neg-in-get",
+    "type": "http in",
+    "z": "tab-dsp-negotiations",
+    "name": "GET /dsp/negotiations/:id",
+    "url": "/dsp/negotiations/:id",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 200,
+    "y": 160,
+    "wires": [
+      [
+        "dsp-neg-get"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-neg-get",
+    "type": "function",
+    "z": "tab-dsp-negotiations",
+    "name": "read by id",
+    "func": "const negs = flow.get('negotiations') || {};\nconst id = msg.req.params.id;\nconst found = negs[id];\nif (!found) {\n    msg.statusCode = 404;\n    msg.payload = { detail: 'Negotiation ' + id + ' not found' };\n} else {\n    msg.statusCode = 200;\n    msg.payload = found;\n}\nmsg.headers = { 'Content-Type': 'application/json' };\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 440,
+    "y": 160,
+    "wires": [
+      [
+        "dsp-neg-response"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-neg-in-terminate",
+    "type": "http in",
+    "z": "tab-dsp-negotiations",
+    "name": "POST /dsp/negotiations/:id/terminate",
+    "url": "/dsp/negotiations/:id/terminate",
+    "method": "post",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 230,
+    "y": 240,
+    "wires": [
+      [
+        "dsp-neg-terminate"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-neg-terminate",
+    "type": "function",
+    "z": "tab-dsp-negotiations",
+    "name": "terminate",
+    "func": "const negs = flow.get('negotiations') || {};\nconst id = msg.req.params.id;\nconst neg = negs[id];\nif (!neg) {\n    msg.statusCode = 404;\n    msg.payload = { detail: 'Negotiation ' + id + ' not found' };\n    msg.headers = { 'Content-Type': 'application/json' };\n    return [msg, null];\n}\nconst now = new Date().toISOString();\nconst terminated = Object.assign({}, neg, { state: 'TERMINATED', updatedAt: now });\nnegs[id] = terminated;\nflow.set('negotiations', negs);\n\nmsg.payload = terminated;\nmsg.headers = { 'Content-Type': 'application/json' };\nmsg.statusCode = 200;\nreturn [msg, { payload: '' }];\n",
+    "outputs": 2,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 460,
+    "y": 240,
+    "wires": [
+      [
+        "dsp-neg-response"
+      ],
+      [
+        "dsp-neg-link-out-persist"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-neg-response",
+    "type": "http response",
+    "z": "tab-dsp-negotiations",
+    "name": "negotiation response",
+    "statusCode": "",
+    "headers": {},
+    "x": 720,
+    "y": 160,
+    "wires": []
+  },
+  {
+    "id": "dsp-neg-link-out-persist",
+    "type": "link out",
+    "z": "tab-dsp-negotiations",
+    "name": "dsp.persist.negotiations →",
+    "mode": "link",
+    "links": [
+      "dsp-link-in-persist-negotiations"
+    ],
+    "x": 730,
+    "y": 240,
+    "wires": []
+  }
+]

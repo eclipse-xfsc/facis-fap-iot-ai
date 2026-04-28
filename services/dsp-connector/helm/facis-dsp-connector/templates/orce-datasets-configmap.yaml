@@ -1,0 +1,18 @@
+{{- if eq (default "orce" .Values.compatibilityMode) "orce" }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "facis-dsp-connector.fullname" . }}-orce-datasets
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "facis-dsp-connector.labels" . | nindent 4 }}
+    app.kubernetes.io/component: orce-datasets
+data:
+{{- $datasetsPath := "files/orce-config/datasets.json" }}
+{{- if .Files.Get $datasetsPath }}
+  datasets.json: |
+{{ .Files.Get $datasetsPath | indent 4 }}
+{{- else }}
+  datasets.json: "[]"
+{{- end }}
+{{- end }}

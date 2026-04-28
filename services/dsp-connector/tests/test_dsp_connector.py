@@ -1,13 +1,65 @@
-"""Tests for DSP Connector — Transfer Process, Catalogue, and Negotiation."""
+"""Tests for DSP Connector — Transfer Process, Catalogue, and Negotiation.
 
+Runs against the in-process FastAPI app by default. Set ``ORCE_BASE_URL`` to
+also exercise the deployed ORCE flow (compatibilityMode=orce). When set, every
+test runs twice — once against the Python reference, once against the live
+ORCE Admin-API-deployed flows — and any divergence fails the suite.
+
+Example::
+
+    ORCE_BASE_URL=http://facis-orce.orce.svc.cluster.local:1880 pytest -v
+
+Note: ORCE health/metrics paths are namespaced (`/api/v1/dsp/health`,
+`/dsp/metrics`) to avoid colliding with the Simulation flow on the shared
+ORCE pod. The ``client`` fixture rewrites those paths transparently when
+``mode == "orce"``.
+"""
+
+from __future__ import annotations
+
+import os
+from typing import Any
+
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
 from src.main import create_app
 
 
-@pytest.fixture
-def client() -> TestClient:
+_ORCE_PATH_REWRITES = {
+    "/api/v1/health": "/api/v1/dsp/health",
+    "/metrics": "/dsp/metrics",
+}
+
+
+class _OrceHttpClient:
+    """Minimal TestClient-shaped wrapper around the live ORCE flow URL."""
+
+    def __init__(self, base_url: str) -> None:
+        self._client = httpx.Client(base_url=base_url, timeout=10.0)
+
+    def _rewrite(self, path: str) -> str:
+        return _ORCE_PATH_REWRITES.get(path, path)
+
+    def get(self, path: str, **kwargs: Any) -> httpx.Response:
+        return self._client.get(self._rewrite(path), **kwargs)
+
+    def post(self, path: str, **kwargs: Any) -> httpx.Response:
+        return self._client.post(self._rewrite(path), **kwargs)
+
+
+def _client_modes() -> list[str]:
+    modes = ["python"]
+    if os.getenv("ORCE_BASE_URL"):
+        modes.append("orce")
+    return modes
+
+
+@pytest.fixture(params=_client_modes())
+def client(request: pytest.FixtureRequest):
+    if request.param == "orce":
+        return _OrceHttpClient(os.environ["ORCE_BASE_URL"])
     app = create_app()
     return TestClient(app)
 

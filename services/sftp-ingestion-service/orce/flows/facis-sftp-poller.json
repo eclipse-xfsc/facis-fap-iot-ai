@@ -1,0 +1,87 @@
+[
+  {
+    "id": "tab-sftp-poller",
+    "type": "tab",
+    "label": "FACIS SFTP — Poller",
+    "disabled": false,
+    "info": "Per-tick: connect to SFTP, list remote_path, filter (extension + size + S_ISREG),\ndownload each accepted file, emit one `sftp.file.downloaded` message per file,\nrename to archive (with timestamp suffix on collision), close session.\n\nMirrors src/sftp_poller.py:103-197 (poll cycle) and :44-74 (connect with\nstrict host-key verification — RejectPolicy in paramiko ≡ hostVerifier in ssh2).\n\nUses ssh2-sftp-client via functionExternalModules. The npm module is staged\nby services/simulation/orce/Dockerfile and copied into /data/node_modules\nat boot — same mechanism as seedrandom.\n\nOutputs: [fileMsgs, errorMsg]. fileMsgs is an array; node.send([fileMsgs])\nemits one msg per file to output 1. errorMsg is a single DLQ-bound msg on\nout 2.\n\nHost-key parity with paramiko RejectPolicy:\n  - if SFTP_KNOWN_HOSTS_FILE is set, ssh2 hostVerifier compares the\n    server's SHA256 fingerprint against the known_hosts file.\n  - if unset and SFTP_ALLOW_UNKNOWN_HOSTS != 'true', refuse to connect.\n\nArchive collision handling matches sftp_poller.py:175-180:\n  - try sftp.rename(src, dst). On OSError (target exists), retry with\n    `dst.YYYYMMDDHHMMSS` suffix."
+  },
+  {
+    "id": "sftp-link-in-poll-tick",
+    "type": "link in",
+    "z": "tab-sftp-poller",
+    "name": "← sftp.poll.tick",
+    "links": [
+      "sftp-link-out-tick"
+    ],
+    "x": 130,
+    "y": 100,
+    "wires": [
+      [
+        "sftp-fn-cycle"
+      ]
+    ]
+  },
+  {
+    "id": "sftp-fn-cycle",
+    "type": "function",
+    "z": "tab-sftp-poller",
+    "name": "sftp cycle (connect + list + download + archive)",
+    "func": "// Outputs: [downloadedFiles[], errorMsg]\nif (flow.get('poll_inflight') === true) {\n    return null;\n}\nflow.set('poll_inflight', true);\n\nconst host = env.get('SFTP_HOST');\nconst port = Number(env.get('SFTP_PORT') || 22);\nconst username = env.get('SFTP_USERNAME');\nconst password = env.get('SFTP_PASSWORD');\nconst keyFile = env.get('SFTP_KEY_FILENAME');\nconst knownHostsFile = env.get('SFTP_KNOWN_HOSTS_FILE');\nconst allowUnknown = env.get('SFTP_ALLOW_UNKNOWN_HOSTS') === 'true';\nconst remotePath = env.get('SFTP_REMOTE_PATH') || '/ingest';\nconst archivePath = env.get('SFTP_ARCHIVE_PATH') || '/archive';\nconst accepted = (env.get('INGEST_ACCEPTED_EXTENSIONS') || '.json,.csv,.avro')\n    .split(',').map(s => s.trim().toLowerCase());\nconst maxSize = Number(env.get('INGEST_MAX_FILE_SIZE_BYTES') || 104857600);\n\nif (!host || !username) {\n    flow.set('poll_inflight', false);\n    node.error('SFTP_HOST and SFTP_USERNAME must be set on the ORCE pod env');\n    return null;\n}\nif (!keyFile && !password) {\n    flow.set('poll_inflight', false);\n    node.error('SFTP_PASSWORD or SFTP_KEY_FILENAME must be set');\n    return null;\n}\nif (!knownHostsFile && !allowUnknown) {\n    flow.set('poll_inflight', false);\n    node.error('Refusing connect: SFTP_KNOWN_HOSTS_FILE not set and SFTP_ALLOW_UNKNOWN_HOSTS != true (paramiko RejectPolicy parity)');\n    return null;\n}\n\nconst t0 = Date.now();\nconst client = new SftpClient();\nconst connectOpts = {\n    host: host,\n    port: port,\n    username: username,\n    readyTimeout: 20000\n};\nif (keyFile) {\n    try { connectOpts.privateKey = nodeFs.readFileSync(keyFile); }\n    catch (e) {\n        flow.set('poll_inflight', false);\n        node.error('Cannot read SFTP_KEY_FILENAME=' + keyFile + ': ' + e.message);\n        return null;\n    }\n} else {\n    connectOpts.password = password;\n}\nif (knownHostsFile) {\n    try {\n        const known = nodeFs.readFileSync(knownHostsFile, 'utf8');\n        const fingerprints = [];\n        for (const line of known.split(/\\r?\\n/)) {\n            const m = line.trim().match(/^[^\\s]+\\s+ssh-(?:rsa|ed25519|dss)\\s+([A-Za-z0-9+/=]+)/);\n            if (m) {\n                const sha = nodeCrypto.createHash('sha256').update(Buffer.from(m[1], 'base64')).digest('hex');\n                fingerprints.push(sha);\n            }\n        }\n        connectOpts.hostVerifier = (hashHex) => fingerprints.includes(hashHex);\n    } catch (e) {\n        flow.set('poll_inflight', false);\n        node.error('Cannot read known_hosts ' + knownHostsFile + ': ' + e.message);\n        return null;\n    }\n}\n\nasync function ensureArchive() {\n    try { await client.stat(archivePath); }\n    catch (_) { try { await client.mkdir(archivePath, true); } catch (_) {} }\n}\n\nasync function archiveOne(remoteFile, archiveFile) {\n    try {\n        await client.rename(remoteFile, archiveFile);\n        return null;\n    } catch (e) {\n        // Mirror sftp_poller.py:177-180 — retry with timestamp suffix\n        const ts = new Date().toISOString().replace(/[-:T.Z]/g, '').slice(0, 14);\n        try {\n            await client.rename(remoteFile, archiveFile + '.' + ts);\n            return null;\n        } catch (e2) {\n            return e2;\n        }\n    }\n}\n\n(async () => {\n    const downloaded = [];\n    const dlqEvents = [];\n    try {\n        await client.connect(connectOpts);\n        await ensureArchive();\n        const entries = await client.list(remotePath);\n        const ingestTs = new Date().toISOString();\n        const archiveOps = [];\n\n        for (const e of entries) {\n            if (e.type !== '-') continue;\n            const name = e.name;\n            const dotIdx = name.lastIndexOf('.');\n            const ext = dotIdx >= 0 ? name.slice(dotIdx).toLowerCase() : '';\n            if (!accepted.includes(ext)) continue;\n            if (e.size > maxSize) continue;\n            const remoteFile = remotePath.replace(/\\/$/, '') + '/' + name;\n            const archiveFile = archivePath.replace(/\\/$/, '') + '/' + name;\n            try {\n                const buf = await client.get(remoteFile);\n                downloaded.push({\n                    filename: name,\n                    remote_file: remoteFile,\n                    archive_file: archiveFile,\n                    size_bytes: e.size,\n                    ext: ext,\n                    is_regular: true,\n                    content: buf,\n                    source_topic: 'sftp://' + host + remoteFile,\n                    ingest_timestamp: ingestTs,\n                    tick_id: msg.tick_id\n                });\n                archiveOps.push({ remoteFile, archiveFile });\n            } catch (e2) {\n                dlqEvents.push({\n                    error_type: 'sftp',\n                    error_message: 'download ' + name + ': ' + e2.message,\n                    error_timestamp: new Date().toISOString(),\n                    filename: name,\n                    source_topic: 'sftp://' + host + remoteFile\n                });\n            }\n        }\n\n        // Emit downloaded files first so parsers can run while we archive.\n        if (downloaded.length > 0) {\n            node.send([downloaded, null]);\n        }\n\n        // Archive after emitting (mirrors Python single-session model).\n        for (const op of archiveOps) {\n            const err = await archiveOne(op.remoteFile, op.archiveFile);\n            if (err) {\n                dlqEvents.push({\n                    error_type: 'archive',\n                    error_message: err.message,\n                    error_timestamp: new Date().toISOString(),\n                    filename: op.remoteFile.split('/').pop(),\n                    source_topic: 'sftp://' + host + op.remoteFile\n                });\n            }\n        }\n    } catch (err) {\n        const m = global.get('metrics') || {};\n        m.facis_sftp_poll_errors_total = (m.facis_sftp_poll_errors_total || 0) + 1;\n        global.set('metrics', m);\n        dlqEvents.push({\n            error_type: 'sftp',\n            error_message: 'cycle: ' + err.message,\n            error_timestamp: new Date().toISOString(),\n            filename: null,\n            source_topic: 'sftp://' + host + remotePath\n        });\n    } finally {\n        try { await client.end(); } catch (_) {}\n        const m2 = global.get('metrics') || {};\n        m2.facis_sftp_poll_duration_seconds = m2.facis_sftp_poll_duration_seconds || { buckets: {}, sum: 0, count: 0 };\n        const elapsed = (Date.now() - t0) / 1000;\n        m2.facis_sftp_poll_duration_seconds.sum += elapsed;\n        m2.facis_sftp_poll_duration_seconds.count += 1;\n        for (const b of [0.1, 0.5, 1, 5, 10, 30, 60]) {\n            if (elapsed <= b) m2.facis_sftp_poll_duration_seconds.buckets[b] =\n                (m2.facis_sftp_poll_duration_seconds.buckets[b] || 0) + 1;\n        }\n        global.set('metrics', m2);\n        flow.set('last_poll_ms', Date.now());\n        flow.set('poll_inflight', false);\n\n        for (const dlq of dlqEvents) {\n            node.send([null, { payload: dlq, filename: dlq.filename }]);\n        }\n    }\n})();\n\nreturn null;\n",
+    "outputs": 2,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [
+      {
+        "var": "SftpClient",
+        "module": "ssh2-sftp-client"
+      },
+      {
+        "var": "nodeFs",
+        "module": "fs"
+      },
+      {
+        "var": "nodeCrypto",
+        "module": "crypto"
+      }
+    ],
+    "x": 460,
+    "y": 100,
+    "wires": [
+      [
+        "sftp-link-out-file"
+      ],
+      [
+        "sftp-link-out-poll-error"
+      ]
+    ]
+  },
+  {
+    "id": "sftp-link-out-file",
+    "type": "link out",
+    "z": "tab-sftp-poller",
+    "name": "sftp.file.downloaded →",
+    "mode": "link",
+    "links": [
+      "sftp-link-in-file"
+    ],
+    "x": 800,
+    "y": 80,
+    "wires": []
+  },
+  {
+    "id": "sftp-link-out-poll-error",
+    "type": "link out",
+    "z": "tab-sftp-poller",
+    "name": "sftp.dlq →",
+    "mode": "link",
+    "links": [
+      "sftp-link-in-dlq"
+    ],
+    "x": 760,
+    "y": 140,
+    "wires": []
+  }
+]

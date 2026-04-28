@@ -6,7 +6,7 @@ metadata:
   labels:
     {{- include "facis-sftp-ingestion.labels" . | nindent 4 }}
 spec:
-  replicas: {{ .Values.replicaCount }}
+  replicas: {{ if eq (default "orce" .Values.compatibilityMode) "orce" }}0{{ else }}{{ .Values.replicaCount }}{{ end }}
   selector:
     matchLabels:
       {{- include "facis-sftp-ingestion.selectorLabels" . | nindent 6 }}

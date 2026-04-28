@@ -1,0 +1,77 @@
+[
+  {
+    "id": "tab-dsp-errors",
+    "type": "tab",
+    "label": "FACIS DSP — Error Handling",
+    "disabled": false,
+    "info": "Catches uncaught errors from any DSP tab, emits a structured JSON log line\nto stderr (visible in `kubectl logs`), and increments the\nfacis_dsp_transfer_errors_total counter so /dsp/metrics surfaces them.\n\nDSP is request/response — there is no Kafka DLQ for connector errors\n(the SFTP flow's DLQ is a separate concern at sftp.ingest.dlq)."
+  },
+  {
+    "id": "dsp-errors-catch",
+    "type": "catch",
+    "z": "tab-dsp-errors",
+    "name": "catch all uncaught errors",
+    "scope": null,
+    "uncaught": true,
+    "x": 170,
+    "y": 100,
+    "wires": [
+      [
+        "dsp-errors-fn-log"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-errors-fn-log",
+    "type": "function",
+    "z": "tab-dsp-errors",
+    "name": "structured log + metric",
+    "func": "const ts = new Date().toISOString();\nconst entry = {\n    timestamp: ts,\n    level: 'error',\n    service: 'facis-dsp-connector-orce',\n    source_tab: msg.error && msg.error.source ? msg.error.source.id : 'unknown',\n    source_name: msg.error && msg.error.source ? msg.error.source.name : null,\n    message: msg.error ? (msg.error.message || String(msg.error)) : 'unknown error',\n    payload_excerpt: typeof msg.payload === 'string' ? msg.payload.slice(0, 256) : null\n};\nnode.error(JSON.stringify(entry));\n\n// Increment the errors counter so /dsp/metrics reflects the failure.\nreturn [\n    { payload: entry },\n    { payload: { family: 'facis_dsp_transfer_errors_total' } }\n];\n",
+    "outputs": 2,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 430,
+    "y": 100,
+    "wires": [
+      [
+        "dsp-errors-debug"
+      ],
+      [
+        "dsp-errors-link-out-metric"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-errors-debug",
+    "type": "debug",
+    "z": "tab-dsp-errors",
+    "name": "stderr (JSON)",
+    "active": true,
+    "tosidebar": true,
+    "console": true,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 670,
+    "y": 100,
+    "wires": []
+  },
+  {
+    "id": "dsp-errors-link-out-metric",
+    "type": "link out",
+    "z": "tab-dsp-errors",
+    "name": "dsp.metric.inc →",
+    "mode": "link",
+    "links": [
+      "dsp-link-in-metric-inc"
+    ],
+    "x": 670,
+    "y": 160,
+    "wires": []
+  }
+]

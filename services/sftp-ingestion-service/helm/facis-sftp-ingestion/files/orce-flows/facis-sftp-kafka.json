@@ -1,0 +1,119 @@
+[
+  {
+    "id": "tab-sftp-kafka",
+    "type": "tab",
+    "label": "FACIS SFTP — Kafka Publish",
+    "disabled": false,
+    "info": "rdkafka producer to ${INGEST_DEFAULT_TOPIC} (default sftp.ingest.raw).\n\nBROKER LIST: must contain all 3 Stackable broker addresses. Single-bootstrap\nconfigs disconnect on metadata refresh. Configure via the\n`facis-sftp-orce-env` Secret rendered by this chart, then reference in the\nORCE chart's envFrom (see chart README).\n\nKafka producer params (mirrors sftp-ingestion-service/src/kafka_publisher.py:19-27):\n  linger.ms = 100\n  batch.num.messages = 500\n  retry.backoff.ms = 500\n  message.send.max.retries = 5\n\nThese rdkafka producer options are set on the broker config node. If the\ncontrib version doesn't expose them in its UI, declare them via the broker\nconfig file directly.\n\nDelivery flow:\n  link-in sftp.envelope → fn-prep (builds topic/key/payload + emits archive\n    request via side-output) → rdkafka out → catch-on-failure → DLQ.\n\nMetric increments live in fn-prep so per-publish counter latency stays low."
+  },
+  {
+    "id": "sftp-kafka-broker-config",
+    "type": "kafka-broker",
+    "name": "FACIS Stackable Kafka Cluster",
+    "broker": "${SFTP_KAFKA_BROKERS}",
+    "clientid": "facis-orce-sftp",
+    "securityProtocol": "ssl",
+    "sslCaLocation": "/etc/kafka-certs/ca.crt",
+    "sslCertLocation": "/etc/kafka-certs/tls.crt",
+    "sslKeyLocation": "/etc/kafka-certs/tls.key"
+  },
+  {
+    "id": "sftp-link-in-envelope",
+    "type": "link in",
+    "z": "tab-sftp-kafka",
+    "name": "← sftp.envelope",
+    "links": [
+      "sftp-envelope-link-out"
+    ],
+    "x": 130,
+    "y": 100,
+    "wires": [
+      [
+        "sftp-fn-kafka-prep"
+      ]
+    ]
+  },
+  {
+    "id": "sftp-fn-kafka-prep",
+    "type": "function",
+    "z": "tab-sftp-kafka",
+    "name": "prepare kafka msg + metric",
+    "func": "// Build the actual Kafka producer payload and side-emit per-file metrics.\nconst envelope = msg.envelope;\nconst filename = msg.filename;\nconst routingTopic = msg.routing_topic;\n\n// Kafka producer node consumes msg.topic, msg.key, msg.payload\nconst kafkaMsg = {\n    topic: routingTopic,\n    key: filename,\n    payload: JSON.stringify(envelope)\n};\n\n// Stash original envelope so DLQ can include it on publish failure.\nkafkaMsg._sftp_envelope = envelope;\nkafkaMsg._sftp_filename = filename;\n\n// Increment records counter immediately (matches Python flow which counts\n// before flush). On delivery failure the catch handler increments DLQ\n// counter separately; we accept a tiny over-count window for simplicity.\nconst m = global.get('metrics') || {};\nm.facis_sftp_records_published_total = (m.facis_sftp_records_published_total || 0) + 1;\n\n// File-level dedup: count files-ingested only once per (tick, filename)\n// pair. Without this we'd count every record's filename.\nconst seenKey = 'files_seen_' + (msg.tick_id || 'no-tick');\nlet seen = flow.get(seenKey) || new Set();\nif (!(seen instanceof Set)) seen = new Set(seen);\nlet fileMetric = null;\nif (!seen.has(filename)) {\n    seen.add(filename);\n    flow.set(seenKey, seen);\n    const ext = filename.includes('.') ? filename.slice(filename.lastIndexOf('.') + 1) : 'unknown';\n    m.facis_sftp_files_ingested_total = m.facis_sftp_files_ingested_total || {};\n    m.facis_sftp_files_ingested_total[ext] = (m.facis_sftp_files_ingested_total[ext] || 0) + 1;\n}\nglobal.set('metrics', m);\n\nreturn kafkaMsg;\n",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 410,
+    "y": 100,
+    "wires": [
+      [
+        "sftp-kafka-out"
+      ]
+    ]
+  },
+  {
+    "id": "sftp-kafka-out",
+    "type": "rdkafka out",
+    "z": "tab-sftp-kafka",
+    "name": "${INGEST_DEFAULT_TOPIC}",
+    "broker": "sftp-kafka-broker-config",
+    "topic": "${INGEST_DEFAULT_TOPIC}",
+    "x": 700,
+    "y": 100,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "sftp-kafka-catch",
+    "type": "catch",
+    "z": "tab-sftp-kafka",
+    "name": "kafka publish failed",
+    "scope": [
+      "sftp-kafka-out"
+    ],
+    "uncaught": false,
+    "x": 410,
+    "y": 200,
+    "wires": [
+      [
+        "sftp-fn-kafka-fail-to-dlq"
+      ]
+    ]
+  },
+  {
+    "id": "sftp-fn-kafka-fail-to-dlq",
+    "type": "function",
+    "z": "tab-sftp-kafka",
+    "name": "format publish failure",
+    "func": "const original = msg && msg._sftp_envelope ? msg._sftp_envelope : null;\nconst filename = msg && msg._sftp_filename ? msg._sftp_filename : null;\nconst dlq = {\n    error_type: 'publish',\n    error_message: msg.error ? (msg.error.message || String(msg.error)) : 'unknown publish error',\n    error_timestamp: new Date().toISOString(),\n    filename: filename,\n    source_topic: original ? original.source_topic : null,\n    original_envelope: original\n};\nreturn { payload: dlq, filename: filename };\n",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 690,
+    "y": 200,
+    "wires": [
+      [
+        "sftp-kafka-link-out-dlq"
+      ]
+    ]
+  },
+  {
+    "id": "sftp-kafka-link-out-dlq",
+    "type": "link out",
+    "z": "tab-sftp-kafka",
+    "name": "sftp.dlq →",
+    "mode": "link",
+    "links": [
+      "sftp-link-in-dlq"
+    ],
+    "x": 940,
+    "y": 200,
+    "wires": []
+  }
+]

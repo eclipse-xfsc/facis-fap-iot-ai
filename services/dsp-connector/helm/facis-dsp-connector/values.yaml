@@ -1,49 +1,81 @@
 # =============================================================================
-# FACIS SFTP Ingestion Service — Helm Values
+# FACIS DSP Connector — Helm Values
 # =============================================================================
+# All values are documented inline. Override any value with --set or -f.
 
 # ---------------------------------------------------------------------------
 # Runtime Mode
 # ---------------------------------------------------------------------------
-# Selects which runtime polls SFTP and produces to Kafka.
+# Selects which runtime owns the DSP control plane.
 #
 #   orce   (default) — ORCE-native flows on the existing ORCE pod own the
 #                       runtime. The Python deployment in this chart is
-#                       scaled to 0 and acts as a rollback fallback.
-#                       Helm post-install hook deploys the flow ConfigMap
-#                       to the ORCE Admin API.
-#   legacy           — Python service polls SFTP and produces to Kafka.
-#                       ORCE flow ConfigMap + Job are NOT rendered.
+#                       scaled to 0 and acts as a rollback fallback. Helm
+#                       post-install hook deploys the flow ConfigMap to the
+#                       ORCE Admin API (see orceFlowDeploy below).
+#                       Endpoints exposed by ORCE pod, NOT this chart's Service.
+#   legacy           — Python FastAPI service owns the runtime. ORCE flow
+#                       ConfigMap + Job are NOT rendered.
 compatibilityMode: orce
 
 # ---------------------------------------------------------------------------
 # ORCE Flow Deployment (active when compatibilityMode = "orce")
 # ---------------------------------------------------------------------------
 orceFlowDeploy:
+  # -- Whether to render the ConfigMap + post-install Job that deploy flows
   enabled: true
+  # -- ORCE Admin API base URL (in-cluster)
   orceAdminUrl: http://facis-orce.orce.svc.cluster.local:1880
+  # -- Secret holding the ORCE admin bearer token under key "token"
   adminTokenSecret: facis-orce-admin
+  # -- Sub-path under the chart's `files/` directory containing flow JSON.
+  #    Populate via `services/dsp-connector/helm/facis-dsp-connector/sync-flows.sh`.
   flowsDir: orce-flows
+  # -- Container image used by the deployment Job (must include curl + jq)
   jobImage:
     repository: alpine/curl
     tag: "8.10.1"
     pullPolicy: IfNotPresent
+  # -- Optional initial wait for the ORCE pod readiness probe (seconds)
   preDeploySleepSeconds: 5
 
 # ---------------------------------------------------------------------------
-# ORCE Pod Environment (orce mode)
+# DSP Configuration
 # ---------------------------------------------------------------------------
-# The SFTP flow reads SFTP_*, INGEST_*, and SFTP_KAFKA_BROKERS via env.get().
-# Those env vars must be set on the ORCE pod, not on this chart's Deployment.
-# This block renders a single Secret consumed by the ORCE chart via
-# `extraEnvFrom: [secretRef: <name>]`. The ORCE chart change is a deploy-time
-# prerequisite documented in the chart README.
-orcePodEnv:
-  renderSecret: true
-  secretName: facis-sftp-orce-env
+# The ORCE pod reads these values from a Secret rendered by this chart
+# (see templates/orce-secret.yaml). The ORCE chart must include
+# `envFrom: [secretRef: <fullname>-dsp-secrets]` in its Deployment.
+dsp:
+  # -- HMAC secret for signed-URL generation (REQUIRED in orce mode).
+  #    Generate with: openssl rand -hex 32
+  hmacSecret: ""
+  # -- Base URL for the data API (HTTP-pull endpoint of ai-insight-service)
+  dataApiBaseUrl: https://ai-insight.facis.cloud
+  # -- Default TTL for signed URLs and Kafka access tokens (seconds)
+  defaultTtlSeconds: 3600
+  # -- Kafka bootstrap servers used in Kafka-streaming access objects.
+  #    Connection params only — DSP does not produce data to this Kafka.
+  kafkaBootstrap: kafka.provider.example:9092
 
+# ---------------------------------------------------------------------------
+# State Persistence (orce mode)
+# ---------------------------------------------------------------------------
+# The ORCE pod's flows write transfer + negotiation state to a PVC at
+# /data/dsp-state/. The PVC is created by this chart but mounted by the
+# ORCE chart (cross-chart dependency — document in README).
+dspStatePvc:
+  enabled: true
+  name: facis-dsp-state
+  size: 256Mi
+  storageClassName: ""
+  accessModes:
+    - ReadWriteOnce
+
+# ---------------------------------------------------------------------------
+# Container Image (legacy mode only — Python runtime)
+# ---------------------------------------------------------------------------
 image:
-  repository: ghcr.io/eclipse-xfsc/facis-fap-iot-ai/sftp-ingestion-service
+  repository: ghcr.io/eclipse-xfsc/facis-fap-iot-ai/dsp-connector
   tag: ""
   pullPolicy: IfNotPresent
 
@@ -56,63 +88,17 @@ fullnameOverride: ""
 replicaCount: 1
 
 # ---------------------------------------------------------------------------
-# SFTP Connection
-# ---------------------------------------------------------------------------
-sftp:
-  host: ""
-  port: 22
-  username: facis
-  # -- Password (stored in Secret)
-  password: ""
-  remotePath: /ingest
-  archivePath: /archive
-  pollIntervalSeconds: 60
-  # -- Path inside the ORCE pod to a file in the OpenSSH known_hosts format.
-  #    Required in orce mode unless allowUnknownHosts is true.
-  knownHostsFile: ""
-  # -- DANGEROUS: skip host-key verification. Off by default to match
-  #    paramiko's RejectPolicy semantics from the Python service.
-  allowUnknownHosts: false
-
-# ---------------------------------------------------------------------------
-# Kafka Connection
-# ---------------------------------------------------------------------------
-# Legacy-mode fields:
-kafka:
-  bootstrapServers: kafka:9092
-  clientId: facis-sftp-ingestion
-  securityProtocol: PLAINTEXT
-  ssl:
-    caLocation: ""
-    certificateLocation: ""
-    keyLocation: ""
-  # -- ORCE mode uses ALL 3 Stackable broker addresses comma-separated.
-  #    The single bootstrap address fails on metadata refresh.
-  #    Discover via `kcat -L` and update on every NodePort change.
-  #    Example: "217.160.222.177:31193,217.160.219.79:31186,213.165.77.54:30212"
-  brokers: "kafka-0:9094,kafka-1:9094,kafka-2:9094"
-
-# ---------------------------------------------------------------------------
-# Ingestion Settings
-# ---------------------------------------------------------------------------
-ingest:
-  defaultTopic: sftp.ingest.raw
-  acceptedExtensions: ".json,.csv,.avro"
-  maxFileSizeBytes: 104857600
-  dlqTopic: sftp.ingest.dlq
-
-# ---------------------------------------------------------------------------
-# HTTP / Health
+# HTTP / REST API (legacy mode only)
 # ---------------------------------------------------------------------------
 http:
-  port: 8080
+  port: 8090
 
 # ---------------------------------------------------------------------------
-# Service
+# Service (legacy mode only — ORCE pod has its own Service)
 # ---------------------------------------------------------------------------
 service:
   type: ClusterIP
-  httpPort: 8080
+  httpPort: 8090
 
 # ---------------------------------------------------------------------------
 # Pod Security
@@ -141,7 +127,7 @@ resources:
     memory: 256Mi
 
 # ---------------------------------------------------------------------------
-# Probes
+# Probes (legacy mode only)
 # ---------------------------------------------------------------------------
 livenessProbe:
   httpGet:
@@ -167,7 +153,7 @@ serviceAccount:
   automountServiceAccountToken: false
 
 # ---------------------------------------------------------------------------
-# Metrics
+# Metrics (legacy mode only — ORCE serves /dsp/metrics from its own pod)
 # ---------------------------------------------------------------------------
 metrics:
   path: /metrics
