@@ -190,15 +190,26 @@ class StreamingAnomalyDetector:
                 msg = self._consumer.poll(timeout=1.0)
                 if msg is None:
                     continue
-                if msg.error():
-                    if msg.error().code() == KafkaError._PARTITION_EOF:
+                err = msg.error()
+                if err is not None:
+                    if err.code() == KafkaError._PARTITION_EOF:
                         continue
-                    logger.error(f"Kafka consumer error: {msg.error()}")
+                    logger.error(f"Kafka consumer error: {err}")
                     continue
 
+                topic = msg.topic()
+                if topic is None:
+                    logger.warning("Skipping message with no topic")
+                    continue
+                raw_key = msg.key()
+                key = (
+                    raw_key.decode("utf-8")
+                    if isinstance(raw_key, (bytes, bytearray))
+                    else "unknown"
+                )
                 self._process_message(
-                    topic=msg.topic(),
-                    key=msg.key().decode("utf-8") if msg.key() else "unknown",
+                    topic=topic,
+                    key=key,
                     value=msg.value(),
                 )
 
