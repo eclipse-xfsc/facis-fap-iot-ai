@@ -1,0 +1,41 @@
+[
+  {
+    "id": "subflow_city_exec",
+    "type": "subflow",
+    "name": "RunCityStatusSubflow",
+    "info": "Computes Smart City correlation context, calls LLM with robust parse, applies fallback/cache, and builds InsightResponse. Runtime definition is loaded from flows/ai-insight-city-status.json.",
+    "in": [
+      {
+        "x": 60,
+        "y": 80,
+        "wires": [
+          {
+            "id": "fn_run_city_exec"
+          }
+        ]
+      }
+    ],
+    "out": [
+      {
+        "x": 520,
+        "y": 60,
+        "wires": [
+          {
+            "id": "fn_run_city_exec",
+            "port": 0
+          }
+        ]
+      },
+      {
+        "x": 520,
+        "y": 120,
+        "wires": [
+          {
+            "id": "fn_run_city_exec",
+            "port": 1
+          }
+        ]
+      }
+    ]
+  }
+]
