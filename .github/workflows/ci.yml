@@ -248,7 +248,7 @@ jobs:
       run:
         working-directory: services/ai-insight-service/orce
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -265,7 +265,7 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
-    needs: [test-simulation, test-ai-insight, test-sftp-ingestion, test-dsp-connector, test-orce-flows,test-ai-insight-orce]
+    needs: [test-simulation, test-ai-insight, test-sftp-ingestion, test-dsp-connector, test-orce-flows, test-ai-insight-orce]
     if: github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v6

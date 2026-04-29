@@ -28,7 +28,9 @@ class HmacTokenValidator:
         request: Request,
         token: str = Query(..., description="HMAC-SHA256 token"),
         expires_at: str = Query(
-            ..., alias="expiresAt", description="Token expiry (ISO 8601)"
+            ...,
+            alias="expiresAt",
+            description="Token expiry (ISO 8601)",
         ),
         from_ts: str = Query(
             ..., alias="from", description="Data window start (ISO 8601)"
