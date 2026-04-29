@@ -1,0 +1,41 @@
+[
+  {
+    "id": "subflow_anomaly_exec",
+    "type": "subflow",
+    "name": "RunAnomalySubflow",
+    "info": "Computes anomaly context, calls LLM with retries, applies fallback, and builds InsightResponse. Runtime definition is loaded from flows/ai-insight-anomaly.json.",
+    "in": [
+      {
+        "x": 60,
+        "y": 80,
+        "wires": [
+          {
+            "id": "fn_run_anomaly_exec"
+          }
+        ]
+      }
+    ],
+    "out": [
+      {
+        "x": 480,
+        "y": 60,
+        "wires": [
+          {
+            "id": "fn_run_anomaly_exec",
+            "port": 0
+          }
+        ]
+      },
+      {
+        "x": 480,
+        "y": 120,
+        "wires": [
+          {
+            "id": "fn_run_anomaly_exec",
+            "port": 1
+          }
+        ]
+      }
+    ]
+  }
+]

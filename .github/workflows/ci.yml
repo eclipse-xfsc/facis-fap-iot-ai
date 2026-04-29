@@ -219,9 +219,31 @@ jobs:
         with:
           file: ./services/dsp-connector/coverage.xml
 
+  test-ai-insight-orce:
+    runs-on: ubuntu-latest
+    needs: lint-ai-insight
+    defaults:
+      run:
+        working-directory: services/ai-insight-service/orce
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: services/ai-insight-service/orce/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ORCE flow tests
+        run: npm run test:flows
+
   build:
     runs-on: ubuntu-latest
-    needs: [test-simulation, test-ai-insight, test-sftp-ingestion, test-dsp-connector]
+    needs: [test-simulation, test-ai-insight, test-ai-insight-orce, test-sftp-ingestion, test-dsp-connector]
     if: github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v6

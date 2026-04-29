@@ -1,0 +1,129 @@
+[
+  {
+    "id": "tab_ai_insight_latest",
+    "type": "tab",
+    "label": "ai-insight-latest",
+    "disabled": false,
+    "info": "Phase 6 latest insights endpoint."
+  },
+  {
+    "id": "http_in_insights_latest_v1",
+    "type": "http in",
+    "z": "tab_ai_insight_latest",
+    "name": "GET /api/v1/insights/latest",
+    "url": "/api/v1/insights/latest",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": {
+      "summary": "Get latest insights map",
+      "description": "Returns latest output per insight type from in-memory runtime store."
+    },
+    "x": 220,
+    "y": 120,
+    "wires": [
+      [
+        "fn_build_latest_response"
+      ]
+    ]
+  },
+  {
+    "id": "fn_build_latest_response",
+    "type": "function",
+    "z": "tab_ai_insight_latest",
+    "name": "BuildLatestInsightsResponse",
+    "func": "const INSIGHT_TYPES = ['energy-summary', 'anomaly-report', 'city-status'];\nconst latestStore = global.get('aiInsightLatestOutputs') || {};\nconst now = new Date().toISOString();\n\nconst sanitizeOutput = (insightType, storedOutput) => {\n    const output = (storedOutput && typeof storedOutput === 'object') ? storedOutput : {};\n    const metadata = (output.metadata && typeof output.metadata === 'object') ? output.metadata : {};\n    const llmModel = String(metadata.llm_model || 'rule-based-fallback');\n    return {\n        insight_type: insightType,\n        summary: String(output.summary || ''),\n        key_findings: Array.isArray(output.key_findings) ? output.key_findings.map((v) => String(v)) : [],\n        recommendations: Array.isArray(output.recommendations) ? output.recommendations.map((v) => String(v)) : [],\n        metadata: {\n            output_id: String(metadata.output_id || `latest-${insightType}`),\n            llm_model: llmModel,\n            timestamp: String(metadata.timestamp || now),\n            llm_used: llmModel !== 'rule-based-fallback',\n            agreement_id: String(metadata.agreement_id || 'unknown-agreement'),\n            asset_id: String(metadata.asset_id || 'unknown-asset'),\n            llm_error: null,\n        },\n        data: output.data === undefined ? null : output.data,\n    };\n};\n\nconst latest = {};\nfor (const insightType of INSIGHT_TYPES) {\n    const entry = latestStore[insightType];\n    if (!entry || typeof entry !== 'object') {\n        latest[insightType] = null;\n        continue;\n    }\n    latest[insightType] = {\n        cached_at: String(entry.cached_at || now),\n        output: sanitizeOutput(insightType, entry.output),\n    };\n}\n\nmsg.statusCode = 200;\nmsg.headers = { 'Content-Type': 'application/json' };\nmsg.payload = { latest };\nreturn [msg, null];\n",
+    "outputs": 2,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 620,
+    "y": 120,
+    "wires": [
+      [
+        "http_resp_latest_200_json"
+      ],
+      [
+        "http_resp_latest_500_json"
+      ]
+    ]
+  },
+  {
+    "id": "http_resp_latest_200_json",
+    "type": "http response",
+    "z": "tab_ai_insight_latest",
+    "name": "Latest 200 JSON",
+    "statusCode": "",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "x": 980,
+    "y": 120,
+    "wires": []
+  },
+  {
+    "id": "http_resp_latest_500_json",
+    "type": "http response",
+    "z": "tab_ai_insight_latest",
+    "name": "Latest 500 JSON",
+    "statusCode": "",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "x": 980,
+    "y": 220,
+    "wires": []
+  },
+  {
+    "id": "catch_latest_errors",
+    "type": "catch",
+    "z": "tab_ai_insight_latest",
+    "name": "CatchLatestErrors",
+    "scope": [
+      "fn_build_latest_response"
+    ],
+    "uncaught": false,
+    "x": 220,
+    "y": 340,
+    "wires": [
+      [
+        "fn_build_latest_error"
+      ]
+    ]
+  },
+  {
+    "id": "fn_build_latest_error",
+    "type": "function",
+    "z": "tab_ai_insight_latest",
+    "name": "BuildLatestError",
+    "func": "if (!msg.res) {\n    return null;\n}\n\nconst alreadySent = !!(msg.res.headersSent || (msg.res._res && (msg.res._res.headersSent || msg.res._res.writableEnded)));\nif (alreadySent) {\n    return null;\n}\n\nmsg.statusCode = 500;\nmsg.headers = { 'Content-Type': 'application/json' };\nmsg.payload = { detail: 'internal_error' };\nreturn msg;\n",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 620,
+    "y": 340,
+    "wires": [
+      [
+        "http_resp_latest_500_json",
+        "debug_latest_error"
+      ]
+    ]
+  },
+  {
+    "id": "debug_latest_error",
+    "type": "debug",
+    "z": "tab_ai_insight_latest",
+    "name": "Latest error debug",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "true",
+    "targetType": "full",
+    "x": 980,
+    "y": 340,
+    "wires": []
+  }
+]
