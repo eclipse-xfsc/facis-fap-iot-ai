@@ -17,8 +17,8 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, status
-from prometheus_client import Counter, Histogram, make_asgi_app
+from fastapi import FastAPI, HTTPException
+from prometheus_client import Counter, make_asgi_app
 
 from src.catalogue_store import query_catalogue
 from src.models import (

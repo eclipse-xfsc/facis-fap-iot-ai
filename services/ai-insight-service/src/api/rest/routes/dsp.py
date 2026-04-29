@@ -125,6 +125,16 @@ async def create_pull_url(
     )
 
 
+def _get_validator() -> HmacTokenValidator:
+    """Get the configured validator or raise 503."""
+    if _validator is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="DSP validation not configured",
+        )
+    return _validator
+
+
 @dsp_router.get(
     "/pull",
     summary="Validate HMAC token and return data access confirmation",
@@ -148,13 +158,3 @@ async def pull(
         },
         "expires_at": verified.get("expiresAt"),
     }
-
-
-def _get_validator() -> HmacTokenValidator:
-    """Get the configured validator or raise 503."""
-    if _validator is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="DSP validation not configured",
-        )
-    return _validator

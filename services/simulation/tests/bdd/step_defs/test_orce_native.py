@@ -17,7 +17,6 @@ remains green on CI runners without an ORCE backend.
 
 from __future__ import annotations
 
-import json
 import os
 import time
 

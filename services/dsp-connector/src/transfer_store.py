@@ -8,7 +8,6 @@ import logging
 import secrets
 from datetime import UTC, datetime, timedelta
 from threading import Lock
-from typing import Any
 from uuid import uuid4
 
 from src.models import (

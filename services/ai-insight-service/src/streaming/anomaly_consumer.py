@@ -17,8 +17,9 @@ import math
 import threading
 import time
 from collections import deque
-from dataclasses import dataclass, field
-from typing import Any, Callable
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any
 
 from confluent_kafka import Consumer, KafkaError, KafkaException
 

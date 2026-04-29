@@ -47,3 +47,5 @@ htmlcov/
 
 # system files
 .DS_Store
+# Node.js
+node_modules/
