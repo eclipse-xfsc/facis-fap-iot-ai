@@ -1,280 +1,309 @@
 [
-  {
-    "id": "tab-kafka-adapter",
-    "type": "tab",
-    "label": "FACIS Simulation \u2014 Kafka Adapter",
-    "disabled": false,
-    "info": "ORCE-native Kafka adapter for the simulation runtime.\n\nReceives the unified tick envelope from the Feeds tab via\n`sim.envelope` link-in, splits per feed type, and publishes to the\n9 Stackable-Kafka topics with mTLS.\n\nTopic conventions preserved from the legacy facis-simulation-cluster.json:\n  sim.smart_energy.{meter,pv,weather,price,consumer}\n  sim.smart_city.{light,traffic,event,weather}\n\nPrerequisite: node-red-contrib-rdkafka installed via the ORCE PVC\n(see services/simulation/orce/Dockerfile)."
-  },
-  {
-    "id": "comment-kafka",
-    "type": "comment",
-    "z": "tab-kafka-adapter",
-    "name": "ORCE-native Kafka adapter (envelope \u2192 9 topics)",
-    "info": "Driven by the Feeds tab via link-in `sim.envelope`.\nTopic split + rdkafka producers identical to the legacy\nfacis-simulation-cluster.json HTTP-driven flow.",
-    "x": 250,
-    "y": 60,
-    "wires": []
-  },
-  {
-    "id": "kafka-broker-config",
-    "type": "kafka-broker",
-    "name": "FACIS Kafka Cluster",
-    "broker": "kafka-broker-default-0.kafka-broker-default-headless.stackable.svc.cluster.local:9093",
-    "clientid": "facis-orce",
-    "securityProtocol": "ssl",
-    "sslCaLocation": "/etc/kafka-certs/ca.crt",
-    "sslCertLocation": "/etc/kafka-certs/tls.crt",
-    "sslKeyLocation": "/etc/kafka-certs/tls.key"
-  },
-  {
-    "id": "link-in-envelope",
-    "type": "link in",
-    "z": "tab-kafka-adapter",
-    "name": "\u2190 sim.envelope",
-    "links": [],
-    "x": 130,
-    "y": 200,
-    "wires": [
-      [
-        "validate-schema"
-      ]
-    ]
-  },
-  {
-    "id": "validate-schema",
-    "type": "function",
-    "z": "tab-kafka-adapter",
-    "name": "Validate Schema",
-    "func": "// Lightweight runtime guard for envelopes coming from the Feeds tab.\nconst p = msg.payload;\nconst required = ['type', 'schema_version', 'timestamp', 'site_id', 'smart_energy', 'smart_city'];\nconst missing = required.filter(f => p[f] === undefined);\nif (missing.length > 0) {\n    node.error('kafka-adapter: invalid envelope, missing fields: ' + missing.join(', '), msg);\n    return null;\n}\nif (p.type !== 'sim.tick') {\n    node.error('kafka-adapter: invalid envelope.type ' + p.type, msg);\n    return null;\n}\nflow.set('last_kafka_tick', p.timestamp);\nflow.set('kafka_tick_count', (flow.get('kafka_tick_count') || 0) + 1);\nreturn msg;\n",
-    "outputs": 1,
-    "timeout": "",
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [],
-    "x": 340,
-    "y": 200,
-    "wires": [
-      [
-        "split-feeds"
-      ]
-    ]
-  },
-  {
-    "id": "split-feeds",
-    "type": "function",
-    "z": "tab-kafka-adapter",
-    "name": "Split Feeds",
-    "func": "// Split unified envelope into per-feed messages, one per Kafka topic.\nconst envelope = msg.payload;\nconst ts = envelope.timestamp;\nconst siteId = envelope.site_id;\nconst msgs = [];\n\nfor (const m of (envelope.smart_energy.meters || [])) {\n    msgs.push({ topic: 'sim.smart_energy.meter', key: m.meter_id || siteId, payload: JSON.stringify(m) });\n}\nfor (const p of (envelope.smart_energy.pv || [])) {\n    msgs.push({ topic: 'sim.smart_energy.pv', key: p.system_id || p.pv_system_id || siteId, payload: JSON.stringify(p) });\n}\nif (envelope.smart_energy.weather) {\n    msgs.push({ topic: 'sim.smart_energy.weather', key: envelope.smart_energy.weather.site_id || siteId, payload: JSON.stringify(envelope.smart_energy.weather) });\n}\nif (envelope.smart_energy.price) {\n    msgs.push({ topic: 'sim.smart_energy.price', key: envelope.smart_energy.price.feed_id || 'price', payload: JSON.stringify(envelope.smart_energy.price) });\n}\nfor (const c of (envelope.smart_energy.consumers || [])) {\n    msgs.push({ topic: 'sim.smart_energy.consumer', key: c.device_id || siteId, payload: JSON.stringify(c) });\n}\nfor (const l of (envelope.smart_city.streetlights || [])) {\n    msgs.push({ topic: 'sim.smart_city.light', key: l.light_id || l.zone_id, payload: JSON.stringify(l) });\n}\nfor (const t of (envelope.smart_city.traffic || [])) {\n    msgs.push({ topic: 'sim.smart_city.traffic', key: t.zone_id, payload: JSON.stringify(t) });\n}\nfor (const e of (envelope.smart_city.events || [])) {\n    msgs.push({ topic: 'sim.smart_city.event', key: e.zone_id, payload: JSON.stringify(e) });\n}\nif (envelope.smart_city.visibility) {\n    msgs.push({ topic: 'sim.smart_city.weather', key: envelope.smart_city.city_id || 'city', payload: JSON.stringify(envelope.smart_city.visibility) });\n}\n\nnode.send([msgs]);\nreturn null;\n",
-    "outputs": 1,
-    "timeout": "",
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [],
-    "x": 550,
-    "y": 200,
-    "wires": [
-      [
-        "kafka-router"
-      ]
-    ]
-  },
-  {
-    "id": "kafka-router",
-    "type": "function",
-    "z": "tab-kafka-adapter",
-    "name": "Route to Kafka Topic",
-    "func": "const topicMap = {\n    'sim.smart_energy.meter': 0,\n    'sim.smart_energy.pv': 1,\n    'sim.smart_energy.weather': 2,\n    'sim.smart_energy.price': 3,\n    'sim.smart_energy.consumer': 4,\n    'sim.smart_city.light': 5,\n    'sim.smart_city.traffic': 6,\n    'sim.smart_city.event': 7,\n    'sim.smart_city.weather': 8\n};\n\nconst outputIndex = topicMap[msg.topic];\nif (outputIndex !== undefined) {\n    const outputs = new Array(9).fill(null);\n    outputs[outputIndex] = msg;\n    return outputs;\n}\n\nnode.warn('Unknown topic: ' + msg.topic);\nreturn null;",
-    "outputs": 9,
-    "timeout": "",
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [],
-    "x": 780,
-    "y": 200,
-    "wires": [
-      [
-        "kafka-meter"
-      ],
-      [
-        "kafka-pv"
-      ],
-      [
-        "kafka-weather"
-      ],
-      [
-        "kafka-price"
-      ],
-      [
-        "kafka-consumer"
-      ],
-      [
-        "kafka-light"
-      ],
-      [
-        "kafka-traffic"
-      ],
-      [
-        "kafka-event"
-      ],
-      [
-        "kafka-city-weather"
-      ]
-    ]
-  },
-  {
-    "id": "kafka-meter",
-    "type": "rdkafka out",
-    "z": "tab-kafka-adapter",
-    "name": "sim.smart_energy.meter",
-    "broker": "kafka-broker-config",
-    "topic": "sim.smart_energy.meter",
-    "x": 1040,
-    "y": 60,
-    "wires": [
-      [
-        "debug-kafka"
-      ]
-    ]
-  },
-  {
-    "id": "kafka-pv",
-    "type": "rdkafka out",
-    "z": "tab-kafka-adapter",
-    "name": "sim.smart_energy.pv",
-    "broker": "kafka-broker-config",
-    "topic": "sim.smart_energy.pv",
-    "x": 1040,
-    "y": 100,
-    "wires": [
-      [
-        "debug-kafka"
-      ]
-    ]
-  },
-  {
-    "id": "kafka-weather",
-    "type": "rdkafka out",
-    "z": "tab-kafka-adapter",
-    "name": "sim.smart_energy.weather",
-    "broker": "kafka-broker-config",
-    "topic": "sim.smart_energy.weather",
-    "x": 1040,
-    "y": 140,
-    "wires": [
-      [
-        "debug-kafka"
-      ]
-    ]
-  },
-  {
-    "id": "kafka-price",
-    "type": "rdkafka out",
-    "z": "tab-kafka-adapter",
-    "name": "sim.smart_energy.price",
-    "broker": "kafka-broker-config",
-    "topic": "sim.smart_energy.price",
-    "x": 1040,
-    "y": 180,
-    "wires": [
-      [
-        "debug-kafka"
-      ]
-    ]
-  },
-  {
-    "id": "kafka-consumer",
-    "type": "rdkafka out",
-    "z": "tab-kafka-adapter",
-    "name": "sim.smart_energy.consumer",
-    "broker": "kafka-broker-config",
-    "topic": "sim.smart_energy.consumer",
-    "x": 1040,
-    "y": 220,
-    "wires": [
-      [
-        "debug-kafka"
-      ]
-    ]
-  },
-  {
-    "id": "kafka-light",
-    "type": "rdkafka out",
-    "z": "tab-kafka-adapter",
-    "name": "sim.smart_city.light",
-    "broker": "kafka-broker-config",
-    "topic": "sim.smart_city.light",
-    "x": 1040,
-    "y": 260,
-    "wires": [
-      [
-        "debug-kafka"
-      ]
-    ]
-  },
-  {
-    "id": "kafka-traffic",
-    "type": "rdkafka out",
-    "z": "tab-kafka-adapter",
-    "name": "sim.smart_city.traffic",
-    "broker": "kafka-broker-config",
-    "topic": "sim.smart_city.traffic",
-    "x": 1040,
-    "y": 300,
-    "wires": [
-      [
-        "debug-kafka"
-      ]
-    ]
-  },
-  {
-    "id": "kafka-event",
-    "type": "rdkafka out",
-    "z": "tab-kafka-adapter",
-    "name": "sim.smart_city.event",
-    "broker": "kafka-broker-config",
-    "topic": "sim.smart_city.event",
-    "x": 1040,
-    "y": 340,
-    "wires": [
-      [
-        "debug-kafka"
-      ]
-    ]
-  },
-  {
-    "id": "kafka-city-weather",
-    "type": "rdkafka out",
-    "z": "tab-kafka-adapter",
-    "name": "sim.smart_city.weather",
-    "broker": "kafka-broker-config",
-    "topic": "sim.smart_city.weather",
-    "x": 1040,
-    "y": 380,
-    "wires": [
-      [
-        "debug-kafka"
-      ]
-    ]
-  },
-  {
-    "id": "debug-kafka",
-    "type": "debug",
-    "z": "tab-kafka-adapter",
-    "name": "Kafka Delivery Log",
-    "active": false,
-    "tosidebar": true,
-    "console": false,
-    "tostatus": false,
-    "complete": "true",
-    "targetType": "full",
-    "statusVal": "",
-    "statusType": "auto",
-    "x": 1270,
-    "y": 200,
-    "wires": []
-  }
+    {
+        "id": "tab-kafka-adapter",
+        "type": "tab",
+        "label": "FACIS Simulation \u2014 Kafka Adapter",
+        "disabled": false,
+        "info": "ORCE-native Kafka adapter for the simulation runtime.\n\nReceives the unified tick envelope from the Feeds tab via\n`sim.envelope` link-in, splits per feed type, and publishes to the\n9 Stackable-Kafka topics with mTLS.\n\nTopic conventions preserved from the legacy facis-simulation-cluster.json:\n  sim.smart_energy.{meter,pv,weather,price,consumer}\n  sim.smart_city.{light,traffic,event,weather}\n\nPrerequisite: node-red-contrib-rdkafka installed via the ORCE PVC\n(see services/simulation/orce/Dockerfile)."
+    },
+    {
+        "id": "comment-kafka",
+        "type": "comment",
+        "z": "tab-kafka-adapter",
+        "name": "ORCE-native Kafka adapter (envelope \u2192 9 topics)",
+        "info": "Driven by the Feeds tab via link-in `sim.envelope`.\nTopic split + rdkafka producers identical to the legacy\nfacis-simulation-cluster.json HTTP-driven flow.",
+        "x": 250,
+        "y": 60,
+        "wires": []
+    },
+    {
+        "id": "kafka-broker-config",
+        "type": "kafka-broker",
+        "name": "FACIS Kafka Cluster",
+        "broker": "212.132.83.222:9093,85.215.37.238:32121,217.160.216.54:32067,85.215.39.90:30604",
+        "clientid": "facis-orce",
+        "securityProtocol": "ssl",
+        "sslCaLocation": "/etc/kafka-certs/ca.crt",
+        "sslCertLocation": "/etc/kafka-certs/tls.crt",
+        "sslKeyLocation": "/etc/kafka-certs/tls.key",
+        "metadataMaxAgeMs": 30000
+    },
+    {
+        "id": "kafka-meter",
+        "type": "rdkafka out",
+        "z": "tab-kafka-adapter",
+        "name": "sim.smart_energy.meter",
+        "broker": "kafka-broker-config",
+        "topic": "sim.smart_energy.meter",
+        "x": 1040,
+        "y": 60,
+        "wires": [
+            [
+                "debug-kafka"
+            ]
+        ]
+    },
+    {
+        "id": "kafka-pv",
+        "type": "rdkafka out",
+        "z": "tab-kafka-adapter",
+        "name": "sim.smart_energy.pv",
+        "broker": "kafka-broker-config",
+        "topic": "sim.smart_energy.pv",
+        "x": 1040,
+        "y": 100,
+        "wires": [
+            [
+                "debug-kafka"
+            ]
+        ]
+    },
+    {
+        "id": "kafka-weather",
+        "type": "rdkafka out",
+        "z": "tab-kafka-adapter",
+        "name": "sim.smart_energy.weather",
+        "broker": "kafka-broker-config",
+        "topic": "sim.smart_energy.weather",
+        "x": 1040,
+        "y": 140,
+        "wires": [
+            [
+                "debug-kafka"
+            ]
+        ]
+    },
+    {
+        "id": "kafka-price",
+        "type": "rdkafka out",
+        "z": "tab-kafka-adapter",
+        "name": "sim.smart_energy.price",
+        "broker": "kafka-broker-config",
+        "topic": "sim.smart_energy.price",
+        "x": 1040,
+        "y": 180,
+        "wires": [
+            [
+                "debug-kafka"
+            ]
+        ]
+    },
+    {
+        "id": "kafka-consumer",
+        "type": "rdkafka out",
+        "z": "tab-kafka-adapter",
+        "name": "sim.smart_energy.consumer",
+        "broker": "kafka-broker-config",
+        "topic": "sim.smart_energy.consumer",
+        "x": 1040,
+        "y": 220,
+        "wires": [
+            [
+                "debug-kafka"
+            ]
+        ]
+    },
+    {
+        "id": "kafka-light",
+        "type": "rdkafka out",
+        "z": "tab-kafka-adapter",
+        "name": "sim.smart_city.light",
+        "broker": "kafka-broker-config",
+        "topic": "sim.smart_city.light",
+        "x": 1040,
+        "y": 260,
+        "wires": [
+            [
+                "debug-kafka"
+            ]
+        ]
+    },
+    {
+        "id": "kafka-traffic",
+        "type": "rdkafka out",
+        "z": "tab-kafka-adapter",
+        "name": "sim.smart_city.traffic",
+        "broker": "kafka-broker-config",
+        "topic": "sim.smart_city.traffic",
+        "x": 1040,
+        "y": 300,
+        "wires": [
+            [
+                "debug-kafka"
+            ]
+        ]
+    },
+    {
+        "id": "kafka-event",
+        "type": "rdkafka out",
+        "z": "tab-kafka-adapter",
+        "name": "sim.smart_city.event",
+        "broker": "kafka-broker-config",
+        "topic": "sim.smart_city.event",
+        "x": 1040,
+        "y": 340,
+        "wires": [
+            [
+                "debug-kafka"
+            ]
+        ]
+    },
+    {
+        "id": "kafka-city-weather",
+        "type": "rdkafka out",
+        "z": "tab-kafka-adapter",
+        "name": "sim.smart_city.weather",
+        "broker": "kafka-broker-config",
+        "topic": "sim.smart_city.weather",
+        "x": 1040,
+        "y": 380,
+        "wires": [
+            [
+                "debug-kafka"
+            ]
+        ]
+    },
+    {
+        "id": "debug-kafka",
+        "type": "debug",
+        "z": "tab-kafka-adapter",
+        "name": "Kafka Delivery Log",
+        "active": false,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 1270,
+        "y": 200,
+        "wires": []
+    },
+    {
+        "id": "5a00312f779505d5",
+        "type": "link in",
+        "z": "tab-kafka-adapter",
+        "name": "\u2190 feeds.kafka.meter",
+        "links": [],
+        "x": 120,
+        "y": 80,
+        "wires": [
+            [
+                "kafka-meter"
+            ]
+        ]
+    },
+    {
+        "id": "400a7edc80f101ae",
+        "type": "link in",
+        "z": "tab-kafka-adapter",
+        "name": "\u2190 feeds.kafka.pv",
+        "links": [],
+        "x": 120,
+        "y": 140,
+        "wires": [
+            [
+                "kafka-pv"
+            ]
+        ]
+    },
+    {
+        "id": "e1c3e4a0a59bfcb8",
+        "type": "link in",
+        "z": "tab-kafka-adapter",
+        "name": "\u2190 feeds.kafka.weather",
+        "links": [],
+        "x": 120,
+        "y": 200,
+        "wires": [
+            [
+                "kafka-weather"
+            ]
+        ]
+    },
+    {
+        "id": "c5954f0f78a7e3f9",
+        "type": "link in",
+        "z": "tab-kafka-adapter",
+        "name": "\u2190 feeds.kafka.price",
+        "links": [],
+        "x": 120,
+        "y": 260,
+        "wires": [
+            [
+                "kafka-price"
+            ]
+        ]
+    },
+    {
+        "id": "a0805ab90944e174",
+        "type": "link in",
+        "z": "tab-kafka-adapter",
+        "name": "\u2190 feeds.kafka.consumer",
+        "links": [],
+        "x": 120,
+        "y": 320,
+        "wires": [
+            [
+                "kafka-consumer"
+            ]
+        ]
+    },
+    {
+        "id": "21ea5f7cdc17eeb0",
+        "type": "link in",
+        "z": "tab-kafka-adapter",
+        "name": "\u2190 feeds.kafka.light",
+        "links": [],
+        "x": 120,
+        "y": 380,
+        "wires": [
+            [
+                "kafka-light"
+            ]
+        ]
+    },
+    {
+        "id": "f209faee76299010",
+        "type": "link in",
+        "z": "tab-kafka-adapter",
+        "name": "\u2190 feeds.kafka.traffic",
+        "links": [],
+        "x": 120,
+        "y": 440,
+        "wires": [
+            [
+                "kafka-traffic"
+            ]
+        ]
+    },
+    {
+        "id": "6d4f36375cc64217",
+        "type": "link in",
+        "z": "tab-kafka-adapter",
+        "name": "\u2190 feeds.kafka.event",
+        "links": [],
+        "x": 120,
+        "y": 500,
+        "wires": [
+            [
+                "kafka-event"
+            ]
+        ]
+    },
+    {
+        "id": "a90f7b95d55ce2f2",
+        "type": "link in",
+        "z": "tab-kafka-adapter",
+        "name": "\u2190 feeds.kafka.city.weather",
+        "links": [],
+        "x": 120,
+        "y": 560,
+        "wires": [
+            [
+                "kafka-city-weather"
+            ]
+        ]
+    }
 ]

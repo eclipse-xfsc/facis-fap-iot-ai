@@ -1,63 +1,1564 @@
 [
-  {
-    "id": "tab-feeds",
-    "type": "tab",
-    "label": "FACIS Simulation \u2014 Feeds",
-    "disabled": false,
-    "info": "FACIS Simulation \u2014 Feeds & Envelope Assembly\n\nReceives a tick.trigger message via link-in, generates all feed snapshots\n(weather, pv, meters, prices, consumers, smart-city), assembles the\nunified envelope expected by the Kafka/MQTT/Modbus adapters, and emits\nvia link-out (`sim.envelope`).\n\nEntity registry is statically defined in the function node \u2014 override\nvia flow context `entity_registry` (set by the Engine flow on startup\nfrom /data/sim-config.json if present).\n\nPhysics is intentionally inlined here; the canonical per-simulator\nimplementations live in subflows/<name>-simulator.subflow.json and are\nexercised by tests/flows/*.spec.js. The orchestrator must stay in sync\nwith those subflows."
-  },
-  {
-    "id": "link-in-tick",
-    "type": "link in",
-    "z": "tab-feeds",
-    "name": "\u2190 tick.trigger",
-    "links": [],
-    "x": 130,
-    "y": 200,
-    "wires": [
-      [
-        "fn-feeds-orchestrator"
-      ]
-    ]
-  },
-  {
-    "id": "fn-feeds-orchestrator",
-    "type": "function",
-    "z": "tab-feeds",
-    "name": "feeds orchestrator",
-    "func": "// FACIS Feeds & Envelope Assembly \u2014 orchestration\n// Math is duplicated from subflows/*-simulator.subflow.json \u2014 keep in sync.\n\nconst ENERGY_TOPIC_KEYS = ['meters', 'pv', 'weather', 'price', 'consumers'];\n\nfunction makeRng(baseSeed, entityId, tag, tsMs) {\n    const key = String(baseSeed) + ':' + String(entityId) + ':' + String(tag) + ':' + String(tsMs);\n    const seedHex = crypto.createHash('sha256').update(key).digest('hex').slice(0, 16);\n    return seedrandom.alea(seedHex);\n}\nconst uniform = (rng, a, b) => a + (b - a) * rng();\nfunction normal(rng, mean, stddev) {\n    let u = 0; let v = 0;\n    while (u === 0) u = rng();\n    while (v === 0) v = rng();\n    const z = Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);\n    return mean + stddev * z;\n}\nconst isWeekendDate = (d) => { const w = d.getUTCDay(); return w === 0 || w === 6; };\nfunction dayOfYear(d) {\n    const start = Date.UTC(d.getUTCFullYear(), 0, 0);\n    return Math.floor((d.getTime() - start) / 86400000);\n}\n\n// --- Weather ---\nfunction weather(payload) {\n    const d = new Date(payload.timestamp);\n    const cfg = Object.assign({\n        latitude: 52.52, longitude: 13.405,\n        base_temperature_summer_c: 22, base_temperature_winter_c: 0,\n        daily_temp_amplitude_c: 8, temperature_variance_c: 1.5,\n        base_humidity_percent: 65, humidity_variance_percent: 8,\n        base_wind_speed_ms: 4.0, wind_variance_ms: 1.5,\n        prevailing_wind_direction_deg: 270, wind_direction_variance_deg: 30,\n        base_cloud_cover_percent: 40, cloud_variance_percent: 15,\n        max_clear_sky_ghi_w_m2: 1000\n    }, payload.config || {});\n    const tsMs = payload.timestamp_ms;\n    const cloudRng = makeRng(payload.base_seed, payload.entity_id, 'cloud', tsMs);\n    const tempRng = makeRng(payload.base_seed, payload.entity_id, 'temp', tsMs);\n    const humRng = makeRng(payload.base_seed, payload.entity_id, 'hum', tsMs);\n    const windSRng = makeRng(payload.base_seed, payload.entity_id, 'winds', tsMs);\n    const windDRng = makeRng(payload.base_seed, payload.entity_id, 'windd', tsMs);\n    const irrRng = makeRng(payload.base_seed, payload.entity_id, 'irr', tsMs);\n\n    const seas = Math.cos(2 * Math.PI * (dayOfYear(d) - 182) / 365);\n    const hour = d.getUTCHours() + d.getUTCMinutes() / 60;\n    const diurnal = Math.cos(2 * Math.PI * (hour - 15) / 24);\n    const seasMid = (cfg.base_temperature_summer_c + cfg.base_temperature_winter_c) / 2;\n    const seasAmp = (cfg.base_temperature_summer_c - cfg.base_temperature_winter_c) / 2;\n    const eff = cfg.daily_temp_amplitude_c * (0.6 + 0.4 * (seas + 1) / 2);\n    let temp = seasMid + seasAmp * seas + eff * diurnal;\n    if (cfg.temperature_variance_c > 0) temp += normal(tempRng, 0, cfg.temperature_variance_c);\n\n    let hum = cfg.base_humidity_percent - Math.max(0, temp - 15);\n    if (cfg.humidity_variance_percent > 0) hum += normal(humRng, 0, cfg.humidity_variance_percent);\n    hum = Math.max(20, Math.min(95, hum));\n\n    const dwf = Math.max(0.6, Math.min(1.4, 1 - 0.4 * Math.cos(2 * Math.PI * (hour - 14) / 24)));\n    let ws = cfg.base_wind_speed_ms * dwf;\n    if (cfg.wind_variance_ms > 0) ws += normal(windSRng, 0, cfg.wind_variance_ms);\n    ws = Math.max(0, ws);\n\n    let wd = cfg.prevailing_wind_direction_deg;\n    if (cfg.wind_direction_variance_deg > 0) wd += normal(windDRng, 0, cfg.wind_direction_variance_deg);\n    wd = ((wd % 360) + 360) % 360;\n\n    let cover = cfg.base_cloud_cover_percent * (1 - 0.15 * Math.cos(2 * Math.PI * (hour - 15) / 24));\n    if (cfg.cloud_variance_percent > 0) cover += normal(cloudRng, 0, cfg.cloud_variance_percent);\n    cover = Math.max(0, Math.min(100, cover));\n\n    const decl = (23.45 * Math.PI / 180) * Math.sin(2 * Math.PI * (284 + dayOfYear(d)) / 365);\n    const b = 2 * Math.PI * (dayOfYear(d) - 81) / 365;\n    const eot = 9.87 * Math.sin(2 * b) - 7.53 * Math.cos(b) - 1.5 * Math.sin(b);\n    const solarTime = (d.getUTCHours() + d.getUTCMinutes() / 60 + d.getUTCSeconds() / 3600) * 60 + 4 * cfg.longitude + eot;\n    const haDeg = (solarTime / 4) - 180;\n    const ha = haDeg * Math.PI / 180;\n    const lat = cfg.latitude * Math.PI / 180;\n    const sinAlt = Math.sin(lat) * Math.sin(decl) + Math.cos(lat) * Math.cos(decl) * Math.cos(ha);\n    const altR = Math.asin(Math.max(-1, Math.min(1, sinAlt)));\n    const altDeg = Math.max(0, altR * 180 / Math.PI);\n\n    let irradiance = { ghi_w_m2: 0, dni_w_m2: 0, dhi_w_m2: 0 };\n    if (altDeg > 0) {\n        const am = 1 / Math.max(Math.sin(altR), 0.05);\n        const trans = Math.pow(0.7, Math.pow(am, 0.678));\n        const clearSky = Math.max(0, cfg.max_clear_sky_ghi_w_m2 * Math.sin(altR) * trans);\n        let f = 1 - 0.5 * (cover / 100);\n        f = Math.max(0.3, Math.min(1, f + uniform(irrRng, -0.05, 0.05)));\n        const ghi = clearSky * f;\n        const kt = 1 - 0.7 * (cover / 100);\n        let df;\n        if (kt <= 0.22) df = 1 - 0.09 * kt;\n        else if (kt <= 0.8) df = 0.9511 - 0.1604 * kt + 4.388 * kt * kt - 16.638 * Math.pow(kt, 3) + 12.336 * Math.pow(kt, 4);\n        else df = 0.165;\n        const dhi = ghi * df;\n        const dh = ghi - dhi;\n        const dni = dh / Math.max(Math.sin(altR), 0.05);\n        irradiance = {\n            ghi_w_m2: Math.max(0, ghi),\n            dni_w_m2: Math.max(0, Math.min(dni, 1200)),\n            dhi_w_m2: Math.max(0, dhi)\n        };\n    }\n\n    return {\n        site_id: payload.site_id || '',\n        timestamp: payload.timestamp,\n        location: { latitude: cfg.latitude, longitude: cfg.longitude },\n        conditions: {\n            temperature_c: temp, humidity_percent: hum,\n            wind_speed_ms: ws, wind_direction_deg: wd,\n            cloud_cover_percent: cover,\n            ghi_w_m2: irradiance.ghi_w_m2,\n            dni_w_m2: irradiance.dni_w_m2,\n            dhi_w_m2: irradiance.dhi_w_m2\n        }\n    };\n}\n\n// --- PV (uses weather output) ---\nfunction pv(payload, weatherReading) {\n    const cfg = Object.assign({\n        nominal_capacity_kwp: 10, noct_c: 45,\n        temperature_coefficient_pct_per_c: -0.4,\n        reference_temperature_c: 25, system_losses_percent: 14,\n        interval_minutes: 15\n    }, payload.config || {});\n    const ghi = (weatherReading && weatherReading.conditions) ? weatherReading.conditions.ghi_w_m2 : 0;\n    const ambient = (weatherReading && weatherReading.conditions) ? weatherReading.conditions.temperature_c : 15;\n    const modT = ghi <= 0 ? ambient : ambient + (cfg.noct_c - 20) * (ghi / 800);\n    let derating = 1 + (cfg.temperature_coefficient_pct_per_c / 100) * (modT - cfg.reference_temperature_c);\n    derating = Math.max(0, Math.min(1.2, derating));\n    let power = ghi <= 0 ? 0 : cfg.nominal_capacity_kwp * (ghi / 1000) * derating * (1 - cfg.system_losses_percent / 100);\n    power = Math.min(power, cfg.nominal_capacity_kwp);\n    const efficiency = (ghi <= 0 || power <= 0) ? 0 : Math.min(100, (power / (cfg.nominal_capacity_kwp * (ghi / 1000))) * 100);\n\n    // Daily energy state in flow context\n    const dateKey = payload.timestamp.slice(0, 10);\n    const all = flow.get('pv_daily') || {};\n    const st = all[payload.entity_id] || { date: dateKey, kwh: 0 };\n    if (st.date !== dateKey) { st.date = dateKey; st.kwh = 0; }\n    st.kwh += power * ((cfg.interval_minutes || 15) / 60);\n    all[payload.entity_id] = st;\n    flow.set('pv_daily', all);\n\n    return {\n        site_id: payload.site_id || '',\n        system_id: payload.entity_id,\n        timestamp: payload.timestamp,\n        readings: {\n            power_output_kw: power, daily_energy_kwh: st.kwh,\n            irradiance_w_m2: ghi, module_temperature_c: modT,\n            efficiency_percent: efficiency\n        }\n    };\n}\n\n// --- Meter ---\nconst WEEKDAY_LF = [0.30,0.28,0.25,0.25,0.27,0.35,0.55,0.75,0.90,0.95,1.00,0.98,0.85,0.92,0.98,0.95,0.88,0.70,0.50,0.45,0.40,0.38,0.35,0.32];\nconst WEEKEND_LF = [0.20,0.18,0.16,0.15,0.15,0.18,0.25,0.35,0.45,0.50,0.55,0.52,0.45,0.48,0.50,0.48,0.42,0.35,0.30,0.28,0.25,0.23,0.22,0.21];\nfunction meter(payload) {\n    const cfg = Object.assign({\n        base_power_kw: 10, peak_power_kw: 50, nominal_voltage_v: 230,\n        voltage_variance_pct: 5, nominal_frequency_hz: 50, frequency_variance_hz: 0.05,\n        power_factor_min: 0.95, power_factor_max: 0.99, initial_energy_kwh: 0\n    }, payload.config || {});\n    const d = new Date(payload.timestamp);\n    const tsMs = payload.timestamp_ms;\n    const rng = makeRng(payload.base_seed, payload.entity_id, 'meter', tsMs);\n    const curve = isWeekendDate(d) ? WEEKEND_LF : WEEKDAY_LF;\n    const h = d.getUTCHours(); const m = d.getUTCMinutes();\n    const cur = curve[h]; const nxt = curve[(h + 1) % 24];\n    let lf = cur + (nxt - cur) * (m / 60);\n    lf = Math.max(0.1, Math.min(1, lf + normal(rng, 0, 0.05)));\n    let totalKw = cfg.base_power_kw + (cfg.peak_power_kw - cfg.base_power_kw) * lf;\n    if (payload.mode === 'event') {\n        const minOfDay = h * 60 + m;\n        if (minOfDay >= 600 && minOfDay < 620) totalKw *= 2;\n    }\n    const totalW = totalKw * 1000;\n    const share = totalW / 3;\n    const i1off = uniform(rng, -0.08, 0.08);\n    const i2off = uniform(rng, -0.08, 0.08);\n    const i3off = -(i1off + i2off);\n    const p1 = share * (1 + i1off); const p2 = share * (1 + i2off); const p3 = share * (1 + i3off);\n    const vVar = cfg.nominal_voltage_v * cfg.voltage_variance_pct / 100;\n    const v1 = cfg.nominal_voltage_v + uniform(rng, -vVar, vVar);\n    const v2 = cfg.nominal_voltage_v + uniform(rng, -vVar, vVar);\n    const v3 = cfg.nominal_voltage_v + uniform(rng, -vVar, vVar);\n    const pf = uniform(rng, cfg.power_factor_min, cfg.power_factor_max);\n    const i1 = v1 > 0 ? p1 / (v1 * pf) : 0;\n    const i2 = v2 > 0 ? p2 / (v2 * pf) : 0;\n    const i3 = v3 > 0 ? p3 / (v3 * pf) : 0;\n    const freq = cfg.nominal_frequency_hz + uniform(rng, -cfg.frequency_variance_hz, cfg.frequency_variance_hz);\n    const ref = Date.UTC(d.getUTCFullYear(), 0, 1, 0, 0, 0);\n    let energy = cfg.initial_energy_kwh;\n    if (d.getTime() > ref) {\n        const totalH = (d.getTime() - ref) / 3600000;\n        const avg = cfg.base_power_kw + (cfg.peak_power_kw - cfg.base_power_kw) * 0.53;\n        energy = cfg.initial_energy_kwh + avg * totalH;\n    }\n    return {\n        site_id: payload.site_id || '',\n        timestamp: payload.timestamp,\n        meter_id: payload.entity_id,\n        readings: {\n            active_power_l1_w: p1, active_power_l2_w: p2, active_power_l3_w: p3,\n            voltage_l1_v: v1, voltage_l2_v: v2, voltage_l3_v: v3,\n            current_l1_a: i1, current_l2_a: i2, current_l3_a: i3,\n            power_factor: pf, frequency_hz: freq, total_energy_kwh: energy\n        }\n    };\n}\n\n// --- Price ---\nconst PRICE_MULT = [0.90,0.85,0.82,0.83,0.88,0.95,1.05,1.15,1.25,1.10,1.05,1.00,0.98,0.95,0.97,1.02,1.08,1.20,1.35,1.40,1.15,1.05,0.98,0.93];\nfunction price(payload) {\n    const cfg = Object.assign({\n        night_price: 0.08, morning_peak_price: 0.18, midday_price: 0.12,\n        evening_peak_price: 0.22, evening_price: 0.14,\n        weekend_discount_pct: 7.5, volatility_pct: 8, min_price: 0.01\n    }, payload.config || {});\n    const d = new Date(payload.timestamp);\n    const rng = makeRng(payload.base_seed, payload.entity_id, 'price', payload.timestamp_ms);\n    const h = d.getUTCHours();\n    const m = d.getUTCMinutes();\n    const tariff = h < 6 ? 'NIGHT' : h < 9 ? 'MORNING_PEAK' : h < 17 ? 'MIDDAY' : h < 20 ? 'EVENING_PEAK' : 'EVENING';\n    const base = ({ NIGHT: cfg.night_price, MORNING_PEAK: cfg.morning_peak_price, MIDDAY: cfg.midday_price, EVENING_PEAK: cfg.evening_peak_price, EVENING: cfg.evening_price })[tariff];\n    const mult = PRICE_MULT[h] + (PRICE_MULT[(h + 1) % 24] - PRICE_MULT[h]) * (m / 60);\n    let p = base * mult;\n    if (isWeekendDate(d)) p *= (1 - cfg.weekend_discount_pct / 100);\n    let vol = cfg.volatility_pct;\n    if (payload.mode === 'event') vol *= 2;\n    p *= (1 + normal(rng, 0, vol / 100));\n    p = Math.max(p, cfg.min_price);\n    return {\n        timestamp: payload.timestamp,\n        feed_id: payload.entity_id,\n        price_eur_per_kwh: p,\n        tariff_type: tariff\n    };\n}\n\n// --- Consumer ---\nfunction consumer(payload) {\n    const cfg = Object.assign({\n        device_type: 'industrial_oven', rated_power_kw: 3, duty_cycle_pct: 70,\n        power_variance_pct: 5, operate_on_weekends: false,\n        operating_windows: [{ start_hour: 6, end_hour: 18 }]\n    }, payload.config || {});\n    const d = new Date(payload.timestamp);\n    const rng = makeRng(payload.base_seed, payload.entity_id, 'consumer', payload.timestamp_ms);\n    let canOperate = true;\n    if (isWeekendDate(d) && !cfg.operate_on_weekends) canOperate = false;\n    if (canOperate) {\n        const h = d.getUTCHours();\n        let inAny = false;\n        for (const w of cfg.operating_windows) {\n            if (w.start_hour <= w.end_hour) { if (h >= w.start_hour && h < w.end_hour) { inAny = true; break; } }\n            else if (h >= w.start_hour || h < w.end_hour) { inAny = true; break; }\n        }\n        canOperate = inAny;\n    }\n    let state = 'OFF';\n    if (canOperate && rng() < cfg.duty_cycle_pct / 100) state = 'ON';\n    if (payload.mode === 'event') {\n        const minOfDay = d.getUTCHours() * 60 + d.getUTCMinutes();\n        if (minOfDay >= 1020 && minOfDay < 1140) state = 'ON';\n    }\n    let power = 0;\n    if (state === 'ON') {\n        const v = cfg.rated_power_kw * cfg.power_variance_pct / 100;\n        power = Math.max(0, cfg.rated_power_kw + uniform(rng, -v, v));\n    }\n    return {\n        site_id: payload.site_id || '',\n        timestamp: payload.timestamp,\n        device_id: payload.entity_id,\n        device_type: cfg.device_type,\n        device_state: state,\n        device_power_kw: power\n    };\n}\n\n// --- City event ---\nfunction cityEvent(payload) {\n    if ((payload.mode || 'normal') !== 'event') {\n        return {\n            city_id: payload.city_id || 'city-berlin',\n            zone_id: payload.zone_id || 'zone-001',\n            timestamp: payload.timestamp,\n            event_type: 'EVENT', severity: 'LOW', severity_num: 1, active: false\n        };\n    }\n    const d = new Date(payload.timestamp);\n    const epoch = Date.UTC(1, 0, 1);\n    const dayOrd = Math.floor((Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) - epoch) / 86400000) + 1;\n    const rng = makeRng(payload.base_seed, payload.entity_id, 'event-day', dayOrd);\n    const schedule = [\n        { hour: 9, duration: 30, type: 'ACCIDENT', severity: 'MEDIUM', severity_num: 2 },\n        { hour: 14, duration: 45, type: 'EMERGENCY', severity: 'HIGH', severity_num: 3 },\n        { hour: 20, duration: 20, type: 'EVENT', severity: 'LOW', severity_num: 1 }\n    ].map(e => ({ ...e, hour: Math.max(0, Math.min(23, e.hour + Math.floor(uniform(rng, -1, 2)))) }));\n    const minOfDay = d.getUTCHours() * 60 + d.getUTCMinutes();\n    for (const e of schedule) {\n        if (minOfDay >= e.hour * 60 && minOfDay < e.hour * 60 + e.duration) {\n            return {\n                city_id: payload.city_id || 'city-berlin',\n                zone_id: payload.zone_id || 'zone-001',\n                timestamp: payload.timestamp,\n                event_type: e.type, severity: e.severity, severity_num: e.severity_num,\n                active: true\n            };\n        }\n    }\n    return {\n        city_id: payload.city_id || 'city-berlin',\n        zone_id: payload.zone_id || 'zone-001',\n        timestamp: payload.timestamp,\n        event_type: 'EVENT', severity: 'LOW', severity_num: 1, active: false\n    };\n}\n\n// --- Streetlight ---\nfunction calcSunHours(date, latitude, longitude) {\n    const decl = 23.45 * Math.sin((Math.PI / 180) * (360 / 365) * (dayOfYear(date) - 81));\n    const declRad = decl * Math.PI / 180;\n    const latRad = latitude * Math.PI / 180;\n    let cosHa = -Math.tan(latRad) * Math.tan(declRad);\n    cosHa = Math.max(-1, Math.min(1, cosHa));\n    const haDeg = Math.acos(cosHa) * 180 / Math.PI;\n    const noonH = 12 - longitude / 15;\n    return [Math.max(0, Math.min(23.99, noonH - haDeg / 15)), Math.max(0, Math.min(23.99, noonH + haDeg / 15))];\n}\nfunction streetlight(payload, activeEvent) {\n    const cfg = Object.assign({ rated_power_w: 100, latitude: 52.52, longitude: 13.405 }, payload.config || {});\n    const d = new Date(payload.timestamp);\n    const rng = makeRng(payload.base_seed, payload.entity_id, 'light', payload.timestamp_ms);\n    const [sunriseH, sunsetH] = calcSunHours(d, cfg.latitude, cfg.longitude);\n    const hour = d.getUTCHours() + d.getUTCMinutes() / 60;\n    let dim;\n    const dawnStart = sunriseH - 0.5; const dawnEnd = sunriseH + 0.5;\n    const duskStart = sunsetH - 0.5; const duskEnd = sunsetH + 0.5;\n    if (hour < dawnStart || hour >= duskEnd) dim = 100;\n    else if (hour < dawnEnd) dim = 100 * (1 - (hour - dawnStart) / (dawnEnd - dawnStart));\n    else if (hour < duskStart) dim = 0;\n    else if (hour < duskEnd) dim = 100 * ((hour - duskStart) / (duskEnd - duskStart));\n    else dim = 0;\n    dim = Math.max(0, Math.min(100, dim + uniform(rng, -3, 3)));\n    if (activeEvent && activeEvent.active && activeEvent.zone_id === payload.zone_id) {\n        const sev = activeEvent.severity_num || 1;\n        if (sev >= 3) dim += 50;\n        else if (sev >= 2) dim += 30;\n        dim = Math.min(100, dim);\n    }\n    return {\n        site_id: payload.site_id || '',\n        city_id: payload.city_id || 'city-berlin',\n        zone_id: payload.zone_id || 'zone-001',\n        light_id: payload.entity_id,\n        timestamp: payload.timestamp,\n        dimming_level_pct: dim,\n        power_w: (dim / 100) * cfg.rated_power_w\n    };\n}\n\n// --- Traffic ---\nfunction traffic(payload) {\n    const d = new Date(payload.timestamp);\n    const rng = makeRng(payload.base_seed, payload.entity_id, 'traffic', payload.timestamp_ms);\n    const hour = d.getUTCHours() + d.getUTCMinutes() / 60;\n    const we = isWeekendDate(d);\n    let i;\n    if (hour < 5) i = 10;\n    else if (hour < 7) i = 10 + 55 * ((hour - 5) / 2);\n    else if (hour < 9) { const pf = 1 - Math.abs(hour - 8); i = 65 + 20 * pf; }\n    else if (hour < 10) i = 65 - 25 * (hour - 9);\n    else if (hour < 16) i = 40;\n    else if (hour < 17) i = 40 + 30 * (hour - 16);\n    else if (hour < 19) { const pf = 1 - Math.abs(hour - 18); i = 70 + 15 * pf; }\n    else if (hour < 21) i = 70 - 40 * ((hour - 19) / 2);\n    else if (hour < 23) i = 30 - 15 * ((hour - 21) / 2);\n    else i = 10;\n    if (we) i *= 0.7;\n    i = Math.max(0, Math.min(100, i + uniform(rng, -8, 8)));\n    return {\n        city_id: payload.city_id || 'city-berlin',\n        zone_id: payload.zone_id || 'zone-001',\n        timestamp: payload.timestamp,\n        traffic_index: i\n    };\n}\n\n// --- Visibility ---\nfunction visibility(payload) {\n    const cfg = Object.assign({ latitude: 52.52, longitude: 13.405 }, payload.config || {});\n    const d = new Date(payload.timestamp);\n    const rng = makeRng(payload.base_seed, payload.entity_id, 'visibility', payload.timestamp_ms);\n    const hour = d.getUTCHours() + d.getUTCMinutes() / 60;\n    let fog;\n    if (hour >= 4 && hour < 8) fog = 50 * Math.max(0, 1 - Math.abs(hour - 6) / 2);\n    else if (hour >= 8 && hour < 14) fog = Math.max(0, 25 * (1 - (hour - 8) / 6));\n    else if (hour >= 20) fog = 15 * ((hour - 20) / 4);\n    else if (hour < 4) fog = 20;\n    else fog = 5;\n    fog = Math.max(0, Math.min(100, fog + uniform(rng, -10, 10)));\n    const [sunriseH, sunsetH] = calcSunHours(d, cfg.latitude, cfg.longitude);\n    function fmt(h) {\n        const hh = Math.floor(h);\n        const mm = Math.floor((h - hh) * 60);\n        return String(hh).padStart(2, '0') + ':' + String(mm).padStart(2, '0');\n    }\n    return {\n        city_id: payload.city_id || 'city-berlin',\n        timestamp: payload.timestamp,\n        fog_index: fog,\n        visibility: fog < 30 ? 'GOOD' : fog < 60 ? 'MEDIUM' : 'POOR',\n        sunrise_time: fmt(sunriseH),\n        sunset_time: fmt(sunsetH)\n    };\n}\n\n// --- Default entity registry (mirrors config/default.yaml shape) ---\nconst DEFAULT_REGISTRY = {\n    site_id: 'site-berlin-001',\n    city_id: 'city-berlin',\n    weather: [{ entity_id: 'weather-berlin' }],\n    pv: [\n        { entity_id: 'pv-system-001', config: { nominal_capacity_kwp: 10, system_losses_percent: 15 } },\n        { entity_id: 'pv-system-002', config: { nominal_capacity_kwp: 5, system_losses_percent: 12 } }\n    ],\n    meters: [\n        { entity_id: 'janitza-umg96rm-001', config: { base_power_kw: 10, peak_power_kw: 25 } },\n        { entity_id: 'janitza-umg96rm-002', config: { base_power_kw: 5, peak_power_kw: 15, initial_energy_kwh: 1000 } }\n    ],\n    price: [{ entity_id: 'epex-spot-de' }],\n    consumers: [\n        { entity_id: 'industrial-oven-001', config: { device_type: 'industrial_oven', rated_power_kw: 3, duty_cycle_pct: 70 } },\n        { entity_id: 'hvac-001', config: { device_type: 'hvac', rated_power_kw: 2, duty_cycle_pct: 60, operate_on_weekends: true } }\n    ],\n    streetlights: [\n        { entity_id: 'light-z1-001', zone_id: 'zone-001' },\n        { entity_id: 'light-z1-002', zone_id: 'zone-001' }\n    ],\n    traffic: [{ entity_id: 'traffic-z1', zone_id: 'zone-001' }],\n    events: [{ entity_id: 'events-z1', zone_id: 'zone-001' }],\n    visibility: [{ entity_id: 'visibility-berlin' }]\n};\n\nconst tick = msg.payload || {};\nif (!tick.timestamp || typeof tick.timestamp_ms !== 'number') {\n    node.warn('feeds: ignoring invalid tick payload');\n    return null;\n}\n\nconst registry = flow.get('entity_registry') || DEFAULT_REGISTRY;\nconst baseCtx = {\n    base_seed: tick.base_seed,\n    timestamp: tick.timestamp,\n    timestamp_ms: tick.timestamp_ms,\n    site_id: registry.site_id,\n    city_id: registry.city_id,\n    mode: tick.mode || 'normal'\n};\n\nconst weatherReading = weather({ ...baseCtx, ...registry.weather[0] });\nconst pvReadings = registry.pv.map((spec) => pv({ ...baseCtx, ...spec }, weatherReading));\nconst meterReadings = registry.meters.map((spec) => meter({ ...baseCtx, ...spec }));\nconst priceReading = price({ ...baseCtx, ...registry.price[0] });\nconst consumerReadings = registry.consumers.map((spec) => consumer({ ...baseCtx, ...spec }));\nconst trafficReadings = registry.traffic.map((spec) => traffic({ ...baseCtx, ...spec }));\nconst eventReadings = registry.events.map((spec) => cityEvent({ ...baseCtx, ...spec }));\nconst visibilityReadings = registry.visibility.map((spec) => visibility({ ...baseCtx, ...spec }));\n// Streetlights honour the zone's active event\nconst lightReadings = registry.streetlights.map((spec) => {\n    const evt = eventReadings.find((e) => e.zone_id === spec.zone_id) || null;\n    return streetlight({ ...baseCtx, ...spec }, evt);\n});\n\nconst totalActiveW = meterReadings.reduce(\n    (acc, m) => acc + m.readings.active_power_l1_w + m.readings.active_power_l2_w + m.readings.active_power_l3_w,\n    0\n);\nconst totalPvKw = pvReadings.reduce((acc, p) => acc + p.readings.power_output_kw, 0);\nconst totalConsumerKw = consumerReadings.reduce((acc, c) => acc + c.device_power_kw, 0);\n\nconst envelope = {\n    type: 'sim.tick',\n    schema_version: '1.0',\n    timestamp: tick.timestamp,\n    mode: tick.mode || 'normal',\n    seed: tick.base_seed,\n    site_id: registry.site_id,\n    smart_energy: {\n        meters: meterReadings,\n        pv: pvReadings,\n        weather: weatherReading,\n        price: priceReading,\n        consumers: consumerReadings,\n        metrics: {\n            total_active_power_w: totalActiveW,\n            total_pv_power_kw: totalPvKw,\n            total_consumer_power_kw: totalConsumerKw,\n            net_load_kw: totalActiveW / 1000 + totalConsumerKw - totalPvKw\n        }\n    },\n    smart_city: {\n        city_id: registry.city_id,\n        timestamp: tick.timestamp,\n        events: eventReadings,\n        streetlights: lightReadings,\n        traffic: trafficReadings,\n        visibility: visibilityReadings[0] || null\n    }\n};\n\n// Cache the latest envelope and per-feed snapshots for REST snapshot APIs.\nflow.set('latest_envelope', envelope);\nflow.set('latest_meters', meterReadings);\nflow.set('latest_pv', pvReadings);\nflow.set('latest_weather', weatherReading);\nflow.set('latest_price', priceReading);\nflow.set('latest_consumers', consumerReadings);\n\nmsg.payload = envelope;\nreturn msg;\n",
-    "outputs": 1,
-    "timeout": "",
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [
-      {
-        "var": "seedrandom",
-        "module": "seedrandom"
-      },
-      {
-        "var": "crypto",
-        "module": "crypto"
-      }
-    ],
-    "x": 360,
-    "y": 200,
-    "wires": [
-      [
-        "link-out-envelope"
-      ]
-    ]
-  },
-  {
-    "id": "link-out-envelope",
-    "type": "link out",
-    "z": "tab-feeds",
-    "name": "sim.envelope \u2192",
-    "mode": "link",
-    "links": [],
-    "x": 590,
-    "y": 200,
-    "wires": []
-  }
+    {
+        "id": "tab-feeds",
+        "type": "tab",
+        "label": "FACIS Simulation \u2014 Feeds",
+        "disabled": false,
+        "info": "Auto-generated by services/simulation/orce/scripts/render-feeds.py \u2014 do not edit by hand"
+    },
+    {
+        "id": "linkin-tick-trigger",
+        "type": "link in",
+        "z": "tab-feeds",
+        "name": "tick.trigger",
+        "links": [],
+        "x": 90,
+        "y": 80,
+        "wires": [
+            [
+                "a11c1ac432a88108"
+            ]
+        ]
+    },
+    {
+        "id": "a11c1ac432a88108",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "build envelope",
+        "func": "// Build standard tick envelope; consumed by all per-entity inject-config nodes downstream\nconst t = msg.payload || {};\nmsg.payload = {\n    base_seed:    Number(env.get('BASE_SEED') || 12345),\n    timestamp_ms: t.timestamp_ms || Date.now(),\n    timestamp:    t.timestamp    || new Date().toISOString(),\n    site_id:      env.get('SITE_ID') || \"site-berlin-001\",\n    mode:         env.get('MODE') || 'normal'\n};\n// One-shot: bump engine.registered_entities on first tick\nconst engine = global.get('engine');\nif (engine && engine.registered_entities !== 21) {\n    engine.registered_entities = 21;\n    global.set('engine', engine);\n}\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 260,
+        "y": 80,
+        "wires": [
+            [
+                "c19fbdd2ca395c18"
+            ]
+        ]
+    },
+    {
+        "id": "c19fbdd2ca395c18",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "fanout to entities",
+        "func": "return msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 470,
+        "y": 80,
+        "wires": [
+            [
+                "cdef2d6218d95bdd",
+                "957f7d50d136a840",
+                "ef75f1d7060f3793",
+                "6d653b65fc87b949",
+                "ba5ac5aa251276fd",
+                "7ca6ed651a6fd99f",
+                "f25ca5fe4c3e85cd",
+                "1fbd0b90de287ab1",
+                "c1a0b7b156425b92",
+                "0165715dbe3e2d5b",
+                "2e5685b6528e7dd4",
+                "c6d47a2e5897e537",
+                "64e35bb12c8ff2be"
+            ]
+        ]
+    },
+    {
+        "id": "cdef2d6218d95bdd",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "cfg:meter:janitza-umg96rm-001",
+        "func": "// Auto-rendered: meter:janitza-umg96rm-001\nconst t = msg.payload || {};\nmsg.payload = {\n    base_seed:    t.base_seed,\n    entity_id:    \"janitza-umg96rm-001\",\n    timestamp_ms: t.timestamp_ms,\n    timestamp:    t.timestamp,\n    site_id:      t.site_id,\n    mode:         t.mode,\n    config:       {\"meter_id\":\"janitza-umg96rm-001\",\"base_power_kw\":10.0,\"peak_power_kw\":25.0,\"nominal_voltage_v\":230.0,\"voltage_variance_pct\":5.0,\"nominal_frequency_hz\":50.0,\"frequency_variance_hz\":0.05,\"power_factor_min\":0.95,\"power_factor_max\":0.99,\"initial_energy_kwh\":0.0}\n};\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 700,
+        "y": 120,
+        "wires": [
+            [
+                "db0933673c79fc19"
+            ]
+        ]
+    },
+    {
+        "id": "db0933673c79fc19",
+        "type": "subflow:subflow-facis-meter",
+        "z": "tab-feeds",
+        "name": "meter:janitza-umg96rm-001",
+        "env": [],
+        "x": 920,
+        "y": 120,
+        "wires": [
+            [
+                "51f8541d71b0de7c"
+            ]
+        ]
+    },
+    {
+        "id": "51f8541d71b0de7c",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "store:meter:janitza-umg96rm-001",
+        "func": "// Auto-rendered store-by-id (array)\nconst r = msg.payload;\nconst id = r[\"meter_id\"];\nlet arr = global.get(\"latest_meters\") || [];\nconst idx = arr.findIndex((x) => x[\"meter_id\"] === id);\nif (idx >= 0) arr[idx] = r; else arr.push(r);\nglobal.set(\"latest_meters\", arr);\nglobal.set(\"last_kafka_tick\", new Date().toISOString());\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1140,
+        "y": 120,
+        "wires": [
+            [
+                "d52921c04fbb8935"
+            ]
+        ]
+    },
+    {
+        "id": "d52921c04fbb8935",
+        "type": "link out",
+        "z": "tab-feeds",
+        "name": "\u2192 feeds.kafka.meter",
+        "mode": "link",
+        "links": [
+            "5a00312f779505d5"
+        ],
+        "x": 1360,
+        "y": 120,
+        "wires": []
+    },
+    {
+        "id": "957f7d50d136a840",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "cfg:meter:janitza-umg96rm-002",
+        "func": "// Auto-rendered: meter:janitza-umg96rm-002\nconst t = msg.payload || {};\nmsg.payload = {\n    base_seed:    t.base_seed,\n    entity_id:    \"janitza-umg96rm-002\",\n    timestamp_ms: t.timestamp_ms,\n    timestamp:    t.timestamp,\n    site_id:      t.site_id,\n    mode:         t.mode,\n    config:       {\"meter_id\":\"janitza-umg96rm-002\",\"base_power_kw\":5.0,\"peak_power_kw\":15.0,\"nominal_voltage_v\":230.0,\"voltage_variance_pct\":5.0,\"nominal_frequency_hz\":50.0,\"frequency_variance_hz\":0.05,\"power_factor_min\":0.92,\"power_factor_max\":0.98,\"initial_energy_kwh\":1000.0}\n};\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 700,
+        "y": 180,
+        "wires": [
+            [
+                "de38fdf8201420b4"
+            ]
+        ]
+    },
+    {
+        "id": "de38fdf8201420b4",
+        "type": "subflow:subflow-facis-meter",
+        "z": "tab-feeds",
+        "name": "meter:janitza-umg96rm-002",
+        "env": [],
+        "x": 920,
+        "y": 180,
+        "wires": [
+            [
+                "36cf4523de3dc662"
+            ]
+        ]
+    },
+    {
+        "id": "36cf4523de3dc662",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "store:meter:janitza-umg96rm-002",
+        "func": "// Auto-rendered store-by-id (array)\nconst r = msg.payload;\nconst id = r[\"meter_id\"];\nlet arr = global.get(\"latest_meters\") || [];\nconst idx = arr.findIndex((x) => x[\"meter_id\"] === id);\nif (idx >= 0) arr[idx] = r; else arr.push(r);\nglobal.set(\"latest_meters\", arr);\nglobal.set(\"last_kafka_tick\", new Date().toISOString());\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1140,
+        "y": 180,
+        "wires": [
+            [
+                "f216606c848d3751"
+            ]
+        ]
+    },
+    {
+        "id": "f216606c848d3751",
+        "type": "link out",
+        "z": "tab-feeds",
+        "name": "\u2192 feeds.kafka.meter",
+        "mode": "link",
+        "links": [
+            "5a00312f779505d5"
+        ],
+        "x": 1360,
+        "y": 180,
+        "wires": []
+    },
+    {
+        "id": "ef75f1d7060f3793",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "cfg:consumer:industrial-oven-001",
+        "func": "// Auto-rendered: consumer:industrial-oven-001\nconst t = msg.payload || {};\nmsg.payload = {\n    base_seed:    t.base_seed,\n    entity_id:    \"industrial-oven-001\",\n    timestamp_ms: t.timestamp_ms,\n    timestamp:    t.timestamp,\n    site_id:      t.site_id,\n    mode:         t.mode,\n    config:       {\"device_id\":\"industrial-oven-001\",\"device_type\":\"industrial_oven\",\"rated_power_kw\":3.0,\"duty_cycle_pct\":70.0,\"power_variance_pct\":5.0,\"operate_on_weekends\":false,\"operating_windows\":[{\"start_hour\":7,\"end_hour\":9},{\"start_hour\":11,\"end_hour\":13},{\"start_hour\":15,\"end_hour\":17}]}\n};\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 700,
+        "y": 240,
+        "wires": [
+            [
+                "497890442000ff0e"
+            ]
+        ]
+    },
+    {
+        "id": "497890442000ff0e",
+        "type": "subflow:subflow-facis-consumer",
+        "z": "tab-feeds",
+        "name": "consumer:industrial-oven-001",
+        "env": [],
+        "x": 920,
+        "y": 240,
+        "wires": [
+            [
+                "6da8a9447ad860e3"
+            ]
+        ]
+    },
+    {
+        "id": "6da8a9447ad860e3",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "store:consumer:industrial-oven-001",
+        "func": "// Auto-rendered store-by-id (array)\nconst r = msg.payload;\nconst id = r[\"device_id\"];\nlet arr = global.get(\"latest_consumers\") || [];\nconst idx = arr.findIndex((x) => x[\"device_id\"] === id);\nif (idx >= 0) arr[idx] = r; else arr.push(r);\nglobal.set(\"latest_consumers\", arr);\nglobal.set(\"last_kafka_tick\", new Date().toISOString());\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1140,
+        "y": 240,
+        "wires": [
+            [
+                "838503f30d731dae"
+            ]
+        ]
+    },
+    {
+        "id": "838503f30d731dae",
+        "type": "link out",
+        "z": "tab-feeds",
+        "name": "\u2192 feeds.kafka.consumer",
+        "mode": "link",
+        "links": [
+            "a0805ab90944e174"
+        ],
+        "x": 1360,
+        "y": 240,
+        "wires": []
+    },
+    {
+        "id": "6d653b65fc87b949",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "cfg:consumer:hvac-001",
+        "func": "// Auto-rendered: consumer:hvac-001\nconst t = msg.payload || {};\nmsg.payload = {\n    base_seed:    t.base_seed,\n    entity_id:    \"hvac-001\",\n    timestamp_ms: t.timestamp_ms,\n    timestamp:    t.timestamp,\n    site_id:      t.site_id,\n    mode:         t.mode,\n    config:       {\"device_id\":\"hvac-001\",\"device_type\":\"hvac\",\"rated_power_kw\":2.0,\"duty_cycle_pct\":60.0,\"power_variance_pct\":10.0,\"operate_on_weekends\":true,\"operating_windows\":[{\"start_hour\":6,\"end_hour\":22}]}\n};\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 700,
+        "y": 300,
+        "wires": [
+            [
+                "95a4752b7c786d55"
+            ]
+        ]
+    },
+    {
+        "id": "95a4752b7c786d55",
+        "type": "subflow:subflow-facis-consumer",
+        "z": "tab-feeds",
+        "name": "consumer:hvac-001",
+        "env": [],
+        "x": 920,
+        "y": 300,
+        "wires": [
+            [
+                "3db53e0b98192e84"
+            ]
+        ]
+    },
+    {
+        "id": "3db53e0b98192e84",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "store:consumer:hvac-001",
+        "func": "// Auto-rendered store-by-id (array)\nconst r = msg.payload;\nconst id = r[\"device_id\"];\nlet arr = global.get(\"latest_consumers\") || [];\nconst idx = arr.findIndex((x) => x[\"device_id\"] === id);\nif (idx >= 0) arr[idx] = r; else arr.push(r);\nglobal.set(\"latest_consumers\", arr);\nglobal.set(\"last_kafka_tick\", new Date().toISOString());\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1140,
+        "y": 300,
+        "wires": [
+            [
+                "4cc02ae40caf7b68"
+            ]
+        ]
+    },
+    {
+        "id": "4cc02ae40caf7b68",
+        "type": "link out",
+        "z": "tab-feeds",
+        "name": "\u2192 feeds.kafka.consumer",
+        "mode": "link",
+        "links": [
+            "a0805ab90944e174"
+        ],
+        "x": 1360,
+        "y": 300,
+        "wires": []
+    },
+    {
+        "id": "ba5ac5aa251276fd",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "cfg:consumer:compressor-001",
+        "func": "// Auto-rendered: consumer:compressor-001\nconst t = msg.payload || {};\nmsg.payload = {\n    base_seed:    t.base_seed,\n    entity_id:    \"compressor-001\",\n    timestamp_ms: t.timestamp_ms,\n    timestamp:    t.timestamp,\n    site_id:      t.site_id,\n    mode:         t.mode,\n    config:       {\"device_id\":\"compressor-001\",\"device_type\":\"compressor\",\"rated_power_kw\":5.5,\"duty_cycle_pct\":50.0,\"power_variance_pct\":8.0,\"operate_on_weekends\":false,\"operating_windows\":[{\"start_hour\":8,\"end_hour\":18}]}\n};\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 700,
+        "y": 360,
+        "wires": [
+            [
+                "1d7e1c2873ceba05"
+            ]
+        ]
+    },
+    {
+        "id": "1d7e1c2873ceba05",
+        "type": "subflow:subflow-facis-consumer",
+        "z": "tab-feeds",
+        "name": "consumer:compressor-001",
+        "env": [],
+        "x": 920,
+        "y": 360,
+        "wires": [
+            [
+                "49ec0acd7e650474"
+            ]
+        ]
+    },
+    {
+        "id": "49ec0acd7e650474",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "store:consumer:compressor-001",
+        "func": "// Auto-rendered store-by-id (array)\nconst r = msg.payload;\nconst id = r[\"device_id\"];\nlet arr = global.get(\"latest_consumers\") || [];\nconst idx = arr.findIndex((x) => x[\"device_id\"] === id);\nif (idx >= 0) arr[idx] = r; else arr.push(r);\nglobal.set(\"latest_consumers\", arr);\nglobal.set(\"last_kafka_tick\", new Date().toISOString());\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1140,
+        "y": 360,
+        "wires": [
+            [
+                "3e9b6fff871c2764"
+            ]
+        ]
+    },
+    {
+        "id": "3e9b6fff871c2764",
+        "type": "link out",
+        "z": "tab-feeds",
+        "name": "\u2192 feeds.kafka.consumer",
+        "mode": "link",
+        "links": [
+            "a0805ab90944e174"
+        ],
+        "x": 1360,
+        "y": 360,
+        "wires": []
+    },
+    {
+        "id": "7ca6ed651a6fd99f",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "cfg:consumer:pump-001",
+        "func": "// Auto-rendered: consumer:pump-001\nconst t = msg.payload || {};\nmsg.payload = {\n    base_seed:    t.base_seed,\n    entity_id:    \"pump-001\",\n    timestamp_ms: t.timestamp_ms,\n    timestamp:    t.timestamp,\n    site_id:      t.site_id,\n    mode:         t.mode,\n    config:       {\"device_id\":\"pump-001\",\"device_type\":\"pump\",\"rated_power_kw\":1.5,\"duty_cycle_pct\":80.0,\"power_variance_pct\":3.0,\"operate_on_weekends\":false,\"operating_windows\":[{\"start_hour\":6,\"end_hour\":20}]}\n};\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 700,
+        "y": 420,
+        "wires": [
+            [
+                "33ba82b9b36a27f7"
+            ]
+        ]
+    },
+    {
+        "id": "33ba82b9b36a27f7",
+        "type": "subflow:subflow-facis-consumer",
+        "z": "tab-feeds",
+        "name": "consumer:pump-001",
+        "env": [],
+        "x": 920,
+        "y": 420,
+        "wires": [
+            [
+                "bbf7d5fc431c16f0"
+            ]
+        ]
+    },
+    {
+        "id": "bbf7d5fc431c16f0",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "store:consumer:pump-001",
+        "func": "// Auto-rendered store-by-id (array)\nconst r = msg.payload;\nconst id = r[\"device_id\"];\nlet arr = global.get(\"latest_consumers\") || [];\nconst idx = arr.findIndex((x) => x[\"device_id\"] === id);\nif (idx >= 0) arr[idx] = r; else arr.push(r);\nglobal.set(\"latest_consumers\", arr);\nglobal.set(\"last_kafka_tick\", new Date().toISOString());\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1140,
+        "y": 420,
+        "wires": [
+            [
+                "11434b719f078171"
+            ]
+        ]
+    },
+    {
+        "id": "11434b719f078171",
+        "type": "link out",
+        "z": "tab-feeds",
+        "name": "\u2192 feeds.kafka.consumer",
+        "mode": "link",
+        "links": [
+            "a0805ab90944e174"
+        ],
+        "x": 1360,
+        "y": 420,
+        "wires": []
+    },
+    {
+        "id": "f25ca5fe4c3e85cd",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "cfg:price:epex-spot-de",
+        "func": "// Auto-rendered: price:epex-spot-de\nconst t = msg.payload || {};\nmsg.payload = {\n    base_seed:    t.base_seed,\n    entity_id:    \"epex-spot-de\",\n    timestamp_ms: t.timestamp_ms,\n    timestamp:    t.timestamp,\n    site_id:      t.site_id,\n    mode:         t.mode,\n    config:       {\"feed_id\":\"epex-spot-de\",\"night_price\":0.18,\"morning_peak_price\":0.32,\"midday_price\":0.24,\"evening_peak_price\":0.36,\"evening_price\":0.22,\"weekend_discount_pct\":10,\"volatility_pct\":5,\"min_price\":0.05}\n};\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 700,
+        "y": 480,
+        "wires": [
+            [
+                "c84b6f5b1dc34364"
+            ]
+        ]
+    },
+    {
+        "id": "c84b6f5b1dc34364",
+        "type": "subflow:subflow-facis-price",
+        "z": "tab-feeds",
+        "name": "price:epex-spot-de",
+        "env": [],
+        "x": 920,
+        "y": 480,
+        "wires": [
+            [
+                "830707496048048f"
+            ]
+        ]
+    },
+    {
+        "id": "830707496048048f",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "store:price:epex-spot-de",
+        "func": "// Auto-rendered store-single\nglobal.set(\"latest_price\", msg.payload);\nglobal.set(\"last_kafka_tick\", new Date().toISOString());\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1140,
+        "y": 480,
+        "wires": [
+            [
+                "b181681aed9898f0"
+            ]
+        ]
+    },
+    {
+        "id": "b181681aed9898f0",
+        "type": "link out",
+        "z": "tab-feeds",
+        "name": "\u2192 feeds.kafka.price",
+        "mode": "link",
+        "links": [
+            "c5954f0f78a7e3f9"
+        ],
+        "x": 1360,
+        "y": 480,
+        "wires": []
+    },
+    {
+        "id": "1fbd0b90de287ab1",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "cfg:weather:weather-001",
+        "func": "// Auto-rendered: weather:weather-001\nconst t = msg.payload || {};\nmsg.payload = {\n    base_seed:    t.base_seed,\n    entity_id:    \"weather-001\",\n    timestamp_ms: t.timestamp_ms,\n    timestamp:    t.timestamp,\n    site_id:      t.site_id,\n    mode:         t.mode,\n    config:       {\"latitude\":52.52,\"longitude\":13.405,\"base_temperature_summer_c\":22.0,\"base_temperature_winter_c\":2.0,\"daily_temp_amplitude_c\":8.0,\"temperature_variance_c\":1.5,\"base_humidity_percent\":65.0,\"base_wind_speed_ms\":3.5,\"prevailing_wind_direction_deg\":270,\"base_cloud_cover_percent\":40.0,\"max_clear_sky_ghi_w_m2\":1000.0}\n};\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 700,
+        "y": 540,
+        "wires": [
+            [
+                "318eb5f31b3ef904"
+            ]
+        ]
+    },
+    {
+        "id": "318eb5f31b3ef904",
+        "type": "subflow:subflow-facis-weather",
+        "z": "tab-feeds",
+        "name": "weather:weather-001",
+        "env": [],
+        "x": 920,
+        "y": 540,
+        "wires": [
+            [
+                "69527dced77afe6d"
+            ]
+        ]
+    },
+    {
+        "id": "69527dced77afe6d",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "store:weather",
+        "func": "// Auto-rendered store-single\nglobal.set(\"latest_weather\", msg.payload);\nglobal.set(\"last_kafka_tick\", new Date().toISOString());\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1140,
+        "y": 540,
+        "wires": [
+            [
+                "c54858589b5e295c",
+                "49f7bb213c27632f",
+                "c803564993d6d4d5"
+            ]
+        ]
+    },
+    {
+        "id": "c54858589b5e295c",
+        "type": "link out",
+        "z": "tab-feeds",
+        "name": "\u2192 feeds.kafka.weather",
+        "mode": "link",
+        "links": [
+            "e1c3e4a0a59bfcb8"
+        ],
+        "x": 1360,
+        "y": 520,
+        "wires": []
+    },
+    {
+        "id": "49f7bb213c27632f",
+        "type": "link out",
+        "z": "tab-feeds",
+        "name": "\u2192 feeds.kafka.city.weather",
+        "mode": "link",
+        "links": [
+            "a90f7b95d55ce2f2"
+        ],
+        "x": 1360,
+        "y": 560,
+        "wires": []
+    },
+    {
+        "id": "c803564993d6d4d5",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "pv fanout (after weather)",
+        "func": "return msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1140,
+        "y": 600,
+        "wires": [
+            [
+                "623fce9d956bffdf",
+                "ece30cfb07787f6c"
+            ]
+        ]
+    },
+    {
+        "id": "623fce9d956bffdf",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "cfg:pv:pv-system-001",
+        "func": "// Auto-rendered (with weather): pv:pv-system-001\nconst t = msg.payload || {};\nconst w = global.get('latest_weather');\nif (!w) {\n    // weather hasn't fired yet this tick; let pv handle missing weather safely\n}\nmsg.payload = {\n    base_seed:    t.base_seed,\n    entity_id:    \"pv-system-001\",\n    timestamp_ms: t.timestamp_ms,\n    timestamp:    t.timestamp,\n    site_id:      t.site_id,\n    mode:         t.mode,\n    config:       {\"system_id\":\"pv-system-001\",\"nominal_capacity_kwp\":10.0,\"system_losses_percent\":15.0,\"temperature_coefficient_pct_per_c\":-0.4,\"reference_temperature_c\":25.0,\"noct_c\":45,\"interval_minutes\":1},\n    weather:      w || null\n};\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1340,
+        "y": 600,
+        "wires": [
+            [
+                "1e04847ff6cb27d6"
+            ]
+        ]
+    },
+    {
+        "id": "1e04847ff6cb27d6",
+        "type": "subflow:subflow-facis-pv",
+        "z": "tab-feeds",
+        "name": "pv:pv-system-001",
+        "env": [],
+        "x": 1560,
+        "y": 600,
+        "wires": [
+            [
+                "afcc05f3d4bb27f9"
+            ]
+        ]
+    },
+    {
+        "id": "afcc05f3d4bb27f9",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "store:pv:pv-system-001",
+        "func": "// Auto-rendered store-by-id (array)\nconst r = msg.payload;\nconst id = r[\"system_id\"];\nlet arr = global.get(\"latest_pv\") || [];\nconst idx = arr.findIndex((x) => x[\"system_id\"] === id);\nif (idx >= 0) arr[idx] = r; else arr.push(r);\nglobal.set(\"latest_pv\", arr);\nglobal.set(\"last_kafka_tick\", new Date().toISOString());\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1780,
+        "y": 600,
+        "wires": [
+            [
+                "3c4a52d14b8199ea"
+            ]
+        ]
+    },
+    {
+        "id": "3c4a52d14b8199ea",
+        "type": "link out",
+        "z": "tab-feeds",
+        "name": "\u2192 feeds.kafka.pv",
+        "mode": "link",
+        "links": [
+            "400a7edc80f101ae"
+        ],
+        "x": 2000,
+        "y": 600,
+        "wires": []
+    },
+    {
+        "id": "ece30cfb07787f6c",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "cfg:pv:pv-system-002",
+        "func": "// Auto-rendered (with weather): pv:pv-system-002\nconst t = msg.payload || {};\nconst w = global.get('latest_weather');\nif (!w) {\n    // weather hasn't fired yet this tick; let pv handle missing weather safely\n}\nmsg.payload = {\n    base_seed:    t.base_seed,\n    entity_id:    \"pv-system-002\",\n    timestamp_ms: t.timestamp_ms,\n    timestamp:    t.timestamp,\n    site_id:      t.site_id,\n    mode:         t.mode,\n    config:       {\"system_id\":\"pv-system-002\",\"nominal_capacity_kwp\":5.0,\"system_losses_percent\":12.0,\"temperature_coefficient_pct_per_c\":-0.4,\"reference_temperature_c\":25.0,\"noct_c\":45,\"interval_minutes\":1},\n    weather:      w || null\n};\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1340,
+        "y": 660,
+        "wires": [
+            [
+                "009c110474d80800"
+            ]
+        ]
+    },
+    {
+        "id": "009c110474d80800",
+        "type": "subflow:subflow-facis-pv",
+        "z": "tab-feeds",
+        "name": "pv:pv-system-002",
+        "env": [],
+        "x": 1560,
+        "y": 660,
+        "wires": [
+            [
+                "7ea283fda39e18d3"
+            ]
+        ]
+    },
+    {
+        "id": "7ea283fda39e18d3",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "store:pv:pv-system-002",
+        "func": "// Auto-rendered store-by-id (array)\nconst r = msg.payload;\nconst id = r[\"system_id\"];\nlet arr = global.get(\"latest_pv\") || [];\nconst idx = arr.findIndex((x) => x[\"system_id\"] === id);\nif (idx >= 0) arr[idx] = r; else arr.push(r);\nglobal.set(\"latest_pv\", arr);\nglobal.set(\"last_kafka_tick\", new Date().toISOString());\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1780,
+        "y": 660,
+        "wires": [
+            [
+                "e6d8c4f941422a3a"
+            ]
+        ]
+    },
+    {
+        "id": "e6d8c4f941422a3a",
+        "type": "link out",
+        "z": "tab-feeds",
+        "name": "\u2192 feeds.kafka.pv",
+        "mode": "link",
+        "links": [
+            "400a7edc80f101ae"
+        ],
+        "x": 2000,
+        "y": 660,
+        "wires": []
+    },
+    {
+        "id": "c1a0b7b156425b92",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "cfg:city_events:zone-001",
+        "func": "// Auto-rendered city_events: zone-001\nconst t = msg.payload || {};\nmsg.payload = {\n    base_seed:    t.base_seed,\n    entity_id:    \"events-zone-001\",\n    timestamp_ms: t.timestamp_ms,\n    timestamp:    t.timestamp,\n    site_id:      t.site_id,\n    city_id:      \"city-berlin\",\n    zone_id:      \"zone-001\",\n    mode:         t.mode,\n    config:       {\"zone_id\":\"zone-001\"}\n};\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 700,
+        "y": 720,
+        "wires": [
+            [
+                "216c273be6e67bda"
+            ]
+        ]
+    },
+    {
+        "id": "216c273be6e67bda",
+        "type": "subflow:subflow-facis-city-events",
+        "z": "tab-feeds",
+        "name": "city_events:zone-001",
+        "env": [],
+        "x": 920,
+        "y": 720,
+        "wires": [
+            [
+                "bd48f6a8bf46edfc"
+            ]
+        ]
+    },
+    {
+        "id": "bd48f6a8bf46edfc",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "store:city_events:zone-001",
+        "func": "// Store active_event so the streetlight branch can read it\nglobal.set('active_event_' + msg.payload.zone_id, msg.payload);\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1140,
+        "y": 720,
+        "wires": [
+            [
+                "54527dd8762eee6a",
+                "a65709ac42db0c3e"
+            ]
+        ]
+    },
+    {
+        "id": "54527dd8762eee6a",
+        "type": "link out",
+        "z": "tab-feeds",
+        "name": "\u2192 feeds.kafka.event",
+        "mode": "link",
+        "links": [
+            "6d4f36375cc64217"
+        ],
+        "x": 1360,
+        "y": 720,
+        "wires": []
+    },
+    {
+        "id": "a65709ac42db0c3e",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "streetlight fanout (zone-001)",
+        "func": "// Fans out to lights in zone-001\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1140,
+        "y": 750,
+        "wires": [
+            [
+                "99621cf881b0c0c6",
+                "8b531bd65280b213",
+                "24b00290593afe93"
+            ]
+        ]
+    },
+    {
+        "id": "0165715dbe3e2d5b",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "cfg:city_events:zone-002",
+        "func": "// Auto-rendered city_events: zone-002\nconst t = msg.payload || {};\nmsg.payload = {\n    base_seed:    t.base_seed,\n    entity_id:    \"events-zone-002\",\n    timestamp_ms: t.timestamp_ms,\n    timestamp:    t.timestamp,\n    site_id:      t.site_id,\n    city_id:      \"city-berlin\",\n    zone_id:      \"zone-002\",\n    mode:         t.mode,\n    config:       {\"zone_id\":\"zone-002\"}\n};\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 700,
+        "y": 780,
+        "wires": [
+            [
+                "8d8c68e9974bebc1"
+            ]
+        ]
+    },
+    {
+        "id": "8d8c68e9974bebc1",
+        "type": "subflow:subflow-facis-city-events",
+        "z": "tab-feeds",
+        "name": "city_events:zone-002",
+        "env": [],
+        "x": 920,
+        "y": 780,
+        "wires": [
+            [
+                "c29572a0b7af2f82"
+            ]
+        ]
+    },
+    {
+        "id": "c29572a0b7af2f82",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "store:city_events:zone-002",
+        "func": "// Store active_event so the streetlight branch can read it\nglobal.set('active_event_' + msg.payload.zone_id, msg.payload);\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1140,
+        "y": 780,
+        "wires": [
+            [
+                "83bf408b22d12f40",
+                "bf7ae500d3396ea2"
+            ]
+        ]
+    },
+    {
+        "id": "83bf408b22d12f40",
+        "type": "link out",
+        "z": "tab-feeds",
+        "name": "\u2192 feeds.kafka.event",
+        "mode": "link",
+        "links": [
+            "6d4f36375cc64217"
+        ],
+        "x": 1360,
+        "y": 780,
+        "wires": []
+    },
+    {
+        "id": "bf7ae500d3396ea2",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "streetlight fanout (zone-002)",
+        "func": "// Fans out to lights in zone-002\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1140,
+        "y": 810,
+        "wires": [
+            [
+                "a04460b0345e68bc",
+                "3957abfa94cb6b63",
+                "dc7288f12d6efcf0"
+            ]
+        ]
+    },
+    {
+        "id": "99621cf881b0c0c6",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "cfg:streetlight:light-001",
+        "func": "// Auto-rendered streetlight: light-001 (zone zone-001)\nconst t = msg.payload || {};\nconst ev = global.get('active_event_' + \"zone-001\") || null;\nmsg.payload = {\n    base_seed:    t.base_seed,\n    entity_id:    \"light-001\",\n    timestamp_ms: t.timestamp_ms,\n    timestamp:    t.timestamp,\n    site_id:      t.site_id,\n    city_id:      \"city-berlin\",\n    mode:         t.mode,\n    config:       {\"light_id\":\"light-001\",\"zone_id\":\"zone-001\",\"rated_power_w\":150.0,\"latitude\":52.52,\"longitude\":13.405},\n    active_event: ev\n};\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1340,
+        "y": 840,
+        "wires": [
+            [
+                "6ce4500f864fcea8"
+            ]
+        ]
+    },
+    {
+        "id": "6ce4500f864fcea8",
+        "type": "subflow:subflow-facis-streetlights",
+        "z": "tab-feeds",
+        "name": "streetlight:light-001",
+        "env": [],
+        "x": 1560,
+        "y": 840,
+        "wires": [
+            [
+                "7f7f223740949c3c"
+            ]
+        ]
+    },
+    {
+        "id": "7f7f223740949c3c",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "store:streetlight:light-001",
+        "func": "return msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1780,
+        "y": 840,
+        "wires": [
+            [
+                "71dd06520ebf3041"
+            ]
+        ]
+    },
+    {
+        "id": "71dd06520ebf3041",
+        "type": "link out",
+        "z": "tab-feeds",
+        "name": "\u2192 feeds.kafka.light",
+        "mode": "link",
+        "links": [
+            "21ea5f7cdc17eeb0"
+        ],
+        "x": 2000,
+        "y": 840,
+        "wires": []
+    },
+    {
+        "id": "8b531bd65280b213",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "cfg:streetlight:light-002",
+        "func": "// Auto-rendered streetlight: light-002 (zone zone-001)\nconst t = msg.payload || {};\nconst ev = global.get('active_event_' + \"zone-001\") || null;\nmsg.payload = {\n    base_seed:    t.base_seed,\n    entity_id:    \"light-002\",\n    timestamp_ms: t.timestamp_ms,\n    timestamp:    t.timestamp,\n    site_id:      t.site_id,\n    city_id:      \"city-berlin\",\n    mode:         t.mode,\n    config:       {\"light_id\":\"light-002\",\"zone_id\":\"zone-001\",\"rated_power_w\":150.0,\"latitude\":52.52,\"longitude\":13.405},\n    active_event: ev\n};\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1340,
+        "y": 900,
+        "wires": [
+            [
+                "b84d65dfe32ae748"
+            ]
+        ]
+    },
+    {
+        "id": "b84d65dfe32ae748",
+        "type": "subflow:subflow-facis-streetlights",
+        "z": "tab-feeds",
+        "name": "streetlight:light-002",
+        "env": [],
+        "x": 1560,
+        "y": 900,
+        "wires": [
+            [
+                "8d9dd78eea164b5e"
+            ]
+        ]
+    },
+    {
+        "id": "8d9dd78eea164b5e",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "store:streetlight:light-002",
+        "func": "return msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1780,
+        "y": 900,
+        "wires": [
+            [
+                "4a9dc59b75117d62"
+            ]
+        ]
+    },
+    {
+        "id": "4a9dc59b75117d62",
+        "type": "link out",
+        "z": "tab-feeds",
+        "name": "\u2192 feeds.kafka.light",
+        "mode": "link",
+        "links": [
+            "21ea5f7cdc17eeb0"
+        ],
+        "x": 2000,
+        "y": 900,
+        "wires": []
+    },
+    {
+        "id": "24b00290593afe93",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "cfg:streetlight:light-003",
+        "func": "// Auto-rendered streetlight: light-003 (zone zone-001)\nconst t = msg.payload || {};\nconst ev = global.get('active_event_' + \"zone-001\") || null;\nmsg.payload = {\n    base_seed:    t.base_seed,\n    entity_id:    \"light-003\",\n    timestamp_ms: t.timestamp_ms,\n    timestamp:    t.timestamp,\n    site_id:      t.site_id,\n    city_id:      \"city-berlin\",\n    mode:         t.mode,\n    config:       {\"light_id\":\"light-003\",\"zone_id\":\"zone-001\",\"rated_power_w\":150.0,\"latitude\":52.52,\"longitude\":13.405},\n    active_event: ev\n};\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1340,
+        "y": 960,
+        "wires": [
+            [
+                "6b15303c8aeb306b"
+            ]
+        ]
+    },
+    {
+        "id": "6b15303c8aeb306b",
+        "type": "subflow:subflow-facis-streetlights",
+        "z": "tab-feeds",
+        "name": "streetlight:light-003",
+        "env": [],
+        "x": 1560,
+        "y": 960,
+        "wires": [
+            [
+                "074e80d47a1cb1f5"
+            ]
+        ]
+    },
+    {
+        "id": "074e80d47a1cb1f5",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "store:streetlight:light-003",
+        "func": "return msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1780,
+        "y": 960,
+        "wires": [
+            [
+                "71786fec4101cade"
+            ]
+        ]
+    },
+    {
+        "id": "71786fec4101cade",
+        "type": "link out",
+        "z": "tab-feeds",
+        "name": "\u2192 feeds.kafka.light",
+        "mode": "link",
+        "links": [
+            "21ea5f7cdc17eeb0"
+        ],
+        "x": 2000,
+        "y": 960,
+        "wires": []
+    },
+    {
+        "id": "a04460b0345e68bc",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "cfg:streetlight:light-004",
+        "func": "// Auto-rendered streetlight: light-004 (zone zone-002)\nconst t = msg.payload || {};\nconst ev = global.get('active_event_' + \"zone-002\") || null;\nmsg.payload = {\n    base_seed:    t.base_seed,\n    entity_id:    \"light-004\",\n    timestamp_ms: t.timestamp_ms,\n    timestamp:    t.timestamp,\n    site_id:      t.site_id,\n    city_id:      \"city-berlin\",\n    mode:         t.mode,\n    config:       {\"light_id\":\"light-004\",\"zone_id\":\"zone-002\",\"rated_power_w\":150.0,\"latitude\":52.52,\"longitude\":13.405},\n    active_event: ev\n};\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1340,
+        "y": 1020,
+        "wires": [
+            [
+                "67205930ce1a148b"
+            ]
+        ]
+    },
+    {
+        "id": "67205930ce1a148b",
+        "type": "subflow:subflow-facis-streetlights",
+        "z": "tab-feeds",
+        "name": "streetlight:light-004",
+        "env": [],
+        "x": 1560,
+        "y": 1020,
+        "wires": [
+            [
+                "18739a5a8efcb4b7"
+            ]
+        ]
+    },
+    {
+        "id": "18739a5a8efcb4b7",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "store:streetlight:light-004",
+        "func": "return msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1780,
+        "y": 1020,
+        "wires": [
+            [
+                "e688dd286ab09d94"
+            ]
+        ]
+    },
+    {
+        "id": "e688dd286ab09d94",
+        "type": "link out",
+        "z": "tab-feeds",
+        "name": "\u2192 feeds.kafka.light",
+        "mode": "link",
+        "links": [
+            "21ea5f7cdc17eeb0"
+        ],
+        "x": 2000,
+        "y": 1020,
+        "wires": []
+    },
+    {
+        "id": "3957abfa94cb6b63",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "cfg:streetlight:light-005",
+        "func": "// Auto-rendered streetlight: light-005 (zone zone-002)\nconst t = msg.payload || {};\nconst ev = global.get('active_event_' + \"zone-002\") || null;\nmsg.payload = {\n    base_seed:    t.base_seed,\n    entity_id:    \"light-005\",\n    timestamp_ms: t.timestamp_ms,\n    timestamp:    t.timestamp,\n    site_id:      t.site_id,\n    city_id:      \"city-berlin\",\n    mode:         t.mode,\n    config:       {\"light_id\":\"light-005\",\"zone_id\":\"zone-002\",\"rated_power_w\":150.0,\"latitude\":52.52,\"longitude\":13.405},\n    active_event: ev\n};\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1340,
+        "y": 1080,
+        "wires": [
+            [
+                "e2e1bd34e6c1ba47"
+            ]
+        ]
+    },
+    {
+        "id": "e2e1bd34e6c1ba47",
+        "type": "subflow:subflow-facis-streetlights",
+        "z": "tab-feeds",
+        "name": "streetlight:light-005",
+        "env": [],
+        "x": 1560,
+        "y": 1080,
+        "wires": [
+            [
+                "678995dee4504233"
+            ]
+        ]
+    },
+    {
+        "id": "678995dee4504233",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "store:streetlight:light-005",
+        "func": "return msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1780,
+        "y": 1080,
+        "wires": [
+            [
+                "36ef699d9dfdc658"
+            ]
+        ]
+    },
+    {
+        "id": "36ef699d9dfdc658",
+        "type": "link out",
+        "z": "tab-feeds",
+        "name": "\u2192 feeds.kafka.light",
+        "mode": "link",
+        "links": [
+            "21ea5f7cdc17eeb0"
+        ],
+        "x": 2000,
+        "y": 1080,
+        "wires": []
+    },
+    {
+        "id": "dc7288f12d6efcf0",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "cfg:streetlight:light-006",
+        "func": "// Auto-rendered streetlight: light-006 (zone zone-002)\nconst t = msg.payload || {};\nconst ev = global.get('active_event_' + \"zone-002\") || null;\nmsg.payload = {\n    base_seed:    t.base_seed,\n    entity_id:    \"light-006\",\n    timestamp_ms: t.timestamp_ms,\n    timestamp:    t.timestamp,\n    site_id:      t.site_id,\n    city_id:      \"city-berlin\",\n    mode:         t.mode,\n    config:       {\"light_id\":\"light-006\",\"zone_id\":\"zone-002\",\"rated_power_w\":150.0,\"latitude\":52.52,\"longitude\":13.405},\n    active_event: ev\n};\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1340,
+        "y": 1140,
+        "wires": [
+            [
+                "34baea2f250d9244"
+            ]
+        ]
+    },
+    {
+        "id": "34baea2f250d9244",
+        "type": "subflow:subflow-facis-streetlights",
+        "z": "tab-feeds",
+        "name": "streetlight:light-006",
+        "env": [],
+        "x": 1560,
+        "y": 1140,
+        "wires": [
+            [
+                "a84a92198af975de"
+            ]
+        ]
+    },
+    {
+        "id": "a84a92198af975de",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "store:streetlight:light-006",
+        "func": "return msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1780,
+        "y": 1140,
+        "wires": [
+            [
+                "ea71cf7804dd0c01"
+            ]
+        ]
+    },
+    {
+        "id": "ea71cf7804dd0c01",
+        "type": "link out",
+        "z": "tab-feeds",
+        "name": "\u2192 feeds.kafka.light",
+        "mode": "link",
+        "links": [
+            "21ea5f7cdc17eeb0"
+        ],
+        "x": 2000,
+        "y": 1140,
+        "wires": []
+    },
+    {
+        "id": "2e5685b6528e7dd4",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "cfg:traffic:zone-001",
+        "func": "const t = msg.payload || {};\nmsg.payload = {\n    base_seed:    t.base_seed,\n    entity_id:    \"traffic-zone-001\",\n    timestamp_ms: t.timestamp_ms,\n    timestamp:    t.timestamp,\n    site_id:      t.site_id,\n    city_id:      \"city-berlin\",\n    zone_id:      \"zone-001\",\n    mode:         t.mode\n};\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 700,
+        "y": 1200,
+        "wires": [
+            [
+                "3846ee24770292f6"
+            ]
+        ]
+    },
+    {
+        "id": "3846ee24770292f6",
+        "type": "subflow:subflow-facis-traffic",
+        "z": "tab-feeds",
+        "name": "traffic:zone-001",
+        "env": [],
+        "x": 920,
+        "y": 1200,
+        "wires": [
+            [
+                "472abe979d858029"
+            ]
+        ]
+    },
+    {
+        "id": "472abe979d858029",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "store:traffic:zone-001",
+        "func": "return msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1140,
+        "y": 1200,
+        "wires": [
+            [
+                "b8782d471eeb7ee6"
+            ]
+        ]
+    },
+    {
+        "id": "b8782d471eeb7ee6",
+        "type": "link out",
+        "z": "tab-feeds",
+        "name": "\u2192 feeds.kafka.traffic",
+        "mode": "link",
+        "links": [
+            "f209faee76299010"
+        ],
+        "x": 1360,
+        "y": 1200,
+        "wires": []
+    },
+    {
+        "id": "c6d47a2e5897e537",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "cfg:traffic:zone-002",
+        "func": "const t = msg.payload || {};\nmsg.payload = {\n    base_seed:    t.base_seed,\n    entity_id:    \"traffic-zone-002\",\n    timestamp_ms: t.timestamp_ms,\n    timestamp:    t.timestamp,\n    site_id:      t.site_id,\n    city_id:      \"city-berlin\",\n    zone_id:      \"zone-002\",\n    mode:         t.mode\n};\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 700,
+        "y": 1260,
+        "wires": [
+            [
+                "376d801f68c3d9d6"
+            ]
+        ]
+    },
+    {
+        "id": "376d801f68c3d9d6",
+        "type": "subflow:subflow-facis-traffic",
+        "z": "tab-feeds",
+        "name": "traffic:zone-002",
+        "env": [],
+        "x": 920,
+        "y": 1260,
+        "wires": [
+            [
+                "b49e4a316b52ce05"
+            ]
+        ]
+    },
+    {
+        "id": "b49e4a316b52ce05",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "store:traffic:zone-002",
+        "func": "return msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1140,
+        "y": 1260,
+        "wires": [
+            [
+                "afda98d0e94346a7"
+            ]
+        ]
+    },
+    {
+        "id": "afda98d0e94346a7",
+        "type": "link out",
+        "z": "tab-feeds",
+        "name": "\u2192 feeds.kafka.traffic",
+        "mode": "link",
+        "links": [
+            "f209faee76299010"
+        ],
+        "x": 1360,
+        "y": 1260,
+        "wires": []
+    },
+    {
+        "id": "64e35bb12c8ff2be",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "cfg:visibility:city-berlin",
+        "func": "const t = msg.payload || {};\nmsg.payload = {\n    base_seed:    t.base_seed,\n    entity_id:    \"visibility-city-berlin\",\n    timestamp_ms: t.timestamp_ms,\n    timestamp:    t.timestamp,\n    site_id:      t.site_id,\n    city_id:      \"city-berlin\",\n    mode:         t.mode,\n    config:       {\"latitude\":52.52,\"longitude\":13.405}\n};\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 700,
+        "y": 1320,
+        "wires": [
+            [
+                "7eb35c9f238c19cb"
+            ]
+        ]
+    },
+    {
+        "id": "7eb35c9f238c19cb",
+        "type": "subflow:subflow-facis-visibility",
+        "z": "tab-feeds",
+        "name": "visibility:city-berlin",
+        "env": [],
+        "x": 920,
+        "y": 1320,
+        "wires": [
+            [
+                "74d4012e3de2eae1"
+            ]
+        ]
+    },
+    {
+        "id": "74d4012e3de2eae1",
+        "type": "function",
+        "z": "tab-feeds",
+        "name": "store:visibility",
+        "func": "return msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1140,
+        "y": 1320,
+        "wires": [
+            [
+                "1b1f1beb2e0634d6"
+            ]
+        ]
+    },
+    {
+        "id": "1b1f1beb2e0634d6",
+        "type": "link out",
+        "z": "tab-feeds",
+        "name": "\u2192 feeds.kafka.city.weather",
+        "mode": "link",
+        "links": [
+            "a90f7b95d55ce2f2"
+        ],
+        "x": 1360,
+        "y": 1320,
+        "wires": []
+    }
 ]

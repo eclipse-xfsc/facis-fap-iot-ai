@@ -1,281 +1,281 @@
 [
-  {
-    "id": "tab-rest",
-    "type": "tab",
-    "label": "FACIS Simulation \u2014 REST Snapshot API",
-    "disabled": false,
-    "info": "FACIS Simulation \u2014 REST Snapshot API\n\nRead-only GET endpoints that return the latest snapshot stored by the\nFeeds tab in flow context (`latest_meters`, `latest_pv`, `latest_weather`,\n`latest_price`, `latest_consumers`).\n\nEndpoints (preserved from src/api/rest/routes/):\n  GET /api/v1/health\n  GET /api/v1/meters\n  GET /api/v1/meters/:meter_id/current\n  GET /api/v1/pv\n  GET /api/v1/weather\n  GET /api/v1/prices\n  GET /api/v1/loads\n"
-  },
-  {
-    "id": "http-rest-response",
-    "type": "http response",
-    "z": "tab-rest",
-    "name": "200 OK",
-    "statusCode": "",
-    "headers": {
-      "Content-Type": "application/json"
+    {
+        "id": "tab-rest",
+        "type": "tab",
+        "label": "FACIS Simulation \u2014 REST Snapshot API",
+        "disabled": false,
+        "info": "FACIS Simulation \u2014 REST Snapshot API\n\nRead-only GET endpoints that return the latest snapshot stored by the\nFeeds tab in flow context (`latest_meters`, `latest_pv`, `latest_weather`,\n`latest_price`, `latest_consumers`).\n\nEndpoints (preserved from src/api/rest/routes/):\n  GET /api/v1/health\n  GET /api/v1/meters\n  GET /api/v1/meters/:meter_id/current\n  GET /api/v1/pv\n  GET /api/v1/weather\n  GET /api/v1/prices\n  GET /api/v1/loads\n"
     },
-    "x": 720,
-    "y": 200,
-    "wires": []
-  },
-  {
-    "id": "in-fn-rest-health",
-    "type": "http in",
-    "z": "tab-rest",
-    "name": "GET /api/v1/health",
-    "url": "/api/v1/health",
-    "method": "get",
-    "upload": false,
-    "swaggerDoc": "",
-    "x": 200,
-    "y": 80,
-    "wires": [
-      [
-        "fn-rest-health"
-      ]
-    ]
-  },
-  {
-    "id": "fn-rest-health",
-    "type": "function",
-    "z": "tab-rest",
-    "name": "health",
-    "func": "const engine = flow.get('engine') || { state: 'initialized' };\nmsg.payload = {\n    status: 'ok',\n    state: engine.state,\n    simulation_time: engine.simulation_time,\n    last_envelope_at: flow.get('last_kafka_tick') || flow.get('last_mqtt_tick') || null,\n    runtime: 'orce-native'\n};\nmsg.statusCode = 200;\nreturn msg;\n",
-    "outputs": 1,
-    "timeout": "",
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [],
-    "x": 460,
-    "y": 80,
-    "wires": [
-      [
-        "http-rest-response"
-      ]
-    ]
-  },
-  {
-    "id": "in-fn-rest-meters",
-    "type": "http in",
-    "z": "tab-rest",
-    "name": "GET /api/v1/meters",
-    "url": "/api/v1/meters",
-    "method": "get",
-    "upload": false,
-    "swaggerDoc": "",
-    "x": 200,
-    "y": 140,
-    "wires": [
-      [
-        "fn-rest-meters"
-      ]
-    ]
-  },
-  {
-    "id": "fn-rest-meters",
-    "type": "function",
-    "z": "tab-rest",
-    "name": "meters list",
-    "func": "const data = flow.get('latest_meters') || [];\nmsg.payload = data;\nmsg.statusCode = 200;\nreturn msg;\n",
-    "outputs": 1,
-    "timeout": "",
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [],
-    "x": 460,
-    "y": 140,
-    "wires": [
-      [
-        "http-rest-response"
-      ]
-    ]
-  },
-  {
-    "id": "in-fn-rest-meter-by-id",
-    "type": "http in",
-    "z": "tab-rest",
-    "name": "GET /api/v1/meters/:meter_id/current",
-    "url": "/api/v1/meters/:meter_id/current",
-    "method": "get",
-    "upload": false,
-    "swaggerDoc": "",
-    "x": 200,
-    "y": 200,
-    "wires": [
-      [
-        "fn-rest-meter-by-id"
-      ]
-    ]
-  },
-  {
-    "id": "fn-rest-meter-by-id",
-    "type": "function",
-    "z": "tab-rest",
-    "name": "meter by id",
-    "func": "const meterId = msg.req.params.meter_id;\nconst meters = flow.get('latest_meters') || [];\nconst found = meters.find((m) => m.meter_id === meterId);\nif (!found) {\n    msg.statusCode = 404;\n    msg.payload = { error: 'meter not found', meter_id: meterId };\n} else {\n    msg.statusCode = 200;\n    msg.payload = found;\n}\nreturn msg;\n",
-    "outputs": 1,
-    "timeout": "",
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [],
-    "x": 460,
-    "y": 200,
-    "wires": [
-      [
-        "http-rest-response"
-      ]
-    ]
-  },
-  {
-    "id": "in-fn-rest-pv",
-    "type": "http in",
-    "z": "tab-rest",
-    "name": "GET /api/v1/pv",
-    "url": "/api/v1/pv",
-    "method": "get",
-    "upload": false,
-    "swaggerDoc": "",
-    "x": 200,
-    "y": 260,
-    "wires": [
-      [
-        "fn-rest-pv"
-      ]
-    ]
-  },
-  {
-    "id": "fn-rest-pv",
-    "type": "function",
-    "z": "tab-rest",
-    "name": "pv",
-    "func": "const data = flow.get('latest_pv') || [];\nmsg.payload = data;\nmsg.statusCode = 200;\nreturn msg;\n",
-    "outputs": 1,
-    "timeout": "",
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [],
-    "x": 460,
-    "y": 260,
-    "wires": [
-      [
-        "http-rest-response"
-      ]
-    ]
-  },
-  {
-    "id": "in-fn-rest-weather",
-    "type": "http in",
-    "z": "tab-rest",
-    "name": "GET /api/v1/weather",
-    "url": "/api/v1/weather",
-    "method": "get",
-    "upload": false,
-    "swaggerDoc": "",
-    "x": 200,
-    "y": 320,
-    "wires": [
-      [
-        "fn-rest-weather"
-      ]
-    ]
-  },
-  {
-    "id": "fn-rest-weather",
-    "type": "function",
-    "z": "tab-rest",
-    "name": "weather",
-    "func": "const data = flow.get('latest_weather') || null;\nmsg.payload = data;\nmsg.statusCode = 200;\nreturn msg;\n",
-    "outputs": 1,
-    "timeout": "",
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [],
-    "x": 460,
-    "y": 320,
-    "wires": [
-      [
-        "http-rest-response"
-      ]
-    ]
-  },
-  {
-    "id": "in-fn-rest-prices",
-    "type": "http in",
-    "z": "tab-rest",
-    "name": "GET /api/v1/prices",
-    "url": "/api/v1/prices",
-    "method": "get",
-    "upload": false,
-    "swaggerDoc": "",
-    "x": 200,
-    "y": 380,
-    "wires": [
-      [
-        "fn-rest-prices"
-      ]
-    ]
-  },
-  {
-    "id": "fn-rest-prices",
-    "type": "function",
-    "z": "tab-rest",
-    "name": "prices",
-    "func": "const data = flow.get('latest_price') || null;\nmsg.payload = data;\nmsg.statusCode = 200;\nreturn msg;\n",
-    "outputs": 1,
-    "timeout": "",
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [],
-    "x": 460,
-    "y": 380,
-    "wires": [
-      [
-        "http-rest-response"
-      ]
-    ]
-  },
-  {
-    "id": "in-fn-rest-loads",
-    "type": "http in",
-    "z": "tab-rest",
-    "name": "GET /api/v1/loads",
-    "url": "/api/v1/loads",
-    "method": "get",
-    "upload": false,
-    "swaggerDoc": "",
-    "x": 200,
-    "y": 440,
-    "wires": [
-      [
-        "fn-rest-loads"
-      ]
-    ]
-  },
-  {
-    "id": "fn-rest-loads",
-    "type": "function",
-    "z": "tab-rest",
-    "name": "loads",
-    "func": "const data = flow.get('latest_consumers') || [];\nmsg.payload = data;\nmsg.statusCode = 200;\nreturn msg;\n",
-    "outputs": 1,
-    "timeout": "",
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [],
-    "x": 460,
-    "y": 440,
-    "wires": [
-      [
-        "http-rest-response"
-      ]
-    ]
-  }
+    {
+        "id": "http-rest-response",
+        "type": "http response",
+        "z": "tab-rest",
+        "name": "200 OK",
+        "statusCode": "",
+        "headers": {
+            "Content-Type": "application/json"
+        },
+        "x": 720,
+        "y": 200,
+        "wires": []
+    },
+    {
+        "id": "in-fn-rest-health",
+        "type": "http in",
+        "z": "tab-rest",
+        "name": "GET /api/v1/health",
+        "url": "/api/v1/health",
+        "method": "get",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 200,
+        "y": 80,
+        "wires": [
+            [
+                "fn-rest-health"
+            ]
+        ]
+    },
+    {
+        "id": "fn-rest-health",
+        "type": "function",
+        "z": "tab-rest",
+        "name": "health",
+        "func": "const engine = global.get('engine') || { state: 'initialized' };\nmsg.payload = {\n    status: 'ok',\n    state: engine.state,\n    simulation_time: engine.simulation_time,\n    last_envelope_at: global.get('last_kafka_tick') || global.get('last_mqtt_tick') || null,\n    runtime: 'orce-native'\n};\nmsg.statusCode = 200;\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 460,
+        "y": 80,
+        "wires": [
+            [
+                "http-rest-response"
+            ]
+        ]
+    },
+    {
+        "id": "in-fn-rest-meters",
+        "type": "http in",
+        "z": "tab-rest",
+        "name": "GET /api/v1/meters",
+        "url": "/api/v1/meters",
+        "method": "get",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 200,
+        "y": 140,
+        "wires": [
+            [
+                "fn-rest-meters"
+            ]
+        ]
+    },
+    {
+        "id": "fn-rest-meters",
+        "type": "function",
+        "z": "tab-rest",
+        "name": "meters list",
+        "func": "const data = global.get('latest_meters') || [];\nmsg.payload = data;\nmsg.statusCode = 200;\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 460,
+        "y": 140,
+        "wires": [
+            [
+                "http-rest-response"
+            ]
+        ]
+    },
+    {
+        "id": "in-fn-rest-meter-by-id",
+        "type": "http in",
+        "z": "tab-rest",
+        "name": "GET /api/v1/meters/:meter_id/current",
+        "url": "/api/v1/meters/:meter_id/current",
+        "method": "get",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 200,
+        "y": 200,
+        "wires": [
+            [
+                "fn-rest-meter-by-id"
+            ]
+        ]
+    },
+    {
+        "id": "fn-rest-meter-by-id",
+        "type": "function",
+        "z": "tab-rest",
+        "name": "meter by id",
+        "func": "const meterId = msg.req.params.meter_id;\nconst meters = global.get('latest_meters') || [];\nconst found = meters.find((m) => m.meter_id === meterId);\nif (!found) {\n    msg.statusCode = 404;\n    msg.payload = { error: 'meter not found', meter_id: meterId };\n} else {\n    msg.statusCode = 200;\n    msg.payload = found;\n}\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 460,
+        "y": 200,
+        "wires": [
+            [
+                "http-rest-response"
+            ]
+        ]
+    },
+    {
+        "id": "in-fn-rest-pv",
+        "type": "http in",
+        "z": "tab-rest",
+        "name": "GET /api/v1/pv",
+        "url": "/api/v1/pv",
+        "method": "get",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 200,
+        "y": 260,
+        "wires": [
+            [
+                "fn-rest-pv"
+            ]
+        ]
+    },
+    {
+        "id": "fn-rest-pv",
+        "type": "function",
+        "z": "tab-rest",
+        "name": "pv",
+        "func": "const data = global.get('latest_pv') || [];\nmsg.payload = data;\nmsg.statusCode = 200;\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 460,
+        "y": 260,
+        "wires": [
+            [
+                "http-rest-response"
+            ]
+        ]
+    },
+    {
+        "id": "in-fn-rest-weather",
+        "type": "http in",
+        "z": "tab-rest",
+        "name": "GET /api/v1/weather",
+        "url": "/api/v1/weather",
+        "method": "get",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 200,
+        "y": 320,
+        "wires": [
+            [
+                "fn-rest-weather"
+            ]
+        ]
+    },
+    {
+        "id": "fn-rest-weather",
+        "type": "function",
+        "z": "tab-rest",
+        "name": "weather",
+        "func": "const data = global.get('latest_weather') || null;\nmsg.payload = data;\nmsg.statusCode = 200;\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 460,
+        "y": 320,
+        "wires": [
+            [
+                "http-rest-response"
+            ]
+        ]
+    },
+    {
+        "id": "in-fn-rest-prices",
+        "type": "http in",
+        "z": "tab-rest",
+        "name": "GET /api/v1/prices",
+        "url": "/api/v1/prices",
+        "method": "get",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 200,
+        "y": 380,
+        "wires": [
+            [
+                "fn-rest-prices"
+            ]
+        ]
+    },
+    {
+        "id": "fn-rest-prices",
+        "type": "function",
+        "z": "tab-rest",
+        "name": "prices",
+        "func": "const data = global.get('latest_price') || null;\nmsg.payload = data;\nmsg.statusCode = 200;\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 460,
+        "y": 380,
+        "wires": [
+            [
+                "http-rest-response"
+            ]
+        ]
+    },
+    {
+        "id": "in-fn-rest-loads",
+        "type": "http in",
+        "z": "tab-rest",
+        "name": "GET /api/v1/loads",
+        "url": "/api/v1/loads",
+        "method": "get",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 200,
+        "y": 440,
+        "wires": [
+            [
+                "fn-rest-loads"
+            ]
+        ]
+    },
+    {
+        "id": "fn-rest-loads",
+        "type": "function",
+        "z": "tab-rest",
+        "name": "loads",
+        "func": "const data = global.get('latest_consumers') || [];\nmsg.payload = data;\nmsg.statusCode = 200;\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 460,
+        "y": 440,
+        "wires": [
+            [
+                "http-rest-response"
+            ]
+        ]
+    }
 ]

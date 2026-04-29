@@ -22,6 +22,10 @@ module.exports = function(RED) {
         this.sslCaLocation = n.sslCaLocation || "";
         this.sslCertLocation = n.sslCertLocation || "";
         this.sslKeyLocation = n.sslKeyLocation || "";
+        // Metadata refresh interval (ms). Defaults to 30s so that NodePort drift
+        // on the Stackable cluster recovers within one cycle without a flow
+        // redeploy. Override by setting `metadataMaxAgeMs` on the broker node.
+        this.metadataMaxAgeMs = Number(n.metadataMaxAgeMs) || 30000;
     }
 
     /**
@@ -32,7 +36,10 @@ module.exports = function(RED) {
             'client.id': this.clientid || 'node-red',
             'metadata.broker.list': this.broker,
             'socket.keepalive.enable': true,
-            'api.version.request': true
+            'api.version.request': true,
+            // Force metadata refresh; recovers from broker NodePort drift.
+            'metadata.max.age.ms': this.metadataMaxAgeMs,
+            'topic.metadata.refresh.interval.ms': this.metadataMaxAgeMs
         };
         if (this.securityProtocol === 'ssl') {
             config['security.protocol'] = 'ssl';

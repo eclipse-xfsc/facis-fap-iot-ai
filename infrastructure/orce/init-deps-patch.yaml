@@ -1,0 +1,158 @@
+# Strategic-merge patch that adds an `init-deps` initContainer to the ORCE
+# Deployment. The container has two responsibilities:
+#
+#   1. Ensure the npm packages required by the Simulation, DSP, and SFTP
+#      ORCE flows are present in the persistent /data/node_modules directory.
+#   2. Overlay the `rdkafka-patch.js` (FACIS SSL/mTLS extensions for
+#      node-red-contrib-rdkafka) over the stock `rdkafka.js` that npm
+#      installs. The stock contrib has no SSL support; the FACIS Stackable
+#      cluster only accepts mTLS connections.
+#
+# Why this exists:
+#   The shipped image `ecofacis/xfsc-orce:2.0.12` does not bundle
+#   node-red-contrib-modbus, node-red-contrib-rdkafka, ssh2-sftp-client,
+#   csv-parse, or seedrandom — and even when rdkafka is npm-installed, the
+#   stock module silently drops securityProtocol/ssl* fields, leaving the
+#   producer in a perpetual "not connected" state. The patched rdkafka.js
+#   (services/simulation/orce/rdkafka-patch.js) wires those fields into the
+#   librdkafka config. Rebuilding the image with both bundled is the long-
+#   term answer; this patch is the runtime self-heal.
+#
+# Inputs:
+#   - ConfigMap `facis-orce-rdkafka-patch` in namespace `orce` with a single
+#     key `rdkafka-patch.js`. Created out-of-band:
+#         kubectl create configmap facis-orce-rdkafka-patch -n orce \
+#           --from-file=rdkafka-patch.js=services/simulation/orce/rdkafka-patch.js
+#
+# Behaviour:
+#   - First boot: npm-installs all 5 packages into /mnt/orce-data/node_modules
+#     and adds them to /mnt/orce-data/package.json (~7 minutes; rdkafka
+#     compiles librdkafka native bindings).
+#   - On every boot: stamps the ConfigMap-mounted rdkafka-patch.js over
+#     /mnt/orce-data/node_modules/node-red-contrib-rdkafka/rdkafka/rdkafka.js
+#     (only when content differs, so it's a no-op on no-change boots).
+#   - Failure of any single npm package is logged and tolerated.
+#
+# Apply:
+#   kubectl patch deployment orce -n orce \
+#     --type=strategic --patch-file=infrastructure/orce/init-deps-patch.yaml
+#
+# Roll back:
+#   kubectl patch deployment orce -n orce --type=json -p='[
+#     {"op":"remove","path":"/spec/template/spec/initContainers/1"}
+#   ]'
+spec:
+  template:
+    spec:
+      volumes:
+        - name: rdkafka-patch
+          configMap:
+            name: facis-orce-rdkafka-patch
+            items:
+              - key: rdkafka-patch.js
+                path: rdkafka-patch.js
+      initContainers:
+        - name: init-deps
+          image: ecofacis/xfsc-orce:2.0.12
+          securityContext:
+            runAsUser: 0
+          command:
+            - sh
+            - -c
+            - |
+              set -u
+              cd /mnt/orce-data
+              if [ ! -f package.json ]; then
+                echo "[init-deps] package.json missing - init-data has not run yet; skipping"
+                exit 0
+              fi
+              PKGS="node-red-contrib-modbus node-red-contrib-rdkafka ssh2-sftp-client csv-parse seedrandom"
+              MISSING=""
+              for p in $PKGS; do
+                if [ ! -d "node_modules/$p" ]; then MISSING="$MISSING $p"; fi
+              done
+
+              # Detect whether the existing librdkafka was built with OpenSSL.
+              # It needs SSL to connect to the FACIS Stackable Kafka brokers.
+              # The .so lives at build/deps after node-rdkafka's gyp build.
+              NEEDS_REBUILD=0
+              SYM_FILE=/mnt/orce-data/node_modules/node-rdkafka/build/deps/librdkafka.so.1
+              if [ ! -f "$SYM_FILE" ]; then
+                echo "[init-deps] librdkafka.so.1 missing — will rebuild"
+                NEEDS_REBUILD=1
+              elif strings "$SYM_FILE" 2>/dev/null | grep -q "OpenSSL not available at build time"; then
+                echo "[init-deps] librdkafka.so.1 lacks OpenSSL — will rebuild"
+                NEEDS_REBUILD=1
+              elif ldd "$SYM_FILE" 2>&1 | grep -q "libsasl2"; then
+                # libsasl2 is not in the runtime container; if the build linked
+                # it, dynamic load fails. We never use SASL — only mTLS.
+                echo "[init-deps] librdkafka.so.1 links libsasl2 (not present at runtime) — will rebuild"
+                NEEDS_REBUILD=1
+              fi
+
+              if [ -n "$MISSING" ] || [ "$NEEDS_REBUILD" = "1" ]; then
+                # Build deps required to compile librdkafka with SSL.
+                # cyrus-sasl-dev is intentionally OMITTED — the FACIS Kafka cluster
+                # uses mTLS, not SASL, and the runtime container doesn't have
+                # libsasl2 (linking against it would break dynamic loading).
+                echo "[init-deps] installing build toolchain (apk)"
+                apk add --no-cache --quiet build-base python3 linux-headers \
+                                          openssl-dev zlib-dev \
+                  || echo "[init-deps] WARN: apk install partially failed"
+              fi
+
+              if [ -n "$MISSING" ]; then
+                echo "[init-deps] installing missing packages:$MISSING"
+                for p in $MISSING; do
+                  echo "[init-deps] >>> $p"
+                  if npm install --save --no-audit --no-fund --prefix /mnt/orce-data "$p"; then
+                    echo "[init-deps] OK $p"
+                  else
+                    echo "[init-deps] FAIL $p (continuing)"
+                  fi
+                done
+              else
+                echo "[init-deps] all packages already present"
+              fi
+
+              # Force rebuild of node-rdkafka against system OpenSSL if needed
+              if [ "$NEEDS_REBUILD" = "1" ] && [ -d /mnt/orce-data/node_modules/node-rdkafka ]; then
+                echo "[init-deps] rebuilding node-rdkafka with OpenSSL"
+                rm -rf /mnt/orce-data/node_modules/node-rdkafka /mnt/orce-data/node_modules/node-red-contrib-rdkafka
+                if npm install --save --no-audit --no-fund --prefix /mnt/orce-data \
+                     node-red-contrib-rdkafka; then
+                  echo "[init-deps] OK rebuild"
+                else
+                  echo "[init-deps] FAIL rebuild — Kafka producer will not connect"
+                fi
+              fi
+
+              # Overlay FACIS rdkafka SSL patch (idempotent: skip if identical).
+              # Must run AFTER any reinstall that overwrites rdkafka.js.
+              SRC=/etc/orce-patches/rdkafka-patch.js
+              DST=/mnt/orce-data/node_modules/node-red-contrib-rdkafka/rdkafka/rdkafka.js
+              if [ -f "$SRC" ] && [ -f "$DST" ]; then
+                if ! cmp -s "$SRC" "$DST"; then
+                  cp "$SRC" "$DST"
+                  echo "[init-deps] rdkafka SSL patch applied to $DST"
+                else
+                  echo "[init-deps] rdkafka SSL patch already applied"
+                fi
+              else
+                echo "[init-deps] WARN: cannot apply rdkafka patch (SRC=$SRC DST=$DST)"
+              fi
+              chown -R 1000:1000 /mnt/orce-data/node_modules /mnt/orce-data/package.json 2>/dev/null || true
+              echo "[init-deps] done"
+          volumeMounts:
+            - mountPath: /mnt/orce-data
+              name: orce-data
+            - mountPath: /etc/orce-patches
+              name: rdkafka-patch
+              readOnly: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 1000m
+              memory: 512Mi

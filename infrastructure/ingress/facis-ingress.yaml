@@ -1,0 +1,46 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: facis-ingress
+  namespace: orce
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - fap-iotai.facis.cloud
+      secretName: facis-wild
+  rules:
+    - host: fap-iotai.facis.cloud
+      http:
+        paths:
+          - path: /orce
+            pathType: Prefix
+            backend:
+              service:
+                name: orce
+                port:
+                  number: 1880
+          - path: /ai
+            pathType: Prefix
+            backend:
+              service:
+                name: orce
+                port:
+                  number: 1880
+          - path: /dsp
+            pathType: Prefix
+            backend:
+              service:
+                name: orce
+                port:
+                  number: 1880
+          - path: /api/v1
+            pathType: Prefix
+            backend:
+              service:
+                name: orce
+                port:
+                  number: 1880

@@ -119,3 +119,40 @@ spec:
           annotations:
             summary: "Materializer job {{ $labels.job_name }} failed"
             description: "Batch materialization job {{ $labels.job_name }} has failed."
+
+    # -----------------------------------------------------------------
+    # Stackable Kafka mTLS Cert Expiry
+    # -----------------------------------------------------------------
+    # The Stackable secret-operator issues short-lived client certs. The
+    # `kafka-cert-expiry-check` CronJob runs daily and pushes
+    # `facis_kafka_cert_days_until_expiry{cert="tls.crt"}` to the pushgateway.
+    # Manual rotation procedure: see
+    # services/simulation/docs/orce-runtime/operations-runbook.md
+    - name: facis.kafka.certs
+      rules:
+        - alert: FacisKafkaCertExpiringSoon
+          expr: facis_kafka_cert_days_until_expiry < 14
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Kafka mTLS client cert expires in {{ $value }} days"
+            description: "tls.crt mounted into the ORCE pod is approaching expiry. Rotate per the runbook before {{ $value }} days elapse."
+
+        - alert: FacisKafkaCertExpiringCritical
+          expr: facis_kafka_cert_days_until_expiry < 7
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Kafka mTLS client cert expires in {{ $value }} days — rotate now"
+            description: "tls.crt mounted into the ORCE pod expires within 7 days. Kafka publishing will stop when it does. Rotate immediately per the operations runbook."
+
+        - alert: FacisKafkaCertCheckStale
+          expr: time() - facis_kafka_cert_check_timestamp_seconds > 86400 * 2
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Kafka cert expiry check has not run in >48h"
+            description: "The kafka-cert-expiry-check CronJob has not pushed a fresh metric. The watcher itself may be broken; investigate the CronJob in the orce namespace."
