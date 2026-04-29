@@ -104,7 +104,8 @@ def test_filter_columns_restricts_to_allowed() -> None:
     enforcer = PolicyEnforcer(_TABLE_ACCESS_CONFIG)
     context = AccessContext(agreement_id="a", asset_id="b", roles=("analyst",))
     filtered = enforcer.filter_columns(
-        context, "net_grid_hourly",
+        context,
+        "net_grid_hourly",
         ["hour", "avg_consumption_kw", "net_grid_kw", "avg_price_eur_per_kwh"],
     )
     assert filtered == ["hour", "avg_consumption_kw"]

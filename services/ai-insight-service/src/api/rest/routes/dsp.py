@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
 from src.security.hmac_middleware import HmacTokenValidator
@@ -125,14 +125,43 @@ async def create_pull_url(
     )
 
 
+def _get_validator() -> HmacTokenValidator:
+    """Get the configured validator or raise 503."""
+    if _validator is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="DSP validation not configured",
+        )
+    return _validator
+
+
+async def _verify_pull(
+    request: Request,
+    token: str = Query(..., description="HMAC-SHA256 token"),
+    expires_at: str = Query(
+        ...,
+        alias="expiresAt",
+        description="Token expiry (ISO 8601)",
+    ),
+    from_ts: str = Query(..., alias="from", description="Data window start (ISO 8601)"),
+    to_ts: str = Query(..., alias="to", description="Data window end (ISO 8601)"),
+    validator: HmacTokenValidator = Depends(_get_validator),
+) -> dict[str, str]:
+    """Validate pull query params via the configured HMAC validator."""
+    return await validator(
+        request,
+        token=token,
+        expires_at=expires_at,
+        from_ts=from_ts,
+        to_ts=to_ts,
+    )
+
+
 @dsp_router.get(
     "/pull",
     summary="Validate HMAC token and return data access confirmation",
 )
-async def pull(
-    request: Request,
-    verified: dict[str, str] = Depends(_get_validator),
-) -> dict[str, Any]:
+async def pull(verified: dict[str, str] = Depends(_verify_pull)) -> dict[str, Any]:
     """
     Validate an HMAC-signed pull URL.
 
@@ -148,13 +177,3 @@ async def pull(
         },
         "expires_at": verified.get("expiresAt"),
     }
-
-
-def _get_validator() -> HmacTokenValidator:
-    """Get the configured validator or raise 503."""
-    if _validator is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="DSP validation not configured",
-        )
-    return _validator

@@ -6,10 +6,8 @@ import csv
 import io
 import json
 import logging
-import os
 import stat
-import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import PurePosixPath
 from typing import Any
 
@@ -133,9 +131,11 @@ class SftpPoller:
                 return envelopes
 
             files = [
-                e for e in entries
+                e
+                for e in entries
                 if stat.S_ISREG(e.st_mode or 0)
-                and PurePosixPath(e.filename).suffix.lower() in self._accepted_extensions
+                and PurePosixPath(e.filename).suffix.lower()
+                in self._accepted_extensions
                 and (e.st_size or 0) <= self._ingest_config.max_file_size_bytes
             ]
 
@@ -157,7 +157,7 @@ class SftpPoller:
 
                     # Parse file
                     records = self._parse_file(filename, content)
-                    ingest_ts = datetime.now(timezone.utc).isoformat()
+                    ingest_ts = datetime.now(UTC).isoformat()
 
                     # Wrap each record in Bronze envelope
                     for record in records:
@@ -176,12 +176,10 @@ class SftpPoller:
                         sftp.rename(remote_file, archive_file)
                     except OSError:
                         # Archive file may already exist — add timestamp suffix
-                        ts_suffix = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+                        ts_suffix = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
                         sftp.rename(remote_file, f"{archive_file}.{ts_suffix}")
 
-                    logger.info(
-                        f"Ingested {filename}: {len(records)} record(s)"
-                    )
+                    logger.info(f"Ingested {filename}: {len(records)} record(s)")
 
                 except Exception as e:
                     logger.error(f"Failed to process {filename}: {e}")

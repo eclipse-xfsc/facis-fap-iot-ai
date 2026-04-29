@@ -39,7 +39,9 @@ def create_app() -> FastAPI:
 
     configure_dsp_router(
         secret=os.getenv("AI_INSIGHT_HMAC__SECRET"),
-        base_url=os.getenv("AI_INSIGHT_HMAC__BASE_URL", "https://ai-insight.facis.cloud"),
+        base_url=os.getenv(
+            "AI_INSIGHT_HMAC__BASE_URL", "https://ai-insight.facis.cloud"
+        ),
         enabled=os.getenv("AI_INSIGHT_HMAC__ENABLED", "true").lower() == "true",
     )
 

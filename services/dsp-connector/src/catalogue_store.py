@@ -22,10 +22,16 @@ FACIS_DATASETS: list[DatasetOffer] = [
             "schema": "gold",
             "table": "net_grid_hourly",
         },
-        offers=[{
-            "id": "offer:facis:net-grid-hourly:read",
-            "policySummary": {"purpose": "analytics", "rate_limit": "10 req/min", "ttl": "PT1H"},
-        }],
+        offers=[
+            {
+                "id": "offer:facis:net-grid-hourly:read",
+                "policySummary": {
+                    "purpose": "analytics",
+                    "rate_limit": "10 req/min",
+                    "ttl": "PT1H",
+                },
+            }
+        ],
     ),
     DatasetOffer(
         id="dataset:facis:energy-balance-hourly",
@@ -38,10 +44,16 @@ FACIS_DATASETS: list[DatasetOffer] = [
             "schema": "gold",
             "table": "energy_balance_hourly",
         },
-        offers=[{
-            "id": "offer:facis:energy-balance-hourly:read",
-            "policySummary": {"purpose": "analytics", "rate_limit": "10 req/min", "ttl": "PT1H"},
-        }],
+        offers=[
+            {
+                "id": "offer:facis:energy-balance-hourly:read",
+                "policySummary": {
+                    "purpose": "analytics",
+                    "rate_limit": "10 req/min",
+                    "ttl": "PT1H",
+                },
+            }
+        ],
     ),
     DatasetOffer(
         id="dataset:facis:anomaly-candidates",
@@ -53,10 +65,16 @@ FACIS_DATASETS: list[DatasetOffer] = [
             "schema": "gold",
             "table": "anomaly_candidates",
         },
-        offers=[{
-            "id": "offer:facis:anomaly-candidates:read",
-            "policySummary": {"purpose": "analytics", "rate_limit": "10 req/min", "ttl": "PT1H"},
-        }],
+        offers=[
+            {
+                "id": "offer:facis:anomaly-candidates:read",
+                "policySummary": {
+                    "purpose": "analytics",
+                    "rate_limit": "10 req/min",
+                    "ttl": "PT1H",
+                },
+            }
+        ],
     ),
     DatasetOffer(
         id="dataset:facis:event-impact-daily",
@@ -69,10 +87,16 @@ FACIS_DATASETS: list[DatasetOffer] = [
             "schema": "gold",
             "table": "event_impact_daily",
         },
-        offers=[{
-            "id": "offer:facis:event-impact-daily:read",
-            "policySummary": {"purpose": "analytics", "rate_limit": "10 req/min", "ttl": "PT1H"},
-        }],
+        offers=[
+            {
+                "id": "offer:facis:event-impact-daily:read",
+                "policySummary": {
+                    "purpose": "analytics",
+                    "rate_limit": "10 req/min",
+                    "ttl": "PT1H",
+                },
+            }
+        ],
     ),
     DatasetOffer(
         id="dataset:facis:weather-hourly",
@@ -85,10 +109,16 @@ FACIS_DATASETS: list[DatasetOffer] = [
             "schema": "gold",
             "table": "weather_hourly",
         },
-        offers=[{
-            "id": "offer:facis:weather-hourly:read",
-            "policySummary": {"purpose": "analytics", "rate_limit": "10 req/min", "ttl": "PT1H"},
-        }],
+        offers=[
+            {
+                "id": "offer:facis:weather-hourly:read",
+                "policySummary": {
+                    "purpose": "analytics",
+                    "rate_limit": "10 req/min",
+                    "ttl": "PT1H",
+                },
+            }
+        ],
     ),
     DatasetOffer(
         id="dataset:facis:streetlight-zone-hourly",
@@ -101,10 +131,16 @@ FACIS_DATASETS: list[DatasetOffer] = [
             "schema": "gold",
             "table": "streetlight_zone_hourly",
         },
-        offers=[{
-            "id": "offer:facis:streetlight-zone-hourly:read",
-            "policySummary": {"purpose": "analytics", "rate_limit": "10 req/min", "ttl": "PT1H"},
-        }],
+        offers=[
+            {
+                "id": "offer:facis:streetlight-zone-hourly:read",
+                "policySummary": {
+                    "purpose": "analytics",
+                    "rate_limit": "10 req/min",
+                    "ttl": "PT1H",
+                },
+            }
+        ],
     ),
 ]
 

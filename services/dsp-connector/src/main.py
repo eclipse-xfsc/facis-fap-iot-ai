@@ -17,8 +17,8 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, status
-from prometheus_client import Counter, Histogram, make_asgi_app
+from fastapi import FastAPI, HTTPException
+from prometheus_client import Counter, make_asgi_app
 
 from src.catalogue_store import query_catalogue
 from src.models import (
@@ -44,9 +44,15 @@ logger = logging.getLogger("facis-dsp-connector")
 # Prometheus metrics
 # ---------------------------------------------------------------------------
 
-CATALOGUE_REQUESTS = Counter("facis_dsp_catalogue_requests_total", "Total catalogue requests")
-TRANSFER_REQUESTS = Counter("facis_dsp_transfer_requests_total", "Total transfer requests", ["format"])
-TRANSFER_COMPLETIONS = Counter("facis_dsp_transfer_completions_total", "Total completed transfers")
+CATALOGUE_REQUESTS = Counter(
+    "facis_dsp_catalogue_requests_total", "Total catalogue requests"
+)
+TRANSFER_REQUESTS = Counter(
+    "facis_dsp_transfer_requests_total", "Total transfer requests", ["format"]
+)
+TRANSFER_COMPLETIONS = Counter(
+    "facis_dsp_transfer_completions_total", "Total completed transfers"
+)
 TRANSFER_ERRORS = Counter("facis_dsp_transfer_errors_total", "Total transfer errors")
 
 # ---------------------------------------------------------------------------
@@ -62,7 +68,9 @@ def _get_store() -> TransferStore:
     if _transfer_store is None:
         _transfer_store = TransferStore(
             hmac_secret=os.getenv("DSP_HMAC_SECRET"),
-            data_api_base_url=os.getenv("DSP_DATA_API_BASE_URL", "https://ai-insight.facis.cloud"),
+            data_api_base_url=os.getenv(
+                "DSP_DATA_API_BASE_URL", "https://ai-insight.facis.cloud"
+            ),
             default_ttl_seconds=int(os.getenv("DSP_DEFAULT_TTL_SECONDS", "3600")),
             kafka_bootstrap=os.getenv("DSP_KAFKA_BOOTSTRAP"),
         )
@@ -163,7 +171,9 @@ def create_app() -> FastAPI:
     async def get_negotiation(negotiation_id: str) -> NegotiationProcess:
         neg = _negotiations.get(negotiation_id)
         if neg is None:
-            raise HTTPException(status_code=404, detail=f"Negotiation {negotiation_id} not found")
+            raise HTTPException(
+                status_code=404, detail=f"Negotiation {negotiation_id} not found"
+            )
         return neg
 
     @app.post(
@@ -174,7 +184,9 @@ def create_app() -> FastAPI:
     async def terminate_negotiation(negotiation_id: str) -> NegotiationProcess:
         neg = _negotiations.get(negotiation_id)
         if neg is None:
-            raise HTTPException(status_code=404, detail=f"Negotiation {negotiation_id} not found")
+            raise HTTPException(
+                status_code=404, detail=f"Negotiation {negotiation_id} not found"
+            )
         now = datetime.now(UTC).isoformat()
         terminated = NegotiationProcess(
             id=neg.id,
@@ -237,7 +249,9 @@ def create_app() -> FastAPI:
         store = _get_store()
         transfer = store.get(transfer_id)
         if transfer is None:
-            raise HTTPException(status_code=404, detail=f"Transfer {transfer_id} not found")
+            raise HTTPException(
+                status_code=404, detail=f"Transfer {transfer_id} not found"
+            )
         return transfer
 
     @app.get(
@@ -259,7 +273,9 @@ def create_app() -> FastAPI:
     async def suspend_transfer(transfer_id: str) -> TransferProcess:
         store = _get_store()
         try:
-            return store.transition(transfer_id, TransferState.SUSPENDED, reason="Suspended by consumer")
+            return store.transition(
+                transfer_id, TransferState.SUSPENDED, reason="Suspended by consumer"
+            )
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
 
@@ -272,7 +288,9 @@ def create_app() -> FastAPI:
     async def terminate_transfer(transfer_id: str) -> TransferProcess:
         store = _get_store()
         try:
-            return store.transition(transfer_id, TransferState.TERMINATED, reason="Terminated by consumer")
+            return store.transition(
+                transfer_id, TransferState.TERMINATED, reason="Terminated by consumer"
+            )
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
 
