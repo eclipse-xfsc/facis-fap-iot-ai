@@ -1,0 +1,1 @@
+import{a as s,b as t,c as o,g as a,e as c,D as n,_}from"./index-BuosndfI.js";const r={class:"use-case-layout"},i={class:"use-case-content"},p=s({__name:"AnalyticsView",setup(d){return(l,u)=>{const e=n("RouterView");return t(),o("div",r,[a("div",i,[c(e)])])}}}),f=_(p,[["__scopeId","data-v-6af40e3e"]]);export{f as default};

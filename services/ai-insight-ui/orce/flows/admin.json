@@ -1,0 +1,94 @@
+[
+  {
+    "id": "tab_aiui_admin",
+    "type": "tab",
+    "label": "AI Insight UI \u2014 Admin (Keycloak proxy)",
+    "disabled": false,
+    "info": "Read-only proxy onto the Keycloak Admin API for the UI's admin views:\n  GET /api/v1/admin/users   \u2014 list users in the FACIS realm\n  GET /api/v1/admin/roles   \u2014 list realm roles + member counts\n  GET /api/v1/admin/access  \u2014 recent login/logout/role-change events\n\nRequires environment: KEYCLOAK_ADMIN_URL, KEYCLOAK_ADMIN_USER, KEYCLOAK_ADMIN_PASSWORD, KEYCLOAK_ADMIN_REALM (default 'facis'). The flow caches the master-realm token in flow context with TTL refresh on 401."
+  },
+  {
+    "id": "node_admin_users",
+    "type": "http in",
+    "z": "tab_aiui_admin",
+    "name": "GET /api/v1/admin/users",
+    "url": "/api/v1/admin/users",
+    "method": "get",
+    "x": 160,
+    "y": 80,
+    "wires": [
+      [
+        "fn_admin_route"
+      ]
+    ]
+  },
+  {
+    "id": "node_admin_roles",
+    "type": "http in",
+    "z": "tab_aiui_admin",
+    "name": "GET /api/v1/admin/roles",
+    "url": "/api/v1/admin/roles",
+    "method": "get",
+    "x": 160,
+    "y": 160,
+    "wires": [
+      [
+        "fn_admin_route"
+      ]
+    ]
+  },
+  {
+    "id": "node_admin_access",
+    "type": "http in",
+    "z": "tab_aiui_admin",
+    "name": "GET /api/v1/admin/access",
+    "url": "/api/v1/admin/access",
+    "method": "get",
+    "x": 160,
+    "y": 240,
+    "wires": [
+      [
+        "fn_admin_route"
+      ]
+    ]
+  },
+  {
+    "id": "fn_admin_route",
+    "type": "function",
+    "z": "tab_aiui_admin",
+    "name": "route to KC + shape",
+    "func": "// httpsFetch shim \u2014 function-node sandbox lacks global fetch. Uses Node stdlib.\nfunction httpsFetch(urlStr, opts = {}) {\n  return new Promise((resolve, reject) => {\n    let parsed;\n    try { parsed = new urlmod.URL(urlStr); }\n    catch (e) { return reject(new Error('bad URL: ' + urlStr)); }\n    const isHttps = parsed.protocol === 'https:';\n    const lib = isHttps ? https : http;\n    const body = opts.body;\n    const headers = Object.assign({}, opts.headers || {});\n    if (body && !headers['Content-Length']) headers['Content-Length'] = Buffer.byteLength(body);\n    const req = lib.request({\n      method: opts.method || 'GET',\n      hostname: parsed.hostname,\n      port: parsed.port || (isHttps ? 443 : 80),\n      path: parsed.pathname + (parsed.search || ''),\n      headers,\n      timeout: opts.timeoutMs || 5000,\n      rejectUnauthorized: opts.rejectUnauthorized !== false\n    }, (res) => {\n      let data = '';\n      res.on('data', (c) => { data += c; });\n      res.on('end', () => resolve({\n        ok: res.statusCode >= 200 && res.statusCode < 300,\n        status: res.statusCode,\n        headers: res.headers,\n        text: () => Promise.resolve(data),\n        json: () => { try { return Promise.resolve(JSON.parse(data)); } catch (e) { return Promise.reject(e); } }\n      }));\n    });\n    req.on('error', reject);\n    req.on('timeout', () => { req.destroy(new Error('timeout')); });\n    if (body) req.write(body);\n    req.end();\n  });\n}\n\nconst base = (env.get('KEYCLOAK_ADMIN_URL') || 'https://identity.facis.cloud').replace(/\\/$/, '');\nconst realm = env.get('KEYCLOAK_ADMIN_REALM') || 'facis';\nconst user = env.get('KEYCLOAK_ADMIN_USER');\nconst pass = env.get('KEYCLOAK_ADMIN_PASSWORD');\nif (!user || !pass) {\n  msg.statusCode = 503;\n  msg.headers = { 'Content-Type': 'application/json' };\n  msg.payload = { detail: 'Keycloak admin credentials not configured. Set KEYCLOAK_ADMIN_USER / KEYCLOAK_ADMIN_PASSWORD on the ORCE pod.' };\n  return msg;\n}\n\n// URLSearchParams is not exposed in the function-node sandbox; build the body manually.\nconst formEncode = (obj) => Object.entries(obj)\n  .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)\n  .join('&');\n\nasync function getToken(force) {\n  if (!force) {\n    const cached = flow.get('kc_admin_token');\n    if (cached && cached.expires_at > Date.now() + 5_000) return cached.token;\n  }\n  const body = formEncode({ grant_type: 'password', client_id: 'admin-cli', username: user, password: pass });\n  const res = await httpsFetch(`${base}/realms/master/protocol/openid-connect/token`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body, /* known: pod's Alpine image lacks Let's Encrypt CA chain */ rejectUnauthorized: false });\n  if (!res.ok) throw new Error(`token grant failed: ${res.status}`);\n  const j = await res.json();\n  const ttl = (j.expires_in || 60) * 1000;\n  flow.set('kc_admin_token', { token: j.access_token, expires_at: Date.now() + ttl });\n  return j.access_token;\n}\n\nasync function call(path) {\n  let token = await getToken(false);\n  let res = await httpsFetch(`${base}/admin/realms/${realm}${path}`, { headers: { 'Authorization': `Bearer ${token}` }, rejectUnauthorized: false });\n  if (res.status === 401) {\n    token = await getToken(true);\n    res = await httpsFetch(`${base}/admin/realms/${realm}${path}`, { headers: { 'Authorization': `Bearer ${token}` }, rejectUnauthorized: false });\n  }\n  if (!res.ok) throw new Error(`KC admin ${path} \u2192 ${res.status}`);\n  return res.json();\n}\n\n\n// --- Caller authorization (verify JWT via Keycloak userinfo, require 'admin' realm role) ---\nconst AUTHZ = msg.req && (msg.req.headers && (msg.req.headers.authorization || msg.req.headers.Authorization));\nif (!AUTHZ || !AUTHZ.startsWith('Bearer ')) {\n  msg.statusCode = 401;\n  msg.headers = { 'Content-Type': 'application/json', 'WWW-Authenticate': 'Bearer realm=\"facis\"' };\n  msg.payload = { detail: 'Authorization: Bearer <token> required' };\n  return msg;\n}\nconst userinfoUrl = `${(env.get('KEYCLOAK_USER_REALM_URL') || 'https://identity.facis.cloud/realms/facis')}/protocol/openid-connect/userinfo`;\ntry {\n  const ui = await httpsFetch(userinfoUrl, { headers: { 'Authorization': AUTHZ }, rejectUnauthorized: false });\n  if (!ui.ok) {\n    msg.statusCode = 401;\n    msg.headers = { 'Content-Type': 'application/json' };\n    msg.payload = { detail: 'token rejected by Keycloak userinfo' };\n    return msg;\n  }\n  const claims = await ui.json();\n  const roles = (claims && claims.realm_access && claims.realm_access.roles) || [];\n  if (!roles.includes('admin')) {\n    msg.statusCode = 403;\n    msg.headers = { 'Content-Type': 'application/json' };\n    msg.payload = { detail: 'admin role required' };\n    return msg;\n  }\n} catch (e) {\n  msg.statusCode = 502;\n  msg.headers = { 'Content-Type': 'application/json' };\n  msg.payload = { detail: 'auth check failed' };\n  return msg;\n}\n\ntry {\n  const url = msg.req && msg.req.url || '';\n  let payload;\n  if (url.startsWith('/api/v1/admin/users')) {\n    const users = await call('/users?max=200');\n    payload = {\n      users: users.map(u => ({\n        id: u.id, username: u.username,\n        firstName: u.firstName || '', lastName: u.lastName || '',\n        email: u.email || '', enabled: u.enabled !== false,\n        emailVerified: !!u.emailVerified,\n        createdTimestamp: u.createdTimestamp || null,\n        federationLink: u.federationLink || null\n      })),\n      count: users.length\n    };\n  } else if (url.startsWith('/api/v1/admin/roles')) {\n    const roles = await call('/roles');\n    // Per-role member count via a fan-out (small N expected; cap to 20).\n    const limited = roles.slice(0, 20);\n    const counts = await Promise.all(limited.map(async (r) => {\n      try { const m = await call(`/roles/${encodeURIComponent(r.name)}/users?max=1000`); return m.length; } catch { return null; }\n    }));\n    payload = {\n      roles: limited.map((r, i) => ({\n        name: r.name, description: r.description || '',\n        composite: !!r.composite, member_count: counts[i]\n      })),\n      count: limited.length\n    };\n  } else if (url.startsWith('/api/v1/admin/access')) {\n    const events = await call('/events?max=200&type=LOGIN&type=LOGOUT&type=LOGIN_ERROR');\n    payload = {\n      events: events.map(e => ({\n        id: `${e.type}-${e.time}`,\n        type: e.type, timestamp: new Date(e.time).toISOString(),\n        user_id: e.userId || null, ip: e.ipAddress || null,\n        result: e.error ? 'failed' : 'success',\n        details: e.details || null\n      })),\n      count: events.length\n    };\n  } else {\n    msg.statusCode = 404;\n    msg.headers = { 'Content-Type': 'application/json' };\n    msg.payload = { detail: 'unknown admin route' };\n    return msg;\n  }\n  msg.statusCode = 200;\n  msg.headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };\n  msg.payload = payload;\n} catch (e) {\n  msg.statusCode = 502;\n  msg.headers = { 'Content-Type': 'application/json' };\n  node.warn('Keycloak admin call failed: ' + String(e.message || e));\n  msg.payload = { detail: 'Keycloak admin call failed' };\n}\nreturn msg;\n",
+    "outputs": 1,
+    "x": 540,
+    "y": 160,
+    "wires": [
+      [
+        "node_admin_resp"
+      ]
+    ],
+    "libs": [
+      {
+        "var": "https",
+        "module": "https"
+      },
+      {
+        "var": "http",
+        "module": "http"
+      },
+      {
+        "var": "urlmod",
+        "module": "url"
+      }
+    ]
+  },
+  {
+    "id": "node_admin_resp",
+    "type": "http response",
+    "z": "tab_aiui_admin",
+    "name": "JSON",
+    "statusCode": "",
+    "headers": {},
+    "x": 820,
+    "y": 160,
+    "wires": []
+  }
+]

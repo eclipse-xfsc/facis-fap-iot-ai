@@ -1,0 +1,41 @@
+[
+  {
+    "id": "subflow_trino_query_city",
+    "type": "subflow",
+    "name": "RunTrinoQueryCity",
+    "info": "Runs Smart City JOIN query (event impact + streetlight) with nextUri pagination. Runtime definition is loaded from flows/ai-insight-city-status.json.",
+    "in": [
+      {
+        "x": 60,
+        "y": 80,
+        "wires": [
+          {
+            "id": "fn_run_trino_city"
+          }
+        ]
+      }
+    ],
+    "out": [
+      {
+        "x": 520,
+        "y": 60,
+        "wires": [
+          {
+            "id": "fn_run_trino_city",
+            "port": 0
+          }
+        ]
+      },
+      {
+        "x": 520,
+        "y": 120,
+        "wires": [
+          {
+            "id": "fn_run_trino_city",
+            "port": 1
+          }
+        ]
+      }
+    ]
+  }
+]

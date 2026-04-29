@@ -28,6 +28,26 @@ async function simGet<T>(path: string): Promise<T | null> {
   }
 }
 
+// Routes whose ORCE flows enforce caller authorization via Keycloak userinfo
+// (admin proxy, schemas, etc.). Forwards the user's current access token.
+async function authedGet<T>(path: string): Promise<T | null> {
+  try {
+    const { getAccessToken } = await import('@/auth')
+    const token = getAccessToken()
+    const res = await fetch(`${SIM_BASE}${path}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    })
+    if (!res.ok) {
+      console.warn(`[api] AUTHED ${path} → HTTP ${res.status}`)
+      return null
+    }
+    return (await res.json()) as T
+  } catch (err) {
+    console.warn(`[api] AUTHED ${path} failed:`, err)
+    return null
+  }
+}
+
 async function aiGet<T>(path: string, headers?: Record<string, string>): Promise<T | null> {
   try {
     const res = await fetch(`${AI_BASE}${path}`, {
@@ -258,9 +278,46 @@ export interface AiHealth {
 }
 
 // ─── Simulation API functions ─────────────────────────────────────────────────
+//
+// The deployed simulation REST flow returns shapes the colleague's UI types
+// don't quite match: the list endpoints (`/meters`, `/pv`, `/loads`) return
+// flat arrays of CURRENT readings, `/weather` and `/prices` return single
+// snapshots, and there are no `/:id/current`, `/:id/history`, `/prices/*`
+// sub-endpoints (all 404). The functions below wrap those raw shapes into the
+// `{meters, count}` / `{stations, count}` / etc. catalogs the views expect, so
+// existing view code (`if (resp?.meters?.length) …`) keeps working.
 
-export function getMeters(): Promise<SimMetersResponse | null> {
-  return simGet<SimMetersResponse>('/meters')
+interface RawMeterCurrent { meter_id: string; site_id?: string; timestamp: string; readings: SimMeterReadings }
+interface RawPVCurrent { system_id: string; site_id?: string; timestamp: string; readings: SimPVReadings }
+interface RawLoadCurrent { device_id: string; device_type: string; device_state?: string; device_power_kw?: number; timestamp: string }
+interface RawWeatherSnapshot { site_id: string; timestamp: string; location?: { latitude: number; longitude: number }; conditions: SimWeatherConditions & { wind_direction_deg?: number; dni_w_m2?: number } }
+interface RawPriceSnapshot { feed_id: string; timestamp: string; price_eur_per_kwh: number; tariff_type: string }
+
+async function getRawMeterList(): Promise<RawMeterCurrent[]> {
+  const resp = await simGet<unknown>('/meters')
+  return Array.isArray(resp) ? (resp as RawMeterCurrent[]) : []
+}
+async function getRawPVList(): Promise<RawPVCurrent[]> {
+  const resp = await simGet<unknown>('/pv')
+  return Array.isArray(resp) ? (resp as RawPVCurrent[]) : []
+}
+async function getRawLoadList(): Promise<RawLoadCurrent[]> {
+  const resp = await simGet<unknown>('/loads')
+  return Array.isArray(resp) ? (resp as RawLoadCurrent[]) : []
+}
+
+export async function getMeters(): Promise<SimMetersResponse | null> {
+  const raw = await getRawMeterList()
+  if (raw.length === 0) return null
+  return {
+    meters: raw.map((r) => ({
+      meter_id: r.meter_id,
+      type: 'janitza-umg96rm',
+      base_power_kw: 0,
+      peak_power_kw: 0,
+    })),
+    count: raw.length,
+  }
 }
 
 export function getMeterCurrent(meterId: string): Promise<SimMeterCurrent | null> {
@@ -268,51 +325,112 @@ export function getMeterCurrent(meterId: string): Promise<SimMeterCurrent | null
 }
 
 export function getMeterHistory(meterId: string): Promise<SimMeterHistory | null> {
+  // No /history endpoint in the simulation REST flow; this 404s and returns null.
   return simGet<SimMeterHistory>(`/meters/${encodeURIComponent(meterId)}/history`)
 }
 
-export function getWeatherStations(): Promise<SimWeatherStationsResponse | null> {
-  return simGet<SimWeatherStationsResponse>('/weather')
+export async function getWeatherStations(): Promise<SimWeatherStationsResponse | null> {
+  const raw = await simGet<RawWeatherSnapshot>('/weather')
+  if (!raw || !raw.site_id) return null
+  return {
+    stations: [{
+      station_id: raw.site_id,
+      latitude: raw.location?.latitude ?? 0,
+      longitude: raw.location?.longitude ?? 0,
+    }],
+    count: 1,
+  }
 }
 
-export function getWeatherCurrent(stationId: string): Promise<SimWeatherCurrent | null> {
-  return simGet<SimWeatherCurrent>(`/weather/${encodeURIComponent(stationId)}/current`)
+export async function getWeatherCurrent(stationId: string): Promise<SimWeatherCurrent | null> {
+  // /weather/:id/current does not exist; pull the single-station snapshot.
+  const raw = await simGet<RawWeatherSnapshot>('/weather')
+  if (!raw || raw.site_id !== stationId) return null
+  return { timestamp: raw.timestamp, conditions: raw.conditions }
 }
 
-export function getWeatherHistory(stationId: string): Promise<SimWeatherHistory | null> {
-  return simGet<SimWeatherHistory>(`/weather/${encodeURIComponent(stationId)}/history`)
+export function getWeatherHistory(_stationId: string): Promise<SimWeatherHistory | null> {
+  return Promise.resolve(null)  // no /history endpoint
 }
 
-export function getPriceCurrent(): Promise<SimPriceCurrent | null> {
-  return simGet<SimPriceCurrent>('/prices/current')
+export async function getPriceCurrent(): Promise<SimPriceCurrent | null> {
+  // The deployed flow exposes /prices (single snapshot), not /prices/current.
+  const raw = await simGet<RawPriceSnapshot>('/prices')
+  if (!raw || !raw.feed_id) return null
+  return {
+    feed_id: raw.feed_id,
+    current: {
+      timestamp: raw.timestamp,
+      price_eur_per_kwh: raw.price_eur_per_kwh,
+      tariff_type: raw.tariff_type,
+    },
+  }
 }
 
 export function getPriceHistory(): Promise<SimPriceHistory | null> {
-  return simGet<SimPriceHistory>('/prices/history')
+  return Promise.resolve(null)  // no /prices/history endpoint
 }
 
-export function getPVSystems(): Promise<SimPVSystemsResponse | null> {
-  return simGet<SimPVSystemsResponse>('/pv')
+export async function getPVSystems(): Promise<SimPVSystemsResponse | null> {
+  const raw = await getRawPVList()
+  if (raw.length === 0) return null
+  return {
+    systems: raw.map((r) => ({
+      system_id: r.system_id,
+      nominal_capacity_kwp: 0,
+    })),
+    count: raw.length,
+  }
 }
 
-export function getPVCurrent(systemId: string): Promise<SimPVCurrent | null> {
-  return simGet<SimPVCurrent>(`/pv/${encodeURIComponent(systemId)}/current`)
+export async function getPVCurrent(systemId: string): Promise<SimPVCurrent | null> {
+  // /pv/:id/current 404s; find the matching item in the raw list.
+  const raw = await getRawPVList()
+  const match = raw.find((r) => r.system_id === systemId)
+  if (!match) return null
+  return {
+    timestamp: match.timestamp,
+    system_id: match.system_id,
+    readings: match.readings,
+  }
 }
 
-export function getPVHistory(systemId: string): Promise<SimPVHistory | null> {
-  return simGet<SimPVHistory>(`/pv/${encodeURIComponent(systemId)}/history`)
+export function getPVHistory(_systemId: string): Promise<SimPVHistory | null> {
+  return Promise.resolve(null)
 }
 
-export function getLoads(): Promise<SimLoadsResponse | null> {
-  return simGet<SimLoadsResponse>('/loads')
+export async function getLoads(): Promise<SimLoadsResponse | null> {
+  const raw = await getRawLoadList()
+  if (raw.length === 0) return null
+  return {
+    devices: raw.map((r) => ({
+      device_id: r.device_id,
+      device_type: r.device_type,
+      rated_power_kw: r.device_power_kw ?? 0,
+      duty_cycle_pct: 0,
+      operating_windows: [],
+    })),
+    count: raw.length,
+  }
 }
 
-export function getLoadCurrent(deviceId: string): Promise<SimLoadCurrent | null> {
-  return simGet<SimLoadCurrent>(`/loads/${encodeURIComponent(deviceId)}/current`)
+export async function getLoadCurrent(deviceId: string): Promise<SimLoadCurrent | null> {
+  // /loads/:id/current 404s; find in raw list.
+  const raw = await getRawLoadList()
+  const match = raw.find((r) => r.device_id === deviceId)
+  if (!match) return null
+  const stateRaw = (match.device_state ?? 'off').toLowerCase()
+  const state: SimLoadCurrent['state'] = stateRaw === 'on' || stateRaw === 'standby' ? stateRaw as SimLoadCurrent['state'] : 'off'
+  return {
+    timestamp: match.timestamp,
+    device_id: match.device_id,
+    state,
+    power_kw: match.device_power_kw ?? 0,
+  }
 }
 
-export function getLoadHistory(deviceId: string): Promise<SimLoadHistory | null> {
-  return simGet<SimLoadHistory>(`/loads/${encodeURIComponent(deviceId)}/history`)
+export function getLoadHistory(_deviceId: string): Promise<SimLoadHistory | null> {
+  return Promise.resolve(null)
 }
 
 export function getSimulationStatus(): Promise<SimSimulationStatus | null> {
@@ -562,4 +680,143 @@ export function pauseSimulation(): Promise<unknown> {
 
 export function resetSimulation(): Promise<unknown> {
   return simPost('/simulation/reset')
+}
+
+// ─── Phase-5 platform endpoints (alerts/data-sources/provenance/integrations/schemas/admin) ──
+
+export interface PlatformAlert {
+  id?: string
+  useCase?: string
+  source?: string
+  category?: string
+  severity?: 'info' | 'warning' | 'critical'
+  timestamp?: string
+  status?: 'open' | 'ack' | 'resolved'
+  message?: string
+}
+export function getAlerts(): Promise<{ alerts: PlatformAlert[]; count: number } | null> {
+  return simGet('/alerts')
+}
+
+export interface DataSourceRow {
+  id: string
+  name: string
+  type: string
+  protocol: string
+  topic: string | null
+  entity_count: number
+  last_event_ts: string | null
+  last_event_age_seconds: number | null
+  status: string
+}
+export function getDataSources(): Promise<{ sources: DataSourceRow[]; count: number; engine_state: string } | null> {
+  return simGet('/data-sources')
+}
+
+export interface ProvenanceTransfer {
+  id?: string
+  contract_id?: string
+  asset_id?: string
+  status?: string
+  created_at?: string
+  updated_at?: string
+}
+export function getProvenanceTransfers(): Promise<{ transfers: ProvenanceTransfer[]; count: number } | null> {
+  return simGet('/provenance/transfers')
+}
+
+export interface ProvenanceInsight {
+  output_id: string
+  insight_type: string | null
+  created_at: string | null
+  user_roles: string | null
+  asset_id: string | null
+  agreement_id: string | null
+  hmac: string | null
+  bytes: number | null
+}
+export function getProvenanceInsights(): Promise<{ insights: ProvenanceInsight[]; count: number } | null> {
+  return simGet('/provenance/insights')
+}
+
+export interface IntegrationServiceHealth {
+  service: string
+  url: string | null
+  status: 'healthy' | 'degraded' | 'unreachable' | 'configured' | 'unconfigured'
+  http_status?: number
+  latency_ms?: number | null
+  error?: string
+  brokers?: string[]
+  broker_count?: number
+}
+export interface IntegrationsHealth {
+  generated_at: string
+  summary: {
+    healthy: number
+    degraded: number
+    unreachable: number
+    configured: number
+    total: number
+  }
+  services: IntegrationServiceHealth[]
+}
+export function getIntegrationsHealth(): Promise<IntegrationsHealth | null> {
+  return simGet('/integrations/health')
+}
+
+export interface SchemaTable {
+  catalog: string
+  schema: string
+  table: string
+}
+export function getSchemas(): Promise<{ tables: SchemaTable[]; count: number } | null> {
+  return simGet('/schemas')
+}
+
+export interface SchemaColumn {
+  name: string
+  type: string
+  nullable: boolean
+  position: number
+}
+export function describeSchemaTable(catalog: string, schema: string, table: string): Promise<{ columns: SchemaColumn[]; count: number } | null> {
+  return simGet(`/schemas/${encodeURIComponent(catalog)}/${encodeURIComponent(schema)}/${encodeURIComponent(table)}`)
+}
+
+export interface AdminUser {
+  id: string
+  username: string
+  firstName: string
+  lastName: string
+  email: string
+  enabled: boolean
+  emailVerified: boolean
+  createdTimestamp: number | null
+  federationLink: string | null
+}
+export function getAdminUsers(): Promise<{ users: AdminUser[]; count: number } | null> {
+  return authedGet('/admin/users')
+}
+
+export interface AdminRole {
+  name: string
+  description: string
+  composite: boolean
+  member_count: number | null
+}
+export function getAdminRoles(): Promise<{ roles: AdminRole[]; count: number } | null> {
+  return authedGet('/admin/roles')
+}
+
+export interface AdminAccessEvent {
+  id: string
+  type: string
+  timestamp: string
+  user_id: string | null
+  ip: string | null
+  result: 'success' | 'failed'
+  details: Record<string, unknown> | null
+}
+export function getAdminAccess(): Promise<{ events: AdminAccessEvent[]; count: number } | null> {
+  return authedGet('/admin/access')
 }

@@ -299,59 +299,9 @@ function fmtTs(iso: string): string {
         />
       </div>
 
-      <!-- Main 24h Chart -->
-      <div class="card card-body">
-        <div class="chart-header">
-          <div class="section-title" style="margin-bottom:0">Power & Generation — Last 24h</div>
-          <div class="chart-toggles">
-            <button
-              class="toggle-btn"
-              :class="{ 'toggle-btn--active': showPrice }"
-              @click="showPrice = !showPrice"
-            >
-              <span class="toggle-btn__dot" style="background:#8b5cf6"></span>
-              Price Overlay
-            </button>
-          </div>
-        </div>
-        <TimeSeriesChart
-          :datasets="mainDatasets"
-          :labels="chartLabels"
-          y-axis-label="Power (kW)"
-          y2-axis-label="Price (€/kWh)"
-          :height="340"
-        />
-      </div>
-
-      <!-- Trend Summary Cards (from real history) -->
-      <div v-if="trendCards.length > 0" class="trend-grid">
-        <div
-          v-for="card in trendCards"
-          :key="card.label"
-          class="trend-card card card-body"
-        >
-          <div class="trend-card__header">
-            <i :class="`pi ${card.icon}`" class="trend-card__icon"></i>
-            <span class="trend-card__label">{{ card.label }}</span>
-          </div>
-          <div class="trend-card__value">{{ card.value }}</div>
-        </div>
-      </div>
-
-      <!-- Price history table -->
-      <div v-if="priceHistory.length > 0" class="card card-body">
-        <div class="section-title" style="margin-bottom:1rem">Recent Price Points</div>
-        <div class="mini-table">
-          <div class="mini-table__row mini-table__row--header">
-            <span>Timestamp</span><span>Price (€/kWh)</span><span>Tariff</span>
-          </div>
-          <div v-for="p in priceHistory.slice(-5).reverse()" :key="p.timestamp" class="mini-table__row">
-            <span class="text-muted">{{ fmtTs(p.timestamp) }}</span>
-            <span class="font-semibold" style="color:#8b5cf6">{{ p.price_eur_per_kwh.toFixed(4) }}</span>
-            <StatusBadge :status="p.tariff_type === 'peak' ? 'warning' : 'info'" size="sm" :show-dot="false" />
-          </div>
-        </div>
-      </div>
+      <!-- 24h chart removed: simulation REST exposes /current readings only,
+           no /history endpoint to feed it. KPIs above are computed from the
+           current snapshot and update on each render. -->
 
     </div>
   </div>

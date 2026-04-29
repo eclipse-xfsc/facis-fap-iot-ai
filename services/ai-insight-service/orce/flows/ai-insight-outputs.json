@@ -1,0 +1,142 @@
+[
+  {
+    "id": "tab_ai_insight_outputs",
+    "type": "tab",
+    "label": "ai-insight-outputs",
+    "disabled": false,
+    "info": "Phase 7 output retrieval endpoint."
+  },
+  {
+    "id": "http_in_output_by_id_v1",
+    "type": "http in",
+    "z": "tab_ai_insight_outputs",
+    "name": "GET /api/ai/outputs/:output_id",
+    "url": "/api/ai/outputs/:output_id",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": {
+      "summary": "Get output by id",
+      "description": "Returns persisted output entity by output_id from in-memory runtime store."
+    },
+    "x": 220,
+    "y": 120,
+    "wires": [
+      [
+        "fn_lookup_output_by_id"
+      ]
+    ]
+  },
+  {
+    "id": "fn_lookup_output_by_id",
+    "type": "function",
+    "z": "tab_ai_insight_outputs",
+    "name": "LookupOutputById",
+    "func": "const outputId = String(msg.req && msg.req.params ? (msg.req.params.output_id || '') : '').trim();\nconst outputsById = global.get('aiInsightOutputsById') || {};\n\nif (!outputId) {\n    msg.statusCode = 404;\n    msg.headers = { 'Content-Type': 'application/json' };\n    msg.payload = { detail: 'Output not found' };\n    return [null, msg];\n}\n\nconst record = outputsById[outputId];\nif (!record || typeof record !== 'object') {\n    msg.statusCode = 404;\n    msg.headers = { 'Content-Type': 'application/json' };\n    msg.payload = { detail: 'Output not found' };\n    return [null, msg];\n}\n\nmsg.statusCode = 200;\nmsg.headers = { 'Content-Type': 'application/json' };\nmsg.payload = JSON.parse(JSON.stringify(record));\nreturn [msg, null];\n",
+    "outputs": 2,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 600,
+    "y": 120,
+    "wires": [
+      [
+        "http_resp_output_200_json"
+      ],
+      [
+        "http_resp_output_404_json"
+      ]
+    ]
+  },
+  {
+    "id": "http_resp_output_200_json",
+    "type": "http response",
+    "z": "tab_ai_insight_outputs",
+    "name": "Output 200 JSON",
+    "statusCode": "",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "x": 960,
+    "y": 100,
+    "wires": []
+  },
+  {
+    "id": "http_resp_output_404_json",
+    "type": "http response",
+    "z": "tab_ai_insight_outputs",
+    "name": "Output 404 JSON",
+    "statusCode": "",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "x": 960,
+    "y": 160,
+    "wires": []
+  },
+  {
+    "id": "http_resp_output_500_json",
+    "type": "http response",
+    "z": "tab_ai_insight_outputs",
+    "name": "Output 500 JSON",
+    "statusCode": "",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "x": 960,
+    "y": 340,
+    "wires": []
+  },
+  {
+    "id": "catch_output_errors",
+    "type": "catch",
+    "z": "tab_ai_insight_outputs",
+    "name": "CatchOutputErrors",
+    "scope": [
+      "fn_lookup_output_by_id"
+    ],
+    "uncaught": false,
+    "x": 220,
+    "y": 340,
+    "wires": [
+      [
+        "fn_output_500_once"
+      ]
+    ]
+  },
+  {
+    "id": "fn_output_500_once",
+    "type": "function",
+    "z": "tab_ai_insight_outputs",
+    "name": "GuardOutput500SingleResponse",
+    "func": "if (!msg.res) {\n    return null;\n}\n\nconst alreadySent = !!(msg.res.headersSent || (msg.res._res && (msg.res._res.headersSent || msg.res._res.writableEnded)));\nif (alreadySent) {\n    return null;\n}\n\nmsg.statusCode = 500;\nmsg.headers = { 'Content-Type': 'application/json' };\nmsg.payload = { detail: 'internal_error' };\nreturn msg;\n",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 620,
+    "y": 340,
+    "wires": [
+      [
+        "http_resp_output_500_json",
+        "debug_output_error"
+      ]
+    ]
+  },
+  {
+    "id": "debug_output_error",
+    "type": "debug",
+    "z": "tab_ai_insight_outputs",
+    "name": "Output error debug",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "true",
+    "targetType": "full",
+    "x": 960,
+    "y": 400,
+    "wires": []
+  }
+]

@@ -1,5 +1,17 @@
 # Operations Runbook
 
+> **⚠ Superseded for production by [`orce-native-runbook.md`](./orce-native-runbook.md) (2026-04-29).**
+>
+> The IONOS production deployment is now ORCE-native: the Vue SPA runs
+> inside the existing ORCE pod via `node-red-contrib-uibuilder`. There is
+> no standalone Deployment / Service / Nginx sidecar in production. The
+> `kubectl cp` workflow described in §3 below has been replaced by an
+> init-container that extracts a ConfigMap-bundled gzipped tarball.
+>
+> Keep this runbook for: local development, the standalone-Nginx variant
+> of the Helm chart, and historical reference of the original deployment
+> design.
+
 **Service:** FACIS FAP IoT & AI — AI Insight UI
 **Audience:** DevOps and platform team
 **Version:** 0.1.0

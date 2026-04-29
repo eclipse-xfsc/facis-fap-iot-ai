@@ -31,15 +31,8 @@ const SEARCH_INDEX: SearchResult[] = [
   { label: 'Energy Overview', description: 'Live energy consumption and PV generation', path: '/use-cases/smart-energy/overview', icon: 'pi-bolt', category: 'Smart Energy' },
   { label: 'Energy Assets', description: 'Meters, PV systems and consumers', path: '/use-cases/smart-energy/assets', icon: 'pi-gauge', category: 'Smart Energy' },
   { label: 'Energy Context', description: 'Price, weather and environmental data', path: '/use-cases/smart-energy/context', icon: 'pi-cloud', category: 'Smart Energy' },
-  { label: 'AI Energy Insights', description: 'AI-generated anomaly detection and recommendations', path: '/use-cases/smart-energy/insights', icon: 'pi-sparkles', category: 'Smart Energy' },
   { label: 'Energy Data Products', description: 'Published energy data products', path: '/use-cases/smart-energy/data-products', icon: 'pi-box', category: 'Smart Energy' },
 
-  // Smart City
-  { label: 'City Overview', description: 'Smart city zones and lighting status', path: '/use-cases/smart-city/overview', icon: 'pi-map', category: 'Smart City' },
-  { label: 'Lighting Zones', description: 'All lighting zones and DALI status', path: '/use-cases/smart-city/zones', icon: 'pi-map-marker', category: 'Smart City' },
-  { label: 'City Context', description: 'Traffic, events and environmental context', path: '/use-cases/smart-city/context', icon: 'pi-cloud', category: 'Smart City' },
-  { label: 'City Analytics', description: 'Lighting efficiency and traffic analytics', path: '/use-cases/smart-city/analytics', icon: 'pi-chart-bar', category: 'Smart City' },
-  { label: 'City Data Products', description: 'Published smart city data products', path: '/use-cases/smart-city/data-products', icon: 'pi-box', category: 'Smart City' },
 
   // Data Sources
   { label: 'All Data Sources', description: 'MQTT, Modbus, REST and OPC-UA sources', path: '/data-sources/all', icon: 'pi-database', category: 'Data Sources' },
@@ -48,16 +41,9 @@ const SEARCH_INDEX: SearchResult[] = [
   { label: 'Raw Messages', description: 'Live raw telemetry message stream', path: '/data-sources/raw', icon: 'pi-code', category: 'Data Sources' },
 
   // Data Products
-  { label: 'All Data Products', description: 'All published data products', path: '/data-products/all', icon: 'pi-box', category: 'Data Products' },
-  { label: 'Energy Products', description: 'Energy domain data products', path: '/data-products/energy', icon: 'pi-bolt', category: 'Data Products' },
-  { label: 'City Products', description: 'Smart city domain data products', path: '/data-products/smart-city', icon: 'pi-building', category: 'Data Products' },
 
   // Analytics
   { label: 'Analytics Overview', description: 'Cross-domain analytics summary', path: '/analytics/overview', icon: 'pi-chart-bar', category: 'Analytics' },
-  { label: 'Trend Analysis', description: 'Time-series trend visualisations', path: '/analytics/trends', icon: 'pi-chart-line', category: 'Analytics' },
-  { label: 'Correlations', description: 'Cross-metric correlation analysis', path: '/analytics/correlations', icon: 'pi-sitemap', category: 'Analytics' },
-  { label: 'Anomaly Detection', description: 'Statistical anomaly alerts', path: '/analytics/anomalies', icon: 'pi-exclamation-triangle', category: 'Analytics' },
-  { label: 'Recommendations', description: 'AI-generated optimisation recommendations', path: '/analytics/recommendations', icon: 'pi-lightbulb', category: 'Analytics' },
 
   // Alerts
   { label: 'All Alerts', description: 'All platform alerts and events', path: '/alerts/all', icon: 'pi-bell', category: 'Alerts' },
@@ -189,11 +175,9 @@ const navItems: NavItem[] = [
   {
     label: 'Use Cases', icon: 'pi-briefcase', children: [
       { label: 'Smart Energy', icon: 'pi-bolt', to: '/use-cases/smart-energy/overview' },
-      { label: 'Smart City', icon: 'pi-map', to: '/use-cases/smart-city/overview' }
     ]
   },
   { label: 'Data Sources', icon: 'pi-database', to: '/data-sources/all' },
-  { label: 'Data Products', icon: 'pi-box', to: '/data-products/all' },
   { label: 'Analytics', icon: 'pi-chart-bar', to: '/analytics/overview' },
   { label: 'Alerts & Events', icon: 'pi-bell', to: '/alerts/all' },
   { label: 'Integrations', icon: 'pi-link', to: '/integrations/overview', roles: ['analyst', 'operator', 'admin'] },

@@ -1,0 +1,41 @@
+[
+  {
+    "id": "subflow_trino_query_energy",
+    "type": "subflow",
+    "name": "RunTrinoQueryEnergy",
+    "info": "Runs hourly + daily_cost + daily_pv Trino statements with nextUri pagination. Runtime definition is loaded from flows/ai-insight-energy-summary.json.",
+    "in": [
+      {
+        "x": 60,
+        "y": 80,
+        "wires": [
+          {
+            "id": "fn_run_trino_energy"
+          }
+        ]
+      }
+    ],
+    "out": [
+      {
+        "x": 520,
+        "y": 60,
+        "wires": [
+          {
+            "id": "fn_run_trino_energy",
+            "port": 0
+          }
+        ]
+      },
+      {
+        "x": 520,
+        "y": 120,
+        "wires": [
+          {
+            "id": "fn_run_trino_energy",
+            "port": 1
+          }
+        ]
+      }
+    ]
+  }
+]

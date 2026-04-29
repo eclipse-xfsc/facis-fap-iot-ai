@@ -347,32 +347,9 @@ function fmtTs(iso: string): string {
           />
         </div>
 
-        <div class="card card-body">
-          <div class="section-title" style="margin-bottom:1rem">Spot Price — Last 24h</div>
-          <TimeSeriesChart
-            :datasets="priceDatasets"
-            :labels="chartLabels"
-            y-axis-label="€/kWh"
-            :height="220"
-          />
-        </div>
-
-        <div class="data-table">
-          <div class="data-table__header">
-            <span>Timestamp</span>
-            <span>Price (€/kWh)</span>
-            <span>Tariff Type</span>
-          </div>
-          <div
-            v-for="rec in displayPriceRecords"
-            :key="rec.timestamp"
-            class="data-table__row"
-          >
-            <span class="text-muted">{{ fmtTs(rec.timestamp) }}</span>
-            <span class="font-semibold" style="color: #8b5cf6">{{ rec.priceEurPerKwh?.toFixed(4) ?? '—' }}</span>
-            <StatusBadge :status="rec.tariffType === 'peak' ? 'warning' : 'info'" size="sm" :show-dot="false" />
-          </div>
-        </div>
+        <!-- 24h price chart + history table removed: simulation REST exposes
+             /prices (current snapshot) only. KPIs above reflect the latest
+             spot price; use AI Assistant for narrated forecast. -->
       </section>
 
       <!-- ── Weather Feed ───────────────────────────────────────────────── -->
@@ -401,37 +378,7 @@ function fmtTs(iso: string): string {
           />
         </div>
 
-        <div class="card card-body">
-          <div class="section-title" style="margin-bottom:1rem">Temperature & Irradiance — Last 24h</div>
-          <TimeSeriesChart
-            :datasets="weatherDatasets"
-            :labels="weatherLabels"
-            y-axis-label="Temperature (°C)"
-            y2-axis-label="Irradiance (W/m²)"
-            :height="220"
-          />
-        </div>
-
-        <div class="data-table">
-          <div class="data-table__header">
-            <span>Timestamp</span>
-            <span>Temp (°C)</span>
-            <span>Irradiance (W/m²)</span>
-            <span>Wind (m/s)</span>
-            <span>Cloud Cover (%)</span>
-          </div>
-          <div
-            v-for="rec in displayWeatherRecords"
-            :key="rec.timestamp"
-            class="data-table__row data-table__row--5"
-          >
-            <span class="text-muted">{{ fmtTs(rec.timestamp) }}</span>
-            <span>{{ rec.temperature_c?.toFixed(1) ?? '—' }}</span>
-            <span>{{ rec.solarIrradiance_w_m2 != null ? Math.round(rec.solarIrradiance_w_m2) : '—' }}</span>
-            <span>{{ rec.windSpeed_ms?.toFixed(1) ?? '—' }}</span>
-            <span>{{ rec.cloudCover_pct != null ? Math.round(rec.cloudCover_pct) + '%' : '—' }}</span>
-          </div>
-        </div>
+        <!-- 24h weather chart + history table removed: /api/v1/weather/:id/history doesn't exist. -->
       </section>
 
       <!-- ── PV Feed ────────────────────────────────────────────────────── -->
@@ -461,34 +408,7 @@ function fmtTs(iso: string): string {
           />
         </div>
 
-        <div class="card card-body">
-          <div class="section-title" style="margin-bottom:1rem">PV Output — Last 24h</div>
-          <TimeSeriesChart
-            :datasets="pvDatasets"
-            :labels="pvLabels"
-            y-axis-label="PV Power (kW)"
-            :height="220"
-          />
-        </div>
-
-        <div class="data-table">
-          <div class="data-table__header">
-            <span>Timestamp</span>
-            <span>PV Power (kW)</span>
-            <span>Irradiance (W/m²)</span>
-            <span>Module Temp (°C)</span>
-          </div>
-          <div
-            v-for="rec in displayPVRecords"
-            :key="rec.timestamp"
-            class="data-table__row data-table__row--4"
-          >
-            <span class="text-muted">{{ fmtTs(rec.timestamp) }}</span>
-            <span class="font-semibold" style="color: #22c55e">{{ rec.pvPower_kW?.toFixed(2) ?? '—' }}</span>
-            <span>{{ rec.irradiance_w_m2 != null ? Math.round(rec.irradiance_w_m2) : '—' }}</span>
-            <span>{{ rec.temperature_c?.toFixed(1) ?? '—' }}</span>
-          </div>
-        </div>
+        <!-- 24h PV chart + history table removed: /api/v1/pv/:id/history doesn't exist. -->
       </section>
 
       <!-- ── Consumer Simulation ────────────────────────────────────────── -->

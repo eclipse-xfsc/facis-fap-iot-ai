@@ -1,0 +1,43 @@
+[
+  {
+    "id": "tab_aiui_data_sources",
+    "type": "tab",
+    "label": "AI Insight UI — Data Sources",
+    "disabled": false,
+    "info": "Exposes GET /api/v1/data-sources which synthesises an observable list of FACIS data sources from the simulation engine's last-known feed state (global.latest_meters / latest_pv / latest_weather / latest_price / latest_consumers) plus static rows for non-simulation channels (SFTP, MQTT, Modbus). Empty entries indicate the simulation has never produced a sample for that feed."
+  },
+  {
+    "id": "node_data_sources_get",
+    "type": "http in",
+    "z": "tab_aiui_data_sources",
+    "name": "GET /api/v1/data-sources",
+    "url": "/api/v1/data-sources",
+    "method": "get",
+    "upload": false,
+    "x": 160,
+    "y": 100,
+    "wires": [["fn_data_sources_build"]]
+  },
+  {
+    "id": "fn_data_sources_build",
+    "type": "function",
+    "z": "tab_aiui_data_sources",
+    "name": "build data-sources response",
+    "func": "const FEED_KEYS = [\n  { key: 'latest_meters',    type: 'meter',         topic: 'facis.iot.meters.v1',         protocol: 'kafka', name: 'Smart Meters' },\n  { key: 'latest_pv',        type: 'pv',            topic: 'facis.iot.pv.v1',             protocol: 'kafka', name: 'PV Systems' },\n  { key: 'latest_weather',   type: 'weather',       topic: 'facis.iot.weather.v1',        protocol: 'kafka', name: 'Weather Stations' },\n  { key: 'latest_price',     type: 'price',         topic: 'facis.iot.prices.v1',         protocol: 'kafka', name: 'Energy Price Feed' },\n  { key: 'latest_consumers', type: 'load',          topic: 'facis.iot.loads.v1',          protocol: 'kafka', name: 'Consumer Devices' }\n];\nconst now = Date.now();\nconst sources = [];\nfor (const f of FEED_KEYS) {\n  const arr = global.get(f.key) || [];\n  // arr is either an Array or an Object keyed by id; normalise to an array.\n  const list = Array.isArray(arr) ? arr : Object.values(arr);\n  let lastTs = null;\n  for (const item of list) {\n    const ts = item && (item.timestamp || item.ts || item.observed_at || null);\n    if (ts && (!lastTs || new Date(ts).getTime() > new Date(lastTs).getTime())) lastTs = ts;\n  }\n  const ageMs = lastTs ? (now - new Date(lastTs).getTime()) : null;\n  let status = 'unknown';\n  if (lastTs) {\n    if (ageMs <= 5 * 60_000) status = 'healthy';\n    else if (ageMs <= 30 * 60_000) status = 'degraded';\n    else status = 'stale';\n  } else if (list.length === 0) {\n    status = 'inactive';\n  }\n  sources.push({\n    id: f.key,\n    name: f.name,\n    type: f.type,\n    protocol: f.protocol,\n    topic: f.topic,\n    entity_count: list.length,\n    last_event_ts: lastTs,\n    last_event_age_seconds: ageMs ? Math.round(ageMs / 1000) : null,\n    status\n  });\n}\n// Static rows for protocols outside the simulation engine.\nconst engine = global.get('engine') || {};\nsources.push({\n  id: 'sftp_dsp_drop',\n  name: 'DSP SFTP Drop',\n  type: 'transfer',\n  protocol: 'sftp',\n  topic: null,\n  entity_count: (global.get('transfers') || []).length || 0,\n  last_event_ts: engine.simulation_time || null,\n  last_event_age_seconds: null,\n  status: 'configured'\n});\nmsg.headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };\nmsg.statusCode = 200;\nmsg.payload = { sources, count: sources.length, engine_state: engine.state || 'unknown' };\nreturn msg;\n",
+    "outputs": 1,
+    "x": 480,
+    "y": 100,
+    "wires": [["node_data_sources_resp"]]
+  },
+  {
+    "id": "node_data_sources_resp",
+    "type": "http response",
+    "z": "tab_aiui_data_sources",
+    "name": "200 JSON",
+    "statusCode": "",
+    "headers": {},
+    "x": 760,
+    "y": 100,
+    "wires": []
+  }
+]

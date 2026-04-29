@@ -26,6 +26,15 @@ export function getRole(): UserRole {
 }
 
 /**
+ * Returns the current Keycloak access token (or null if uninitialised /
+ * expired). Used by `api.ts` to attach `Authorization: Bearer <jwt>` on
+ * routes that the ORCE flows authorize via Keycloak userinfo (e.g. admin proxy).
+ */
+export function getAccessToken(): string | null {
+  return (keycloak && keycloak.token) || null
+}
+
+/**
  * Initialise Keycloak. Called once by the router guard on first navigation.
  *
  * - If user has no KC session → KC redirects to login form (page unloads, code stops here)
@@ -67,8 +76,14 @@ export async function initAuth(): Promise<void> {
     }
     auth.isAuthenticated = true
 
-    // Clean KC callback params from URL — keep just the path for the router
-    window.history.replaceState({}, '', window.location.origin + '/dashboard')
+    // Clean KC callback params from URL — preserve the SPA base path AND the
+    // deep-link the user actually requested (e.g. /aiInsight/admin/users), so
+    // bookmarks and shared URLs survive the Keycloak round-trip.
+    const base = (import.meta.env.BASE_URL || '/').replace(/\/$/, '')
+    const currentPath = window.location.pathname
+    const stripped = currentPath.startsWith(base) ? currentPath.slice(base.length) : currentPath
+    const target = stripped && stripped !== '/' ? stripped : '/dashboard'
+    window.history.replaceState({}, '', `${window.location.origin}${base}${target}`)
   }
 }
 
@@ -76,8 +91,17 @@ export function logout(): void {
   auth.user = null
   auth.isAuthenticated = false
   auth.initDone = false
+  // Wipe any persisted state from older builds (Pinia auth-store legacy keys).
+  try {
+    window.sessionStorage.removeItem('facis_user')
+    window.sessionStorage.removeItem('facis_demo')
+  } catch { /* ignore */ }
   if (keycloak) {
-    keycloak.logout({ redirectUri: window.location.origin })
+    // Post-logout must redirect to a URI inside the registered allow-list
+    // (`https://fap-iotai.facis.cloud/aiInsight/*`). The bare origin is NOT
+    // in that list and Keycloak silently rejects it, leaving the user stuck.
+    const base = (import.meta.env.BASE_URL || '/').replace(/\/$/, '')
+    keycloak.logout({ redirectUri: `${window.location.origin}${base}/` })
   }
 }
 

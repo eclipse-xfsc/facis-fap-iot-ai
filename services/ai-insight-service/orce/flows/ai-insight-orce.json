@@ -1,0 +1,126 @@
+[
+  {
+    "id": "tab_ai_insight_bootstrap",
+    "type": "tab",
+    "label": "ai-insight-health-check",
+    "disabled": false,
+    "info": "Phase 2 health endpoint + health-check nodes for AI Insight ORCE runtime."
+  },
+  {
+    "id": "http_in_health_v1",
+    "type": "http in",
+    "z": "tab_ai_insight_bootstrap",
+    "name": "GET /api/v1/health",
+    "url": "/api/v1/health",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": {
+      "summary": "Health check endpoint",
+      "description": "Returns basic runtime health status for ORCE."
+    },
+    "x": 140,
+    "y": 180,
+    "wires": [
+      [
+        "fn_health_response"
+      ]
+    ]
+  },
+  {
+    "id": "fn_health_response",
+    "type": "function",
+    "z": "tab_ai_insight_bootstrap",
+    "name": "BuildHealthResponse",
+    "func": "msg.statusCode = 200;\nmsg.headers = Object.assign({}, msg.headers, {\n    \"Content-Type\": \"application/json\"\n});\nmsg.payload = {\n    status: \"ok\",\n    service: \"ai-insight-service\"\n};\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 500,
+    "y": 180,
+    "wires": [
+      [
+        "http_out_health_ok"
+      ]
+    ]
+  },
+  {
+    "id": "http_out_health_ok",
+    "type": "http response",
+    "z": "tab_ai_insight_bootstrap",
+    "name": "Health 200 JSON",
+    "statusCode": "",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "x": 900,
+    "y": 180,
+    "wires": []
+  },
+  {
+    "id": "catch_health_errors",
+    "type": "catch",
+    "z": "tab_ai_insight_bootstrap",
+    "name": "Catch HealthErrors",
+    "scope": [
+      "fn_health_response"
+    ],
+    "uncaught": false,
+    "x": 140,
+    "y": 340,
+    "wires": [
+      [
+        "fn_health_error"
+      ]
+    ]
+  },
+  {
+    "id": "fn_health_error",
+    "type": "function",
+    "z": "tab_ai_insight_bootstrap",
+    "name": "BuildHealthError",
+    "func": "const error = msg.error || {};\nmsg.statusCode = 500;\nmsg.headers = Object.assign({}, msg.headers, {\n    \"Content-Type\": \"application/json\"\n});\nmsg.payload = {\n    error: \"internal_error\",\n    endpoint: \"/api/v1/health\",\n    message: error.message || \"unexpected runtime error\"\n};\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 500,
+    "y": 340,
+    "wires": [
+      [
+        "http_out_health_error",
+        "debug_health_error"
+      ]
+    ]
+  },
+  {
+    "id": "http_out_health_error",
+    "type": "http response",
+    "z": "tab_ai_insight_bootstrap",
+    "name": "Health 500 JSON",
+    "statusCode": "",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "x": 900,
+    "y": 300,
+    "wires": []
+  },
+  {
+    "id": "debug_health_error",
+    "type": "debug",
+    "z": "tab_ai_insight_bootstrap",
+    "name": "Health error debug",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "true",
+    "targetType": "full",
+    "x": 900,
+    "y": 420,
+    "wires": []
+  }
+]

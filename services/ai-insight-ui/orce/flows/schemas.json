@@ -1,0 +1,109 @@
+[
+  {
+    "id": "tab_aiui_schemas",
+    "type": "tab",
+    "label": "AI Insight UI \u2014 Schemas",
+    "disabled": false,
+    "info": "Trino schema browser exposed to the UI:\n  GET /api/v1/schemas                          \u2014 list catalogs/schemas/tables in INFORMATION_SCHEMA\n  GET /api/v1/schemas/:catalog/:schema/:table  \u2014 DESCRIBE a single table (column list)\nUses the Trino OIDC token-grant flow with the same env vars the AI Insight backend uses (AI_INSIGHT_TRINO__*)."
+  },
+  {
+    "id": "node_schemas_list",
+    "type": "http in",
+    "z": "tab_aiui_schemas",
+    "name": "GET /api/v1/schemas",
+    "url": "/api/v1/schemas",
+    "method": "get",
+    "x": 160,
+    "y": 100,
+    "wires": [
+      [
+        "fn_schemas_query"
+      ]
+    ]
+  },
+  {
+    "id": "node_schemas_describe",
+    "type": "http in",
+    "z": "tab_aiui_schemas",
+    "name": "GET /api/v1/schemas/:catalog/:schema/:table",
+    "url": "/api/v1/schemas/:catalog/:schema/:table",
+    "method": "get",
+    "x": 240,
+    "y": 200,
+    "wires": [
+      [
+        "fn_schemas_describe"
+      ]
+    ]
+  },
+  {
+    "id": "fn_schemas_query",
+    "type": "function",
+    "z": "tab_aiui_schemas",
+    "name": "list tables (Trino information_schema)",
+    "func": "msg._sql = `SELECT table_catalog, table_schema, table_name FROM \"${env.get('AI_INSIGHT_TRINO__CATALOG') || 'fap-iotai-stackable'}\".information_schema.tables WHERE table_schema NOT IN ('information_schema','sys','pg_catalog') ORDER BY table_catalog, table_schema, table_name LIMIT 1000`;\nmsg._shape = 'list';\nreturn msg;\n",
+    "outputs": 1,
+    "x": 460,
+    "y": 100,
+    "wires": [
+      [
+        "fn_schemas_run"
+      ]
+    ]
+  },
+  {
+    "id": "fn_schemas_describe",
+    "type": "function",
+    "z": "tab_aiui_schemas",
+    "name": "describe table",
+    "func": "const p = msg.req && msg.req.params || {};\nconst IDENT_RE = /^[A-Za-z0-9_.-]{1,64}$/;\nfor (const k of ['catalog','schema','table']) {\n  if (p[k] && !IDENT_RE.test(p[k])) {\n    msg.statusCode = 400;\n    msg.headers = { 'Content-Type': 'application/json' };\n    msg.payload = { detail: `invalid ${k}: must match ^[A-Za-z0-9_.-]{1,64}$` };\n    return msg;\n  }\n}\nconst quote = (v) => '\"' + String(v).replace(/\"/g, '\"\"') + '\"';\nif (!p.catalog || !p.schema || !p.table) {\n  msg.statusCode = 400;\n  msg.headers = { 'Content-Type': 'application/json' };\n  msg.payload = { detail: 'catalog, schema, and table are required' };\n  return msg;\n}\nmsg._sql = `SELECT column_name, data_type, is_nullable, ordinal_position FROM ${quote(p.catalog)}.information_schema.columns WHERE table_schema = '${p.schema.replace(/'/g, \"''\")}' AND table_name = '${p.table.replace(/'/g, \"''\")}' ORDER BY ordinal_position`;\nmsg._shape = 'describe';\nreturn msg;\n",
+    "outputs": 1,
+    "x": 510,
+    "y": 200,
+    "wires": [
+      [
+        "fn_schemas_run"
+      ]
+    ]
+  },
+  {
+    "id": "fn_schemas_run",
+    "type": "function",
+    "z": "tab_aiui_schemas",
+    "name": "fetch Trino token + run query",
+    "func": "// httpsFetch shim \u2014 function-node sandbox lacks global fetch. Uses Node stdlib.\nfunction httpsFetch(urlStr, opts = {}) {\n  return new Promise((resolve, reject) => {\n    let parsed;\n    try { parsed = new urlmod.URL(urlStr); }\n    catch (e) { return reject(new Error('bad URL: ' + urlStr)); }\n    const isHttps = parsed.protocol === 'https:';\n    const lib = isHttps ? https : http;\n    const body = opts.body;\n    const headers = Object.assign({}, opts.headers || {});\n    if (body && !headers['Content-Length']) headers['Content-Length'] = Buffer.byteLength(body);\n    const req = lib.request({\n      method: opts.method || 'GET',\n      hostname: parsed.hostname,\n      port: parsed.port || (isHttps ? 443 : 80),\n      path: parsed.pathname + (parsed.search || ''),\n      headers,\n      timeout: opts.timeoutMs || 5000,\n      rejectUnauthorized: opts.rejectUnauthorized !== false\n    }, (res) => {\n      let data = '';\n      res.on('data', (c) => { data += c; });\n      res.on('end', () => resolve({\n        ok: res.statusCode >= 200 && res.statusCode < 300,\n        status: res.statusCode,\n        headers: res.headers,\n        text: () => Promise.resolve(data),\n        json: () => { try { return Promise.resolve(JSON.parse(data)); } catch (e) { return Promise.reject(e); } }\n      }));\n    });\n    req.on('error', reject);\n    req.on('timeout', () => { req.destroy(new Error('timeout')); });\n    if (body) req.write(body);\n    req.end();\n  });\n}\n\nconst tokenUrl = env.get('AI_INSIGHT_TRINO__OIDC_TOKEN_URL');\nconst clientId = env.get('AI_INSIGHT_TRINO__OIDC_CLIENT_ID');\nconst clientSecret = env.get('AI_INSIGHT_TRINO__OIDC_CLIENT_SECRET');\nconst username = env.get('AI_INSIGHT_TRINO__OIDC_USERNAME');\nconst password = env.get('AI_INSIGHT_TRINO__OIDC_PASSWORD');\nconst scope = env.get('AI_INSIGHT_TRINO__OIDC_SCOPE') || 'openid';\nconst trinoScheme = env.get('AI_INSIGHT_TRINO__HTTP_SCHEME') || 'https';\nconst trinoHost = env.get('AI_INSIGHT_TRINO__HOST');\nconst trinoPort = env.get('AI_INSIGHT_TRINO__PORT') || 8443;\nconst trinoUser = env.get('AI_INSIGHT_TRINO__USER') || 'trino';\n\n// URLSearchParams is not in the function-node sandbox; build the form body manually.\nconst formEncode = (obj) => Object.entries(obj)\n  .filter(([, v]) => v !== undefined && v !== null && v !== '')\n  .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)\n  .join('&');\n\nasync function getToken() {\n  const body = formEncode({ grant_type: 'password', client_id: clientId, client_secret: clientSecret, username, password, scope });\n  const res = await httpsFetch(tokenUrl, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body, /* known: pod's Alpine image lacks LE CA chain */ rejectUnauthorized: false });\n  if (!res.ok) throw new Error(`token grant failed: ${res.status}`);\n  return (await res.json()).access_token;\n}\n\nasync function runQuery(sql, token) {\n  const base = `${trinoScheme}://${trinoHost}:${trinoPort}`;\n  const headers = { 'Authorization': `Bearer ${token}`, 'X-Trino-User': trinoUser, 'Content-Type': 'text/plain' };\n  let res = await httpsFetch(`${base}/v1/statement`, { method: 'POST', headers, body: sql, rejectUnauthorized: false });\n  if (!res.ok) throw new Error(`POST /v1/statement failed: ${res.status}`);\n  let body = await res.json();\n  let columns = body.columns || null;\n  const rows = body.data ? [...body.data] : [];\n  while (body.nextUri) {\n    res = await httpsFetch(body.nextUri, { headers, rejectUnauthorized: false });\n    if (!res.ok) throw new Error(`nextUri failed: ${res.status}`);\n    body = await res.json();\n    if (body.columns) columns = body.columns;\n    if (body.data) rows.push(...body.data);\n  }\n  return { columns, rows };\n}\n\ntry {\n  if (msg.statusCode === 400) return msg;  // already validated\n  if (!msg._sql) { msg.statusCode = 400; msg.headers = { 'Content-Type': 'application/json' }; msg.payload = { detail: 'no SQL prepared' }; return msg; }\n  const token = await getToken();\n  const { columns, rows } = await runQuery(msg._sql, token);\n  let payload;\n  if (msg._shape === 'list') {\n    payload = { tables: rows.map(r => ({ catalog: r[0], schema: r[1], table: r[2] })), count: rows.length };\n  } else {\n    payload = {\n      columns: rows.map(r => ({ name: r[0], type: r[1], nullable: r[2] === 'YES', position: r[3] })),\n      count: rows.length\n    };\n  }\n  msg.statusCode = 200;\n  msg.headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };\n  msg.payload = payload;\n} catch (e) {\n  msg.statusCode = 502;\n  msg.headers = { 'Content-Type': 'application/json' };\n  node.warn('Trino query failed: ' + String(e.message || e));\n  msg.payload = { detail: 'Trino query failed' };\n}\nreturn msg;\n",
+    "outputs": 1,
+    "x": 850,
+    "y": 150,
+    "wires": [
+      [
+        "node_schemas_resp"
+      ]
+    ],
+    "libs": [
+      {
+        "var": "https",
+        "module": "https"
+      },
+      {
+        "var": "http",
+        "module": "http"
+      },
+      {
+        "var": "urlmod",
+        "module": "url"
+      }
+    ]
+  },
+  {
+    "id": "node_schemas_resp",
+    "type": "http response",
+    "z": "tab_aiui_schemas",
+    "name": "JSON",
+    "statusCode": "",
+    "headers": {},
+    "x": 1140,
+    "y": 150,
+    "wires": []
+  }
+]

@@ -9,7 +9,9 @@ const tabs = [
   { label: 'Overview', to: '/use-cases/smart-energy/overview', icon: 'pi-home' },
   { label: 'Assets', to: '/use-cases/smart-energy/assets', icon: 'pi-gauge' },
   { label: 'Context', to: '/use-cases/smart-energy/context', icon: 'pi-cloud' },
-  { label: 'AI Insights', to: '/use-cases/smart-energy/insights', icon: 'pi-sparkles' },
+  // 'AI Insights' tab removed: EnergyInsightsView was 100% history-driven
+  // and no /history endpoints exist. Use the AI Assistant chat or
+  // Analytics → Overview for AI-narrated content.
   { label: 'Data Products', to: '/use-cases/smart-energy/data-products', icon: 'pi-box' }
 ]
 

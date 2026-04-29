@@ -44,3 +44,57 @@ spec:
                 name: orce
                 port:
                   number: 1880
+          # AI Insight: /api/ai/outputs/:id + the OpenAPI surfaces it ships
+          # (`/openapi.json`, `/docs`, `/redoc`) live at bare-root paths on the
+          # ORCE pod, so each needs its own Ingress entry.
+          - path: /api/ai
+            pathType: Prefix
+            backend:
+              service:
+                name: orce
+                port:
+                  number: 1880
+          - path: /openapi.json
+            pathType: Exact
+            backend:
+              service:
+                name: orce
+                port:
+                  number: 1880
+          - path: /docs
+            pathType: Prefix
+            backend:
+              service:
+                name: orce
+                port:
+                  number: 1880
+          - path: /redoc
+            pathType: Prefix
+            backend:
+              service:
+                name: orce
+                port:
+                  number: 1880
+          # AI Insight UI — Vue SPA served by uibuilder at
+          # https://fap-iotai.facis.cloud/aiInsight/. The bundle is
+          # populated onto /data/uibuilder/aiInsight/src by the
+          # init-ai-ui container in init-ai-ui-patch.yaml.
+          - path: /aiInsight
+            pathType: Prefix
+            backend:
+              service:
+                name: orce
+                port:
+                  number: 1880
+          # ORCE editor's theme CSS references /dynamicsrc/font/*.woff
+          # (Manrope, Poppins) at the bare-root path. Node-RED's static
+          # handler maps `/data > /`, so /dynamicsrc/* is served from
+          # /data/dynamicsrc/*. Without this Ingress entry the editor
+          # falls back to the system sans-serif and looks broken.
+          - path: /dynamicsrc
+            pathType: Prefix
+            backend:
+              service:
+                name: orce
+                port:
+                  number: 1880

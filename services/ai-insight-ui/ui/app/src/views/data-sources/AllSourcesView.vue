@@ -6,123 +6,57 @@ import PageHeader from '@/components/common/PageHeader.vue'
 import DataTablePage from '@/components/common/DataTablePage.vue'
 import StatusBadge from '@/components/common/StatusBadge.vue'
 import type { DataSource } from '@/data/types'
-import {
-  getMeters,
-  getMeterCurrent,
-  getPVSystems,
-  getPVCurrent,
-  getWeatherStations,
-  getWeatherCurrent,
-  getLoads,
-  getLoadCurrent
-} from '@/services/api'
+import { getDataSources } from '@/services/api'
 
 const loading = ref(true)
 const error = ref(false)
 const apiAvailable = ref(false)
 const sources = ref<DataSource[]>([])
 
+const STATUS_FROM_FEED: Record<string, DataSource['status']> = {
+  healthy:      'healthy',
+  degraded:     'warning',
+  stale:        'warning',
+  inactive:     'error',
+  configured:   'healthy',
+  unconfigured: 'error',
+  unknown:      'warning',
+}
+
+const QUALITY_FROM_STATUS: Record<DataSource['status'], number> = {
+  healthy: 99.0, warning: 75.0, error: 30.0, info: 50.0,
+}
+
 async function fetchData(): Promise<void> {
   loading.value = true
   error.value = false
-  const [metersResp, pvResp, weatherResp, loadsResp] = await Promise.all([
-      getMeters(),
-      getPVSystems(),
-      getWeatherStations(),
-      getLoads()
-  ])
 
-  if (!metersResp && !pvResp && !weatherResp && !loadsResp) {
+  // Single call to the Phase-5 ORCE-native endpoint that aggregates feeds.
+  const resp = await getDataSources()
+  if (!resp) {
     error.value = true
     loading.value = false
     return
   }
 
-  const built: DataSource[] = []
-
-  if (metersResp?.meters?.length) {
-      // Fetch current readings in parallel
-      const currs = await Promise.all(metersResp.meters.map(m => getMeterCurrent(m.meter_id)))
-      for (let i = 0; i < metersResp.meters.length; i++) {
-        const m = metersResp.meters[i]
-        const cur = currs[i]
-        built.push({
-          id: m.meter_id,
-          name: `${m.type} — ${m.meter_id}`,
-          useCase: 'energy',
-          sourceType: 'Smart Meter',
-          protocol: 'Simulation REST',
-          objectRef: `/api/v1/meters/${m.meter_id}`,
-          lastTimestamp: cur?.timestamp ?? new Date().toISOString(),
-          status: 'healthy',
-          qualityIndicator: 99.0,
-          siteId: 'simulation'
-        })
-      }
-    }
-
-    if (pvResp?.systems?.length) {
-      const pvCurrs = await Promise.all(pvResp.systems.map(s => getPVCurrent(s.system_id)))
-      for (let i = 0; i < pvResp.systems.length; i++) {
-        const s = pvResp.systems[i]
-        const cur = pvCurrs[i]
-        built.push({
-          id: s.system_id,
-          name: `PV System — ${s.system_id}`,
-          useCase: 'energy',
-          sourceType: 'PV Inverter',
-          protocol: 'Simulation REST',
-          objectRef: `/api/v1/pv/${s.system_id}`,
-          lastTimestamp: cur?.timestamp ?? new Date().toISOString(),
-          status: 'healthy',
-          qualityIndicator: 99.0,
-          siteId: 'simulation'
-        })
-      }
-    }
-
-    if (weatherResp?.stations?.length) {
-      const wCurrs = await Promise.all(weatherResp.stations.map(st => getWeatherCurrent(st.station_id)))
-      for (let i = 0; i < weatherResp.stations.length; i++) {
-        const st = weatherResp.stations[i]
-        const cur = wCurrs[i]
-        built.push({
-          id: st.station_id,
-          name: `Weather Station — ${st.station_id}`,
-          useCase: 'energy',
-          sourceType: 'Weather Sensor',
-          protocol: 'Simulation REST',
-          objectRef: `/api/v1/weather/${st.station_id}`,
-          lastTimestamp: cur?.timestamp ?? new Date().toISOString(),
-          status: 'healthy',
-          qualityIndicator: 98.0,
-          siteId: 'simulation'
-        })
-      }
-    }
-
-    if (loadsResp?.devices?.length) {
-      const lCurrs = await Promise.all(loadsResp.devices.map(d => getLoadCurrent(d.device_id)))
-      for (let i = 0; i < loadsResp.devices.length; i++) {
-        const d = loadsResp.devices[i]
-        const cur = lCurrs[i]
-        built.push({
-          id: d.device_id,
-          name: `${d.device_type} — ${d.device_id}`,
-          useCase: 'energy',
-          sourceType: 'Flexible Load',
-          protocol: 'Simulation REST',
-          objectRef: `/api/v1/loads/${d.device_id}`,
-          lastTimestamp: cur?.timestamp ?? new Date().toISOString(),
-          status: cur?.state === 'off' ? 'warning' : 'healthy',
-          qualityIndicator: 97.0,
-          siteId: 'simulation'
-        })
-      }
-    }
-
-  if (built.length > 0) apiAvailable.value = true
-  sources.value = built
+  apiAvailable.value = true
+  sources.value = resp.sources.map((s) => {
+    const status = STATUS_FROM_FEED[s.status] ?? 'warning'
+    return {
+      id: s.id,
+      name: s.name,
+      useCase: s.type === 'meter' || s.type === 'pv' || s.type === 'weather' || s.type === 'price' || s.type === 'load' ? 'energy' : (s.type as DataSource['useCase']),
+      sourceType: s.type,
+      protocol: s.protocol,
+      objectRef: s.topic ?? s.id,
+      lastTimestamp: s.last_event_ts ?? new Date(0).toISOString(),
+      status,
+      qualityIndicator: QUALITY_FROM_STATUS[status],
+      siteId: 'orce-flow',
+      entityCount: s.entity_count,
+      lastEventAgeSeconds: s.last_event_age_seconds,
+    } as DataSource & { entityCount: number; lastEventAgeSeconds: number | null }
+  })
   loading.value = false
 }
 

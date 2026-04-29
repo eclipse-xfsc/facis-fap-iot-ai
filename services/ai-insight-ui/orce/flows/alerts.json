@@ -1,0 +1,84 @@
+[
+  {
+    "id": "tab_aiui_alerts",
+    "type": "tab",
+    "label": "AI Insight UI \u2014 Alerts",
+    "disabled": false,
+    "info": "Exposes GET /api/v1/alerts which reads from global.alerts (a bounded ring buffer written by the simulation observability tab whenever an error is caught). Empty array when no alerts have been published yet."
+  },
+  {
+    "id": "node_alerts_get",
+    "type": "http in",
+    "z": "tab_aiui_alerts",
+    "name": "GET /api/v1/alerts",
+    "url": "/api/v1/alerts",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 140,
+    "y": 100,
+    "wires": [
+      [
+        "fn_alerts_build"
+      ]
+    ]
+  },
+  {
+    "id": "fn_alerts_build",
+    "type": "function",
+    "z": "tab_aiui_alerts",
+    "name": "build alerts response",
+    "func": "const ring = global.get('alerts') || [];\n// Newest first, bounded to 500 (writers should already cap, but we double-clip).\nconst out = [...ring].slice(-500).reverse();\nmsg.headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };\nmsg.statusCode = 200;\nmsg.payload = { alerts: out, count: out.length };\nreturn msg;\n",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "// Ensure the ring exists (does not overwrite if already populated).\nif (!global.get('alerts')) global.set('alerts', []);\n",
+    "finalize": "",
+    "libs": [],
+    "x": 410,
+    "y": 100,
+    "wires": [
+      [
+        "node_alerts_resp"
+      ]
+    ]
+  },
+  {
+    "id": "node_alerts_resp",
+    "type": "http response",
+    "z": "tab_aiui_alerts",
+    "name": "200 JSON",
+    "statusCode": "",
+    "headers": {},
+    "x": 660,
+    "y": 100,
+    "wires": []
+  },
+  {
+    "id": "node_alerts_catch",
+    "type": "catch",
+    "z": "tab_aiui_alerts",
+    "name": "catch all (uncaught flow errors \u2192 alerts ring)",
+    "scope": null,
+    "uncaught": true,
+    "x": 200,
+    "y": 220,
+    "wires": [
+      [
+        "fn_alerts_writer"
+      ]
+    ]
+  },
+  {
+    "id": "fn_alerts_writer",
+    "type": "function",
+    "z": "tab_aiui_alerts",
+    "name": "push to global.alerts (bounded)",
+    "func": "// Append the captured error onto global.alerts (bounded ring of 500).\nconst ring = global.get('alerts') || [];\nconst err = msg.error || {};\nconst entry = {\n  id: 'err-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),\n  source: (err.source && err.source.id) || 'unknown',\n  category: 'runtime',\n  severity: 'warning',\n  timestamp: new Date().toISOString(),\n  status: 'open',\n  message: String((err && err.message) || msg.payload || 'unknown error').slice(0, 500)\n};\nring.push(entry);\nwhile (ring.length > 500) ring.shift();\nglobal.set('alerts', ring);\nreturn null;  // do not propagate\n",
+    "outputs": 1,
+    "x": 540,
+    "y": 220,
+    "wires": [
+      []
+    ]
+  }
+]
