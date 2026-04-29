@@ -1,0 +1,6 @@
+apiVersion: v2
+name: facis-sftp-ingestion
+description: SFTP file ingestion service for the FACIS FAP IoT & AI platform
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

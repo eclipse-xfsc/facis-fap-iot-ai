@@ -1,0 +1,169 @@
+/* ───────────────────────────────────────────────────────────
+   PrimeVue Aura theme overrides — FACIS design tokens
+   ─────────────────────────────────────────────────────────── */
+
+/* Root token overrides */
+:root {
+  --p-primary-color: var(--facis-primary);
+  --p-primary-contrast-color: #ffffff;
+  --p-surface-0: var(--facis-surface);
+  --p-surface-50: var(--facis-bg);
+  --p-surface-100: var(--facis-surface-2);
+  --p-border-radius: var(--facis-radius);
+  --p-content-border-color: var(--facis-border);
+  --p-content-color: var(--facis-text);
+  --p-text-color: var(--facis-text);
+  --p-text-muted-color: var(--facis-text-secondary);
+}
+
+/* ─── Button ─────────────────────────────────────────────── */
+.p-button {
+  border-radius: var(--facis-radius-sm) !important;
+  font-weight: 500 !important;
+}
+
+.p-button.p-button-sm {
+  font-size: 0.786rem !important;
+  padding: 0.375rem 0.75rem !important;
+}
+
+/* ─── Card ───────────────────────────────────────────────── */
+.p-card {
+  border-radius: var(--facis-radius) !important;
+  box-shadow: var(--facis-shadow) !important;
+  border: 1px solid var(--facis-border) !important;
+}
+
+.p-card .p-card-body {
+  padding: 1.25rem !important;
+}
+
+/* ─── DataTable ──────────────────────────────────────────── */
+.p-datatable .p-datatable-thead > tr > th {
+  background: var(--facis-surface-2) !important;
+  color: var(--facis-text-secondary) !important;
+  font-size: 0.786rem !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.04em !important;
+  padding: 0.75rem 1rem !important;
+  border-bottom: 2px solid var(--facis-border) !important;
+}
+
+.p-datatable .p-datatable-tbody > tr > td {
+  padding: 0.75rem 1rem !important;
+  border-bottom: 1px solid var(--facis-border) !important;
+  font-size: 0.875rem !important;
+}
+
+.p-datatable .p-datatable-tbody > tr:hover {
+  background: var(--facis-primary-light) !important;
+  cursor: pointer;
+}
+
+.p-datatable .p-datatable-tbody > tr:last-child > td {
+  border-bottom: none !important;
+}
+
+/* ─── Tag / Badge ────────────────────────────────────────── */
+.p-tag {
+  border-radius: 20px !important;
+  font-size: 0.714rem !important;
+  font-weight: 600 !important;
+  padding: 0.25rem 0.625rem !important;
+}
+
+/* ─── InputText / InputGroup ────────────────────────────── */
+.p-inputtext {
+  border-radius: var(--facis-radius-sm) !important;
+  border-color: var(--facis-border) !important;
+  font-size: 0.875rem !important;
+}
+
+.p-inputtext:focus {
+  border-color: var(--facis-primary) !important;
+  box-shadow: 0 0 0 2px var(--facis-primary-light) !important;
+}
+
+/* ─── Panel / TabView ───────────────────────────────────── */
+.p-tabview .p-tabview-nav {
+  border-bottom: 2px solid var(--facis-border) !important;
+}
+
+.p-tabview .p-tabview-nav li .p-tabview-nav-link {
+  border-radius: var(--facis-radius-sm) var(--facis-radius-sm) 0 0 !important;
+  font-size: 0.875rem !important;
+  font-weight: 500 !important;
+  padding: 0.75rem 1.25rem !important;
+  color: var(--facis-text-secondary) !important;
+}
+
+.p-tabview .p-tabview-nav li.p-highlight .p-tabview-nav-link {
+  color: var(--facis-primary) !important;
+  border-bottom-color: var(--facis-primary) !important;
+}
+
+/* ─── Breadcrumb ────────────────────────────────────────── */
+.p-breadcrumb {
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+}
+
+.p-breadcrumb .p-breadcrumb-list li .p-menuitem-link {
+  font-size: 0.786rem !important;
+}
+
+/* ─── Dialog ─────────────────────────────────────────────── */
+.p-dialog {
+  border-radius: var(--facis-radius-lg) !important;
+  box-shadow: var(--facis-shadow-lg) !important;
+}
+
+.p-dialog .p-dialog-header {
+  padding: 1.25rem 1.5rem !important;
+  border-bottom: 1px solid var(--facis-border) !important;
+}
+
+/* ─── Toast ──────────────────────────────────────────────── */
+.p-toast .p-toast-message {
+  border-radius: var(--facis-radius) !important;
+  box-shadow: var(--facis-shadow-lg) !important;
+}
+
+/* ─── Menu / Sidebar Menu ───────────────────────────────── */
+.p-menu {
+  border: 1px solid var(--facis-border) !important;
+  border-radius: var(--facis-radius) !important;
+  box-shadow: var(--facis-shadow-md) !important;
+}
+
+.p-menu .p-menuitem > .p-menuitem-content .p-menuitem-link {
+  border-radius: var(--facis-radius-sm) !important;
+  padding: 0.625rem 0.875rem !important;
+  font-size: 0.875rem !important;
+}
+
+/* ─── Paginator ──────────────────────────────────────────── */
+.p-paginator {
+  padding: 0.75rem 1rem !important;
+  border-top: 1px solid var(--facis-border) !important;
+}
+
+.p-paginator .p-paginator-page,
+.p-paginator .p-paginator-prev,
+.p-paginator .p-paginator-next {
+  border-radius: var(--facis-radius-sm) !important;
+}
+
+/* ─── Chip ───────────────────────────────────────────────── */
+.p-chip {
+  border-radius: 20px !important;
+  font-size: 0.786rem !important;
+}
+
+/* ─── Tooltip ─────────────────────────────────────────────── */
+.p-tooltip .p-tooltip-text {
+  border-radius: var(--facis-radius-sm) !important;
+  font-size: 0.786rem !important;
+}

@@ -1,0 +1,121 @@
+# =============================================================================
+# FACIS Platform — PrometheusRule Alert Definitions
+# =============================================================================
+#
+# Apply with:
+#   kubectl apply -f infrastructure/monitoring/alerts/facis-alerts.yaml
+#
+# =============================================================================
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: facis-platform-alerts
+  namespace: monitoring
+  labels:
+    app: kube-prometheus-stack
+    release: kube-prometheus
+spec:
+  groups:
+    # -----------------------------------------------------------------
+    # Service Health
+    # -----------------------------------------------------------------
+    - name: facis.service.health
+      rules:
+        - alert: FacisServiceDown
+          expr: up{job=~".*facis.*"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "FACIS service {{ $labels.job }} is down"
+            description: "Service {{ $labels.job }} in namespace {{ $labels.namespace }} has been unreachable for more than 5 minutes."
+
+        - alert: FacisPodRestartLoop
+          expr: increase(kube_pod_container_status_restarts_total{namespace="facis"}[10m]) > 3
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Pod {{ $labels.pod }} is restart-looping"
+            description: "Pod {{ $labels.pod }} has restarted {{ $value }} times in the last 10 minutes."
+
+    # -----------------------------------------------------------------
+    # AI Insight Service
+    # -----------------------------------------------------------------
+    - name: facis.ai-insight
+      rules:
+        - alert: FacisLLMHighErrorRate
+          expr: |
+            rate(facis_llm_calls_total{status="error"}[15m])
+            / on() rate(facis_llm_calls_total[15m])
+            > 0.1
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "LLM error rate exceeds 10%"
+            description: "The LLM API error rate has been above 10% for the last 5 minutes. Current rate: {{ $value | humanizePercentage }}."
+
+        - alert: FacisLLMHighLatency
+          expr: histogram_quantile(0.95, rate(facis_llm_latency_seconds_bucket[15m])) > 30
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "LLM p95 latency exceeds 30 seconds"
+            description: "The 95th percentile LLM response time is {{ $value | humanizeDuration }}."
+
+        - alert: FacisHighPolicyDenials
+          expr: rate(facis_policy_denials_total[15m]) > 1
+          for: 10m
+          labels:
+            severity: info
+          annotations:
+            summary: "Elevated policy denial rate"
+            description: "Policy denials are occurring at {{ $value | humanize }} per second."
+
+        - alert: FacisRateLimitExceeded
+          expr: increase(facis_rate_limit_exceeded_total[5m]) > 10
+          for: 1m
+          labels:
+            severity: info
+          annotations:
+            summary: "Rate limit exceeded frequently"
+            description: "Rate limit has been exceeded {{ $value }} times in the last 5 minutes."
+
+    # -----------------------------------------------------------------
+    # Simulation Service
+    # -----------------------------------------------------------------
+    - name: facis.simulation
+      rules:
+        - alert: FacisSimulationStalled
+          expr: rate(facis_sim_ticks_total[10m]) == 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Simulation service has stopped generating ticks"
+            description: "No simulation ticks have been generated in the last 10 minutes."
+
+        - alert: FacisKafkaPublishErrors
+          expr: rate(facis_kafka_messages_sent_total{status="error"}[5m]) > 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Kafka publish errors detected"
+            description: "The simulation service is failing to publish messages to Kafka."
+
+    # -----------------------------------------------------------------
+    # Batch Jobs
+    # -----------------------------------------------------------------
+    - name: facis.batch
+      rules:
+        - alert: FacisMaterializerJobFailed
+          expr: kube_job_status_failed{job_name=~"facis-.*-materializer.*"} > 0
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Materializer job {{ $labels.job_name }} failed"
+            description: "Batch materialization job {{ $labels.job_name }} has failed."

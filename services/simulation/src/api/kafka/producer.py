@@ -123,10 +123,14 @@ class KafkaPublisher:
                 config["security.protocol"] = "SSL"
                 if self._ssl_ca_location:
                     config["ssl.ca.location"] = self._ssl_ca_location
+                else:
+                    # No CA cert provided — skip verification (self-signed certs)
+                    config["enable.ssl.certificate.verification"] = False
                 if self._ssl_certificate_location:
                     config["ssl.certificate.location"] = self._ssl_certificate_location
                 if self._ssl_key_location:
                     config["ssl.key.location"] = self._ssl_key_location
+                config["ssl.endpoint.identification.algorithm"] = "none"
                 logger.info("Kafka producer configured with TLS/SSL")
 
             self._producer = Producer(config)

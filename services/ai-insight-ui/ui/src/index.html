@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>FACIS AI Insight Dashboard</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Figtree:ital,wght@0,300..900;1,300..900&family=Fredoka:wght@300..700&display=swap" rel="stylesheet">
+
+    <link type="text/css" rel="stylesheet" href="./index.css" media="all">
+
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.11.0/lottie.min.js"></script>
+
+    <!-- Keycloak OIDC adapter (CDN-hosted, compatible with Keycloak 21+) -->
+    <script src="https://cdn.jsdelivr.net/npm/keycloak-js@25/dist/keycloak.js"></script>
+</head>
+
+<body>
+    <!-- Login overlay shown while Keycloak authenticates -->
+    <div id="login-overlay" style="display:flex; align-items:center; justify-content:center; height:100vh; background:#E1E7EF; font-family:'Figtree',sans-serif;">
+        <div style="text-align:center; background:white; padding:48px; border-radius:20px; box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+            <img src="./Facis-logo.svg" alt="FACIS" style="height:48px; margin-bottom:16px;">
+            <h2 style="color:#1e293b; margin:0 0 8px 0; font-family:'Fredoka',sans-serif;">AI Insight Dashboard</h2>
+            <p style="color:#64748b; margin:0;">Authenticating with FACIS Identity...</p>
+            <div style="margin-top:24px;">
+                <div class="typing-indicator" style="display:inline-flex; gap:4px;">
+                    <span style="width:8px;height:8px;background:#005fff;border-radius:50%;animation:typingBounce 1s infinite;"></span>
+                    <span style="width:8px;height:8px;background:#005fff;border-radius:50%;animation:typingBounce 1s infinite 0.2s;"></span>
+                    <span style="width:8px;height:8px;background:#005fff;border-radius:50%;animation:typingBounce 1s infinite 0.4s;"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="app" v-cloak>
+
+        <!-- =========================================================
+             HEADER BAR (fixed top)
+             ========================================================= -->
+        <header class="app-header">
+            <div class="header-left">
+                <img src="./Facis-logo.svg" class="header-logo" alt="FACIS Logo">
+                <span class="header-title">AI Insight Dashboard</span>
+            </div>
+            <div class="header-right">
+                <div class="llm-selector-wrapper">
+                    <label class="llm-label">Model</label>
+                    <select v-model="selectedLLM" class="llm-selector">
+                        <option v-for="llm in llmProviders" :key="llm.id" :value="llm.id">
+                            {{ llm.label }}
+                        </option>
+                    </select>
+                </div>
+                <div class="user-avatar" :title="userName" @click="logout">
+                    <span>{{ userInitial }}</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- =========================================================
+             MAIN CONTENT (below fixed header)
+             ========================================================= -->
+        <main class="app-main">
+
+            <!-- KPI STRIP -->
+            <section class="kpi-strip">
+                <div v-for="(kpi, key) in kpiData" :key="key" class="kpi-card" :class="'kpi-' + key">
+                    <div class="kpi-icon-area">
+                        <span class="kpi-icon">{{ kpi.icon }}</span>
+                    </div>
+                    <div class="kpi-body">
+                        <div class="kpi-value-row">
+                            <span class="kpi-value">{{ kpi.value }}</span>
+                            <span class="kpi-unit">{{ kpi.unit }}</span>
+                        </div>
+                        <div class="kpi-label">{{ kpi.label }}</div>
+                    </div>
+                    <div class="kpi-trend" :class="'trend-' + kpi.trend">
+                        <span v-if="kpi.trend === 'up'" class="trend-arrow">&#8679;</span>
+                        <span v-else-if="kpi.trend === 'down'" class="trend-arrow">&#8681;</span>
+                        <span v-else class="trend-arrow">&#8213;</span>
+                        <span class="trend-value">{{ kpi.trendValue }}</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- AI PROMPT PANEL -->
+            <section class="ai-prompt-panel">
+
+                <!-- Smart Prompts Row -->
+                <div class="smart-prompts-wrapper">
+                    <div class="smart-prompts">
+                        <button v-for="sp in smartPrompts" :key="sp.id"
+                                class="smart-prompt-btn"
+                                @click="handleSmartPrompt(sp)"
+                                :disabled="isTyping">
+                            <span class="sp-icon">{{ sp.icon }}</span>
+                            <span class="sp-label">{{ sp.label }}</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Conversation Area -->
+                <div class="conversation-area" ref="conversationArea">
+
+                    <div class="welcome-message" v-if="messages.length === 0">
+                        <div class="welcome-icon">&#129302;</div>
+                        <h2>Ask me anything about your energy &amp; city data</h2>
+                        <p>Use the smart prompts above or type your own question below</p>
+                    </div>
+
+                    <div v-for="msg in messages" :key="msg.id" class="message" :class="msg.type">
+                        <div class="message-avatar">
+                            <span v-if="msg.type === 'ai'">AI</span>
+                            <span v-else>You</span>
+                        </div>
+                        <div class="message-body">
+                            <div v-if="msg.type === 'ai' && msg.structured" class="insight-card">
+                                <div class="insight-summary" v-html="renderMarkdown(msg.content)"></div>
+                                <div v-if="msg.keyFindings && msg.keyFindings.length" class="insight-findings">
+                                    <h4>Key Findings</h4>
+                                    <ul>
+                                        <li v-for="(finding, i) in msg.keyFindings" :key="i">{{ finding }}</li>
+                                    </ul>
+                                </div>
+                                <div v-if="msg.recommendations && msg.recommendations.length" class="insight-recommendations">
+                                    <h4>Recommendations</h4>
+                                    <ul>
+                                        <li v-for="(rec, i) in msg.recommendations" :key="i">{{ rec }}</li>
+                                    </ul>
+                                </div>
+                                <div v-if="msg.metadata" class="insight-meta">
+                                    <span class="meta-badge">{{ msg.metadata.llm_model || 'rule-based' }}</span>
+                                    <span class="meta-badge">{{ msg.metadata.insight_type }}</span>
+                                    <span class="meta-time">{{ formatTimestamp(msg.metadata.timestamp) }}</span>
+                                </div>
+                            </div>
+                            <div v-else class="message-text" v-html="renderMarkdown(msg.content)"></div>
+                            <div class="message-time">{{ formatTime(msg.timestamp) }}</div>
+                        </div>
+                    </div>
+
+                    <!-- Typing indicator -->
+                    <div v-if="isTyping" class="message ai typing">
+                        <div class="message-avatar"><span>AI</span></div>
+                        <div class="message-body">
+                            <div class="typing-indicator">
+                                <span></span><span></span><span></span>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- Input Bar -->
+                <div class="input-bar">
+                    <div class="time-range-selector">
+                        <button v-for="tr in timeRanges" :key="tr.value"
+                                :class="['tr-btn', { active: timeRange.preset === tr.value }]"
+                                @click="setTimeRange(tr.value)">
+                            {{ tr.label }}
+                        </button>
+                    </div>
+                    <div class="input-row">
+                        <input type="text"
+                               v-model="userInput"
+                               @keyup.enter="sendFreeformQuestion"
+                               placeholder="Ask about your energy data..."
+                               :disabled="isTyping"
+                               class="prompt-input">
+                        <button @click="sendFreeformQuestion"
+                                :disabled="isTyping || !userInput.trim()"
+                                class="send-btn"
+                                aria-label="Send message">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+            </section>
+
+            <!-- CHART PANEL (collapsible) -->
+            <section class="chart-panel" v-show="showChartPanel">
+                <div class="chart-header">
+                    <h3>Data Visualization</h3>
+                    <div class="chart-tabs">
+                        <button v-for="ct in chartTypes" :key="ct.id"
+                                :class="['chart-tab', { active: activeChart === ct.id }]"
+                                @click="switchChart(ct.id)">
+                            {{ ct.label }}
+                        </button>
+                    </div>
+                    <button class="chart-close" @click="showChartPanel = false" aria-label="Close chart panel">&times;</button>
+                </div>
+                <div class="chart-container">
+                    <canvas ref="chartCanvas" height="280"></canvas>
+                </div>
+            </section>
+
+        </main>
+
+        <!-- ERROR TOAST (fixed bottom-right) -->
+        <div v-if="errorMessage" class="error-toast" @click="errorMessage = ''" role="alert">
+            <span class="error-toast-icon">&#9888;</span>
+            <span>{{ errorMessage }}</span>
+        </div>
+
+
+    </div><!-- /#app -->
+
+    <script src="../uibuilder/uibuilder.iife.min.js"></script>
+    <script src="./index.js"></script>
+</body>
+
+</html>

@@ -18,7 +18,7 @@ Deterministic means that for a given random seed and start time, the simulation 
 
 ```bash
 # Navigate to the simulation service root
-cd FAP/IOT\ \&\ AI\ over\ Trusted\ Zones/implementation/simulation-service
+cd services/simulation
 
 # Install the package in editable mode
 pip install -e .

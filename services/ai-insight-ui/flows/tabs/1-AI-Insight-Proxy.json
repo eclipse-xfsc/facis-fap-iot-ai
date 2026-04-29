@@ -1,0 +1,80 @@
+[
+    {
+        "id": "tab-insight-proxy",
+        "type": "tab",
+        "label": "AI Insight Proxy",
+        "disabled": false,
+        "info": "Proxies requests to the AI Insight Service (FastAPI)"
+    },
+    {
+        "id": "link-from-ui-insight",
+        "type": "link in",
+        "z": "tab-insight-proxy",
+        "name": "← From UI (Insight)",
+        "links": ["link-to-insight-proxy"],
+        "x": 115,
+        "y": 160,
+        "wires": [["build-insight-request"]]
+    },
+    {
+        "id": "build-insight-request",
+        "type": "function",
+        "z": "tab-insight-proxy",
+        "name": "Build HTTP Request",
+        "func": "const baseUrl = env.get('AI_INSIGHT_BASE_URL') || 'http://ai-insight-service:8080';\nconst action = msg.data?.recordDetails?.action;\nconst params = msg.data?.recordDetails?.params || {};\n\n// Store original data for response routing\nmsg.originalData = msg.data;\n\nif (action === 'load-latest') {\n    msg.url = baseUrl + '/api/v1/insights/latest';\n    msg.method = 'GET';\n    msg.payload = '';\n} else if (action === 'energy-summary') {\n    msg.url = baseUrl + '/api/v1/insights/energy-summary';\n    msg.method = 'POST';\n    msg.payload = {\n        start_ts: params.start_ts,\n        end_ts: params.end_ts,\n        timezone: params.timezone || 'UTC',\n        forecast_alpha: 0.6,\n        trend_epsilon: 0.02,\n        daily_overview_strategy: 'fallback_hourly',\n        include_data: true\n    };\n} else if (action === 'anomaly-report') {\n    msg.url = baseUrl + '/api/v1/insights/anomaly-report';\n    msg.method = 'POST';\n    msg.payload = {\n        start_ts: params.start_ts,\n        end_ts: params.end_ts,\n        timezone: params.timezone || 'UTC',\n        robust_z_threshold: 3.5,\n        include_data: true\n    };\n} else if (action === 'city-status') {\n    msg.url = baseUrl + '/api/v1/insights/city-status';\n    msg.method = 'POST';\n    msg.payload = {\n        start_ts: params.start_ts,\n        end_ts: params.end_ts,\n        timezone: params.timezone || 'UTC',\n        include_data: true\n    };\n} else {\n    node.warn('Unknown action: ' + action);\n    return null;\n}\n\nmsg.headers = {\n    'Content-Type': 'application/json',\n    'x-agreement-id': 'agreement-ui',\n    'x-asset-id': 'asset-ui',\n    'x-user-roles': 'ai_insight_consumer'\n};\n\nreturn msg;\n",
+        "outputs": 1,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 370,
+        "y": 160,
+        "wires": [["http-insight-request"]]
+    },
+    {
+        "id": "http-insight-request",
+        "type": "http request",
+        "z": "tab-insight-proxy",
+        "name": "AI Insight Service",
+        "method": "use",
+        "ret": "obj",
+        "paytoqs": "ignore",
+        "url": "",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": true,
+        "headers": [],
+        "x": 610,
+        "y": 160,
+        "wires": [["format-insight-response"]]
+    },
+    {
+        "id": "format-insight-response",
+        "type": "function",
+        "z": "tab-insight-proxy",
+        "name": "Format Response for UI",
+        "func": "const statusCode = msg.statusCode;\nconst originalAction = msg.originalData?.recordDetails?.action;\n\n// Handle errors\nif (statusCode >= 400 || !msg.payload) {\n    msg.data = {\n        topic: 'error',\n        recordDetails: {\n            message: msg.payload?.detail || 'AI Insight Service returned error ' + statusCode,\n            action: originalAction\n        }\n    };\n    msg._socketId = msg.originalData?.session?._socketId;\n    return msg;\n}\n\n// Handle latest insights response\nif (originalAction === 'load-latest') {\n    msg.data = {\n        topic: 'latest.response',\n        recordDetails: {\n            latest: msg.payload.latest || msg.payload\n        }\n    };\n    msg._socketId = msg.originalData?.session?._socketId;\n    return msg;\n}\n\n// Handle standard insight responses (InsightResponse schema)\nconst response = msg.payload;\nmsg.data = {\n    topic: 'insight.response',\n    recordDetails: {\n        action: originalAction,\n        insight: {\n            type: response.insight_type,\n            summary: response.summary,\n            keyFindings: response.key_findings,\n            recommendations: response.recommendations,\n            metadata: response.metadata,\n            data: response.data || null\n        }\n    }\n};\nmsg._socketId = msg.originalData?.session?._socketId;\nreturn msg;\n",
+        "outputs": 1,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 840,
+        "y": 160,
+        "wires": [["link-response-insight"]]
+    },
+    {
+        "id": "link-response-insight",
+        "type": "link out",
+        "z": "tab-insight-proxy",
+        "name": "→ Response to UI",
+        "mode": "link",
+        "links": ["link-from-response"],
+        "x": 1055,
+        "y": 160,
+        "wires": []
+    }
+]

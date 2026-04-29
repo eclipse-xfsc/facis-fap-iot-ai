@@ -1,0 +1,29 @@
+{{/*
+ConfigMap: Node-RED flows JSON
+──────────────────────────────
+Holds the ai-insight-ui flows.full.json that must be imported into ORCE
+(Node-RED) via the admin API or by mounting into the ORCE /data volume.
+
+Content resolution order (first non-empty wins):
+  1. .Values.flows.inlineContent   — paste JSON inline or supply with --set-file
+  2. .Files.Get .Values.flows.filePath — bundle flows.full.json inside the chart
+                                         at files/flows.full.json
+  3. Placeholder "[]"              — rendered when neither source is available;
+                                     patch the ConfigMap manually after install
+                                     (see NOTES.txt).
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "facis-ai-insight-ui.flowsConfigMapName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "facis-ai-insight-ui.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+    facis.io/import-into: {{ .Values.orce.deploymentName | quote }}
+    facis.io/import-via: "POST {{ .Values.orce.adminUrl }}/flows"
+    {{- include "facis-ai-insight-ui.annotations" . | nindent 4 }}
+data:
+  flows.json: |
+    {{- include "facis-ai-insight-ui.flowsContent" . | nindent 4 }}

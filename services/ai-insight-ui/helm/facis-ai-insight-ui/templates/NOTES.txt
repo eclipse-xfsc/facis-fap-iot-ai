@@ -1,0 +1,135 @@
+FACIS AI Insight UI has been deployed!
+
+Release:   {{ .Release.Name }}
+Namespace: {{ .Release.Namespace }}
+Version:   {{ .Chart.AppVersion }}
+
+This chart creates ConfigMaps and Secrets only.
+The UI runs inside the existing ORCE (Node-RED) deployment.
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  STEP 1 — Import flows into ORCE via the admin API                         ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+Option A — kubectl port-forward (works without Ingress):
+
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ .Values.orce.serviceName }} 1880:{{ .Values.orce.port }} &
+
+  kubectl get configmap {{ include "facis-ai-insight-ui.flowsConfigMapName" . }} \
+    -n {{ .Release.Namespace }} \
+    -o jsonpath='{.data.flows\.json}' | \
+    curl -s -X POST http://localhost:1880/flows \
+         -H 'Content-Type: application/json' \
+         -H 'Node-RED-Deployment-Type: full' \
+         -d @-
+
+Option B — exec into the ORCE pod (no network access required):
+
+  ORCE_POD=$(kubectl get pods -n {{ .Release.Namespace }} \
+    -l app={{ .Values.orce.deploymentName }} \
+    -o jsonpath='{.items[0].metadata.name}')
+
+  kubectl exec -n {{ .Release.Namespace }} $ORCE_POD -- \
+    sh -c 'curl -s -X POST http://localhost:1880/flows \
+           -H "Content-Type: application/json" \
+           -H "Node-RED-Deployment-Type: full" \
+           -d "$(cat /data/flows.json)"'
+
+  # Or copy the flows file into the pod first:
+  kubectl cp flows/flows.full.json \
+    {{ .Release.Namespace }}/$ORCE_POD:/tmp/flows.full.json
+  kubectl exec -n {{ .Release.Namespace }} $ORCE_POD -- \
+    curl -s -X POST http://localhost:1880/flows \
+         -H "Content-Type: application/json" \
+         -H "Node-RED-Deployment-Type: full" \
+         -d @/tmp/flows.full.json
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  STEP 2 — Mount UI static files into ORCE                                  ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+Add the following volume and volumeMount to the ORCE Deployment
+(kubectl edit deployment {{ .Values.orce.deploymentName }} -n {{ .Release.Namespace }}):
+
+  volumes:
+    - name: ai-insight-ui-files
+      configMap:
+        name: {{ include "facis-ai-insight-ui.uiFilesConfigMapName" . }}
+
+  volumeMounts:            # inside the orce container
+    - name: ai-insight-ui-files
+      mountPath: /data/uibuilder/ai-insight/src
+      readOnly: true
+
+After saving, ORCE will restart and serve the Vue.js dashboard at:
+  http://<orce-host>:{{ .Values.orce.port }}/ai-insight/
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  STEP 3 — Inject LLM environment variables into ORCE                       ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+{{- if .Values.llmSecret.create }}
+
+The Secret '{{ include "facis-ai-insight-ui.llmSecretName" . }}' has been created.
+Apply the following patch to add the required env vars to ORCE:
+
+  kubectl patch deployment {{ .Values.orce.deploymentName }} -n {{ .Release.Namespace }} \
+    --type=json -p='[
+      {"op":"add","path":"/spec/template/spec/containers/0/env/-","value":{"name":"AI_INSIGHT_BASE_URL","value":"{{ .Values.aiInsight.serviceUrl }}"}},
+      {"op":"add","path":"/spec/template/spec/containers/0/env/-","value":{"name":"FACIS_OPENAI_API_KEY","valueFrom":{"secretKeyRef":{"name":"{{ include "facis-ai-insight-ui.llmSecretName" . }}","key":"openai-api-key"}}}},
+      {"op":"add","path":"/spec/template/spec/containers/0/env/-","value":{"name":"FACIS_OPENAI_MODEL","value":"{{ .Values.llm.openaiModel }}"}},
+      {"op":"add","path":"/spec/template/spec/containers/0/env/-","value":{"name":"FACIS_ANTHROPIC_API_KEY","valueFrom":{"secretKeyRef":{"name":"{{ include "facis-ai-insight-ui.llmSecretName" . }}","key":"anthropic-api-key"}}}},
+      {"op":"add","path":"/spec/template/spec/containers/0/env/-","value":{"name":"FACIS_ANTHROPIC_MODEL","value":"{{ .Values.llm.anthropicModel }}"}},
+      {"op":"add","path":"/spec/template/spec/containers/0/env/-","value":{"name":"FACIS_CUSTOM_LLM_URL","value":"{{ .Values.llm.customLlmUrl }}"}},
+      {"op":"add","path":"/spec/template/spec/containers/0/env/-","value":{"name":"FACIS_CUSTOM_LLM_KEY","valueFrom":{"secretKeyRef":{"name":"{{ include "facis-ai-insight-ui.llmSecretName" . }}","key":"custom-llm-key","optional":true}}}},
+      {"op":"add","path":"/spec/template/spec/containers/0/env/-","value":{"name":"FACIS_CUSTOM_LLM_MODEL","value":"{{ .Values.llm.customLlmModel }}"}},
+      {"op":"add","path":"/spec/template/spec/containers/0/env/-","value":{"name":"FACIS_TRINO_HOST","value":"{{ .Values.trino.host }}"}},
+      {"op":"add","path":"/spec/template/spec/containers/0/env/-","value":{"name":"FACIS_TRINO_PORT","value":"{{ .Values.trino.port }}"}},
+      {"op":"add","path":"/spec/template/spec/containers/0/env/-","value":{"name":"FACIS_TRINO_CATALOG","value":"{{ .Values.trino.catalog }}"}},
+      {"op":"add","path":"/spec/template/spec/containers/0/env/-","value":{"name":"FACIS_TRINO_SCHEMA","value":"{{ .Values.trino.schema }}"}}
+    ]'
+
+  To set LLM keys after installation:
+    kubectl create secret generic {{ include "facis-ai-insight-ui.llmSecretName" . }} \
+      --from-literal=openai-api-key=sk-... \
+      --from-literal=anthropic-api-key=sk-ant-... \
+      -n {{ .Release.Namespace }} \
+      --dry-run=client -o yaml | kubectl apply -f -
+
+{{- else }}
+
+  llmSecret.create is false — the Secret '{{ include "facis-ai-insight-ui.llmSecretName" . }}' was NOT created.
+  Ensure it exists in namespace {{ .Release.Namespace }} before ORCE restarts.
+
+{{- end }}
+
+{{- if .Values.keycloak.enabled }}
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  STEP 4 — Keycloak OIDC (enabled)                                          ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+  Add the following env vars to the ORCE patch above:
+    KEYCLOAK_REALM_URL   = {{ .Values.keycloak.realmUrl }}
+    KEYCLOAK_CLIENT_ID   = {{ .Values.keycloak.clientId }}
+
+{{- end }}
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  VERIFY                                                                    ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+  # Check that ConfigMaps exist
+  kubectl get configmap \
+    {{ include "facis-ai-insight-ui.flowsConfigMapName" . }} \
+    {{ include "facis-ai-insight-ui.uiFilesConfigMapName" . }} \
+    -n {{ .Release.Namespace }}
+
+  # Check ORCE pod is Running
+  kubectl get pods -n {{ .Release.Namespace }} -l app={{ .Values.orce.deploymentName }}
+
+  # Tail ORCE logs for flow import confirmation
+  kubectl logs -n {{ .Release.Namespace }} \
+    -l app={{ .Values.orce.deploymentName }} --tail=50 -f
+
+  # Access the dashboard (after port-forward or Ingress)
+  open http://localhost:{{ .Values.orce.port }}/ai-insight/

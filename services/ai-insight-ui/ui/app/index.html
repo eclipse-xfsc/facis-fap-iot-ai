@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FACIS IoT &amp; AI Platform</title>
+  <link rel="icon" type="image/svg+xml" href="/facis-logo.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div id="app">
+    <!-- Static loading screen — visible instantly while JS loads. Vue replaces this on mount. -->
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#f8fafc;font-family:Inter,system-ui,sans-serif;">
+      <img src="/facis-logo.svg" alt="FACIS" style="width:120px;opacity:0.8;" />
+      <p style="margin-top:1rem;color:#64748b;font-size:0.85rem;">Loading platform...</p>
+      <div style="width:28px;height:28px;border:3px solid #e2e8f0;border-top-color:#005fff;border-radius:50%;animation:facis-spin .8s linear infinite;margin-top:0.75rem;"></div>
+    </div>
+    <style>@keyframes facis-spin{to{transform:rotate(360deg)}}</style>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

@@ -3,7 +3,7 @@
 ## Local Development Setup
 
 ```bash
-cd FAP/IOT\ \&\ AI\ over\ Trusted\ Zones/implementation/ai-insight-service
+cd services/ai-insight-service
 cp .env.example .env
 pip install -e ".[dev]"
 python -m src.main
@@ -19,7 +19,7 @@ Service endpoints:
 ## Docker Compose Setup
 
 ```bash
-cd FAP/IOT\ \&\ AI\ over\ Trusted\ Zones/implementation/ai-insight-service
+cd services/ai-insight-service
 cp .env.example .env
 docker compose up --build
 ```

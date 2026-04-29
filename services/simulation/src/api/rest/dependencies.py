@@ -394,6 +394,34 @@ class SimulationState:
         """List all weather station IDs."""
         return list(self._weather_stations.keys())
 
+    def list_streetlights(self) -> list[str]:
+        """List all streetlight IDs."""
+        return list(self._streetlight_simulators.keys())
+
+    def get_streetlight(self, light_id: str) -> StreetlightSimulator | None:
+        """Get a streetlight simulator by ID."""
+        return self._streetlight_simulators.get(light_id)
+
+    def list_traffic_zones(self) -> list[str]:
+        """List all traffic zone IDs."""
+        return list(self._traffic_simulators.keys())
+
+    def get_traffic(self, zone_id: str) -> TrafficSimulator | None:
+        """Get a traffic simulator by zone ID."""
+        return self._traffic_simulators.get(zone_id)
+
+    def list_event_zones(self) -> list[str]:
+        """List all event zone IDs."""
+        return list(self._event_simulators.keys())
+
+    def get_event(self, zone_id: str) -> CityEventSimulator | None:
+        """Get a city event simulator by zone ID."""
+        return self._event_simulators.get(zone_id)
+
+    def get_visibility(self) -> VisibilitySimulator | None:
+        """Get the city-wide visibility simulator."""
+        return self._visibility_simulator
+
     def add_pv_system(
         self, system_id: str, config: PVConfig | None = None
     ) -> PVGenerationSimulator:

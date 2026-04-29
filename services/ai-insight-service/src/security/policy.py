@@ -1,4 +1,4 @@
-"""Policy checks for agreement/asset/role-based access."""
+"""Policy checks for agreement/asset/role-based access with table/column ABAC."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ class AccessContext:
 
 
 class PolicyEnforcer:
-    """Header-driven policy enforcement."""
+    """Header-driven policy enforcement with table/column-level ABAC."""
 
     def __init__(self, config: PolicyConfig) -> None:
         self._config = config
@@ -57,3 +57,69 @@ class PolicyEnforcer:
             allowed_assets = set(self._config.allowed_asset_ids)
             if context.asset_id not in allowed_assets:
                 raise PolicyDeniedError("Asset is not authorized")
+
+    # -----------------------------------------------------------------
+    # Table / Column-level ABAC
+    # -----------------------------------------------------------------
+
+    def allowed_tables(self, context: AccessContext) -> set[str] | None:
+        """
+        Return the set of tables accessible to the given roles.
+
+        Returns None if no restrictions are configured (all tables allowed).
+        Returns an empty set if the role has no table access.
+        """
+        if not self._config.role_table_access:
+            return None  # No restrictions configured
+
+        tables: set[str] = set()
+        for role in context.roles:
+            role_access = self._config.role_table_access.get(role, {})
+            tables.update(role_access.keys())
+        return tables
+
+    def allowed_columns(self, context: AccessContext, table: str) -> list[str] | None:
+        """
+        Return the list of columns accessible for a given table and roles.
+
+        Returns None if no restrictions are configured (all columns allowed).
+        Returns None if any matching role has an empty column list (= unrestricted).
+        Returns an empty list if the role cannot access this table at all.
+        """
+        if not self._config.role_table_access:
+            return None  # No restrictions configured
+
+        columns: set[str] = set()
+        has_table_access = False
+        for role in context.roles:
+            role_access = self._config.role_table_access.get(role, {})
+            table_columns = role_access.get(table)
+            if table_columns is not None:
+                has_table_access = True
+                if len(table_columns) == 0:
+                    # Empty list means unrestricted (all columns allowed)
+                    return None
+                columns.update(table_columns)
+        if not has_table_access:
+            return []
+        return list(columns)
+
+    def enforce_table_access(self, context: AccessContext, table: str) -> None:
+        """Raise PolicyDeniedError if the context cannot access the given table."""
+        tables = self.allowed_tables(context)
+        if tables is not None and table not in tables:
+            raise PolicyDeniedError(f"Access denied to table: {table}")
+
+    def filter_columns(
+        self, context: AccessContext, table: str, requested_columns: list[str]
+    ) -> list[str]:
+        """
+        Filter requested columns to only those allowed by policy.
+
+        Returns the full requested list if no restrictions are configured.
+        """
+        allowed = self.allowed_columns(context, table)
+        if allowed is None:
+            return requested_columns
+        allowed_set = set(allowed)
+        return [col for col in requested_columns if col in allowed_set]

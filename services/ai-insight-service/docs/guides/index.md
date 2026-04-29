@@ -20,7 +20,7 @@ energy and smart-city datasets. It combines:
 Prerequisites: Python 3.11+, pip.
 
 ```bash
-cd FAP/IOT\ \&\ AI\ over\ Trusted\ Zones/implementation/ai-insight-service
+cd services/ai-insight-service
 cp .env.example .env
 pip install -e ".[dev]"
 python -m src.main

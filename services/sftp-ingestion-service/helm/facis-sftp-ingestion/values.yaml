@@ -1,0 +1,131 @@
+# =============================================================================
+# FACIS SFTP Ingestion Service — Helm Values
+# =============================================================================
+
+image:
+  repository: ghcr.io/eclipse-xfsc/facis-fap-iot-ai/sftp-ingestion-service
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+replicaCount: 1
+
+# ---------------------------------------------------------------------------
+# SFTP Connection
+# ---------------------------------------------------------------------------
+sftp:
+  host: ""
+  port: 22
+  username: facis
+  # -- Password (stored in Secret)
+  password: ""
+  remotePath: /ingest
+  archivePath: /archive
+  pollIntervalSeconds: 60
+
+# ---------------------------------------------------------------------------
+# Kafka Connection
+# ---------------------------------------------------------------------------
+kafka:
+  bootstrapServers: kafka:9092
+  clientId: facis-sftp-ingestion
+  securityProtocol: PLAINTEXT
+  ssl:
+    caLocation: ""
+    certificateLocation: ""
+    keyLocation: ""
+
+# ---------------------------------------------------------------------------
+# Ingestion Settings
+# ---------------------------------------------------------------------------
+ingest:
+  defaultTopic: sftp.ingest.raw
+  acceptedExtensions: ".json,.csv,.avro"
+  maxFileSizeBytes: 104857600
+  dlqTopic: sftp.ingest.dlq
+
+# ---------------------------------------------------------------------------
+# HTTP / Health
+# ---------------------------------------------------------------------------
+http:
+  port: 8080
+
+# ---------------------------------------------------------------------------
+# Service
+# ---------------------------------------------------------------------------
+service:
+  type: ClusterIP
+  httpPort: 8080
+
+# ---------------------------------------------------------------------------
+# Pod Security
+# ---------------------------------------------------------------------------
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+# ---------------------------------------------------------------------------
+# Resources
+# ---------------------------------------------------------------------------
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 250m
+    memory: 256Mi
+
+# ---------------------------------------------------------------------------
+# Probes
+# ---------------------------------------------------------------------------
+livenessProbe:
+  httpGet:
+    path: /api/v1/health
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 30
+
+readinessProbe:
+  httpGet:
+    path: /api/v1/health
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+# ---------------------------------------------------------------------------
+# ServiceAccount
+# ---------------------------------------------------------------------------
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+  automountServiceAccountToken: false
+
+# ---------------------------------------------------------------------------
+# Metrics
+# ---------------------------------------------------------------------------
+metrics:
+  path: /metrics
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    scrapeTimeout: 10s
+    additionalLabels: {}
+
+# ---------------------------------------------------------------------------
+# Scheduling
+# ---------------------------------------------------------------------------
+nodeSelector: {}
+tolerations: []
+affinity: {}
