@@ -155,6 +155,8 @@ async def _verify_pull(
         from_ts=from_ts,
         to_ts=to_ts,
     )
+
+
 @dsp_router.get(
     "/pull",
     summary="Validate HMAC token and return data access confirmation",
