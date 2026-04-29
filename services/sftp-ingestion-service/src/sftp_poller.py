@@ -131,9 +131,11 @@ class SftpPoller:
                 return envelopes
 
             files = [
-                e for e in entries
+                e
+                for e in entries
                 if stat.S_ISREG(e.st_mode or 0)
-                and PurePosixPath(e.filename).suffix.lower() in self._accepted_extensions
+                and PurePosixPath(e.filename).suffix.lower()
+                in self._accepted_extensions
                 and (e.st_size or 0) <= self._ingest_config.max_file_size_bytes
             ]
 
@@ -177,9 +179,7 @@ class SftpPoller:
                         ts_suffix = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
                         sftp.rename(remote_file, f"{archive_file}.{ts_suffix}")
 
-                    logger.info(
-                        f"Ingested {filename}: {len(records)} record(s)"
-                    )
+                    logger.info(f"Ingested {filename}: {len(records)} record(s)")
 
                 except Exception as e:
                     logger.error(f"Failed to process {filename}: {e}")

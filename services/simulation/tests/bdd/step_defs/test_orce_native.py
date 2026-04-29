@@ -69,11 +69,14 @@ def http_get(request_bag: dict, path: str) -> None:
     request_bag["last_response"] = response
 
 
-@when(parsers.parse('I POST "{path}" with body \'{body}\''))
+@when(parsers.parse("I POST \"{path}\" with body '{body}'"))
 def http_post_with_body(request_bag: dict, path: str, body: str) -> None:
     base = request_bag["base_url"]
     response = requests.post(
-        f"{base}{path}", data=body, headers={"Content-Type": "application/json"}, timeout=5
+        f"{base}{path}",
+        data=body,
+        headers={"Content-Type": "application/json"},
+        timeout=5,
     )
     request_bag["last_response"] = response
 
@@ -112,7 +115,9 @@ def assert_body_key_value(request_bag: dict, key: str, value: str) -> None:
 
 
 @then(parsers.parse('the JSON body has keys "{key1}", "{key2}", "{key3}", "{key4}"'))
-def assert_body_keys(request_bag: dict, key1: str, key2: str, key3: str, key4: str) -> None:
+def assert_body_keys(
+    request_bag: dict, key1: str, key2: str, key3: str, key4: str
+) -> None:
     body = request_bag["last_response"].json()
     for key in (key1, key2, key3, key4):
         assert _resolve(body, key) is not None, f"missing key: {key}"
@@ -121,13 +126,17 @@ def assert_body_keys(request_bag: dict, key1: str, key2: str, key3: str, key4: s
 @given("the simulation has been started")
 def given_started(request_bag: dict) -> None:
     base = request_bag["base_url"]
-    requests.post(f"{base}/api/v1/simulation/start", json={}, timeout=5).raise_for_status()
+    requests.post(
+        f"{base}/api/v1/simulation/start", json={}, timeout=5
+    ).raise_for_status()
 
 
 @given(parsers.parse("the simulation has been running for at least {n:d} ticks"))
 def given_running(request_bag: dict, n: int) -> None:
     base = request_bag["base_url"]
-    requests.post(f"{base}/api/v1/simulation/start", json={}, timeout=5).raise_for_status()
+    requests.post(
+        f"{base}/api/v1/simulation/start", json={}, timeout=5
+    ).raise_for_status()
     # Wait long enough for n ticks at the configured speed_factor.
     time.sleep(max(2, n))
 
@@ -140,7 +149,7 @@ def follow_up_get(request_bag: dict, path: str, key: str, value: str) -> None:
     assert str(actual) == value
 
 
-@then(parsers.parse('the response is a JSON array of {kind}'))
+@then(parsers.parse("the response is a JSON array of {kind}"))
 def assert_array(request_bag: dict, kind: str) -> None:
     body = request_bag["last_response"].json()
     assert isinstance(body, list), f"expected array, got {type(body).__name__}"
@@ -179,7 +188,11 @@ def state_file_remains(request_bag: dict, path: str) -> None:
     pytest.skip("state file inspection runs in-cluster via kubectl exec")
 
 
-@then(parsers.parse('a follow-up GET "/api/v1/simulation/status" reflects the prior state'))
+@then(
+    parsers.parse(
+        'a follow-up GET "/api/v1/simulation/status" reflects the prior state'
+    )
+)
 def reflects_prior_state(request_bag: dict) -> None:
     pass
 

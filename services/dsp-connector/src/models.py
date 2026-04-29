@@ -7,7 +7,6 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-
 # ---------------------------------------------------------------------------
 # Transfer Process (FR-DSP-003)
 # ---------------------------------------------------------------------------
@@ -36,7 +35,9 @@ class TransferRequest(BaseModel):
 
     agreementId: str = Field(..., description="Agreement ID authorizing this transfer")
     assetId: str = Field(..., description="Dataset/asset identifier to transfer")
-    format: TransferFormat = Field(default=TransferFormat.HTTP_PULL, description="Data plane format")
+    format: TransferFormat = Field(
+        default=TransferFormat.HTTP_PULL, description="Data plane format"
+    )
     parameters: dict[str, Any] = Field(
         default_factory=dict,
         description="Transfer parameters (e.g., windowFrom, windowTo for time-windowed pulls)",
@@ -46,11 +47,17 @@ class TransferRequest(BaseModel):
 class AccessObject(BaseModel):
     """Data plane access parameters provisioned on transfer completion."""
 
-    url: str | None = Field(default=None, description="HMAC-signed pull URL (http-pull format)")
+    url: str | None = Field(
+        default=None, description="HMAC-signed pull URL (http-pull format)"
+    )
     token: str | None = Field(default=None, description="Access token")
-    expiresAt: str | None = Field(default=None, description="Token/URL expiry (ISO 8601)")  # noqa: N815
+    expiresAt: str | None = Field(
+        default=None, description="Token/URL expiry (ISO 8601)"
+    )  # noqa: N815
     # Kafka streaming fields
-    bootstrap: str | None = Field(default=None, description="Kafka bootstrap servers (kafka-streaming format)")
+    bootstrap: str | None = Field(
+        default=None, description="Kafka bootstrap servers (kafka-streaming format)"
+    )
     topic: str | None = Field(default=None, description="Kafka topic name")
     sasl: dict[str, str] | None = Field(default=None, description="SASL credentials")
 
@@ -84,8 +91,12 @@ class TransferCreatedResponse(BaseModel):
 class CatalogueRequest(BaseModel):
     """POST /dsp/catalogue/request body per SRS §7.1.1."""
 
-    providerId: str | None = Field(default=None, description="Provider DID or identifier")
-    filter: dict[str, Any] | None = Field(default=None, description="Filter criteria (assetType, dataset IDs)")
+    providerId: str | None = Field(
+        default=None, description="Provider DID or identifier"
+    )
+    filter: dict[str, Any] | None = Field(
+        default=None, description="Filter criteria (assetType, dataset IDs)"
+    )
     page: dict[str, Any] | None = Field(
         default_factory=lambda: {"limit": 50, "cursor": None},
         description="Pagination parameters",
@@ -125,8 +136,12 @@ class NegotiationRequest(BaseModel):
 
     counterparty: str = Field(..., description="Consumer DID or identifier")
     offerId: str = Field(..., description="Offer ID from catalogue")  # noqa: N815
-    callbackAddress: str | None = Field(default=None, description="Callback URL for async updates")  # noqa: N815
-    proposedTerms: dict[str, Any] = Field(default_factory=dict, description="Proposed usage terms")  # noqa: N815
+    callbackAddress: str | None = Field(
+        default=None, description="Callback URL for async updates"
+    )  # noqa: N815
+    proposedTerms: dict[str, Any] = Field(
+        default_factory=dict, description="Proposed usage terms"
+    )  # noqa: N815
 
 
 class NegotiationProcess(BaseModel):

@@ -161,9 +161,7 @@ class StreamingAnomalyDetector:
         self._consumer.subscribe(self._topics)
         self._thread = threading.Thread(target=self._consume_loop, daemon=True)
         self._thread.start()
-        logger.info(
-            f"Streaming anomaly detector started on topics: {self._topics}"
-        )
+        logger.info(f"Streaming anomaly detector started on topics: {self._topics}")
 
     def stop(self) -> None:
         """Stop the consumer."""

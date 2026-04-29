@@ -27,8 +27,12 @@ class HmacTokenValidator:
         self,
         request: Request,
         token: str = Query(..., description="HMAC-SHA256 token"),
-        expires_at: str = Query(..., alias="expiresAt", description="Token expiry (ISO 8601)"),
-        from_ts: str = Query(..., alias="from", description="Data window start (ISO 8601)"),
+        expires_at: str = Query(
+            ..., alias="expiresAt", description="Token expiry (ISO 8601)"
+        ),
+        from_ts: str = Query(
+            ..., alias="from", description="Data window start (ISO 8601)"
+        ),
         to_ts: str = Query(..., alias="to", description="Data window end (ISO 8601)"),
     ) -> dict[str, str]:
         """Validate the HMAC token and return the verified parameters."""

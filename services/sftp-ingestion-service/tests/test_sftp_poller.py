@@ -27,10 +27,12 @@ class TestParseFile:
         assert result[0]["power_kw"] == 42.5
 
     def test_parse_json_array(self, poller: SftpPoller) -> None:
-        content = json.dumps([
-            {"meter_id": "meter-001", "power_kw": 42.5},
-            {"meter_id": "meter-002", "power_kw": 38.1},
-        ]).encode()
+        content = json.dumps(
+            [
+                {"meter_id": "meter-001", "power_kw": 42.5},
+                {"meter_id": "meter-002", "power_kw": 38.1},
+            ]
+        ).encode()
         result = poller._parse_file("readings.json", content)
         assert len(result) == 2
         assert result[1]["meter_id"] == "meter-002"

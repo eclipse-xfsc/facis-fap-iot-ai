@@ -47,7 +47,9 @@ class HmacSigner:
     ) -> str:
         """Compute HMAC-SHA256 over the canonical message."""
         message = f"{method.upper()}:{path}:{from_ts}:{to_ts}:{expires_at}"
-        return hmac.new(self._secret, message.encode("utf-8"), hashlib.sha256).hexdigest()
+        return hmac.new(
+            self._secret, message.encode("utf-8"), hashlib.sha256
+        ).hexdigest()
 
     def generate_signed_url(
         self,

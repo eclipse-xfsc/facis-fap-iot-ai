@@ -20,7 +20,9 @@ class TestGenerateSignedUrl:
             from_ts="2026-04-07T00:00:00Z",
             to_ts="2026-04-07T23:59:59Z",
         )
-        assert result.url.startswith("https://example.com/api/v1/insights/anomaly-report")
+        assert result.url.startswith(
+            "https://example.com/api/v1/insights/anomaly-report"
+        )
         assert "token=" in result.url
         assert "expiresAt=" in result.url
         assert "from=" in result.url

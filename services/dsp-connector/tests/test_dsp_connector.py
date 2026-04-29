@@ -26,7 +26,6 @@ from fastapi.testclient import TestClient
 
 from src.main import create_app
 
-
 _ORCE_PATH_REWRITES = {
     "/api/v1/health": "/api/v1/dsp/health",
     "/metrics": "/dsp/metrics",
@@ -84,26 +83,27 @@ class TestCatalogue:
         assert "offers" in data["datasets"][0]
 
     def test_catalogue_filter_by_asset_type(self, client: TestClient) -> None:
-        resp = client.post("/dsp/catalogue/request", json={
-            "filter": {"assetType": "iot.timeseries"}
-        })
+        resp = client.post(
+            "/dsp/catalogue/request", json={"filter": {"assetType": "iot.timeseries"}}
+        )
         assert resp.status_code == 200
         datasets = resp.json()["datasets"]
         assert all(d["metadata"]["assetType"] == "iot.timeseries" for d in datasets)
 
     def test_catalogue_filter_by_dataset_id(self, client: TestClient) -> None:
-        resp = client.post("/dsp/catalogue/request", json={
-            "filter": {"datasetIds": ["dataset:facis:anomaly-candidates"]}
-        })
+        resp = client.post(
+            "/dsp/catalogue/request",
+            json={"filter": {"datasetIds": ["dataset:facis:anomaly-candidates"]}},
+        )
         assert resp.status_code == 200
         datasets = resp.json()["datasets"]
         assert len(datasets) == 1
         assert datasets[0]["id"] == "dataset:facis:anomaly-candidates"
 
     def test_catalogue_pagination(self, client: TestClient) -> None:
-        resp = client.post("/dsp/catalogue/request", json={
-            "page": {"limit": 2, "cursor": None}
-        })
+        resp = client.post(
+            "/dsp/catalogue/request", json={"page": {"limit": 2, "cursor": None}}
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert len(data["datasets"]) == 2
@@ -112,15 +112,18 @@ class TestCatalogue:
 
 class TestTransferProcess:
     def test_create_transfer_returns_202(self, client: TestClient) -> None:
-        resp = client.post("/dsp/transfers", json={
-            "agreementId": "agr-test-001",
-            "assetId": "dataset:facis:net-grid-hourly",
-            "format": "http-pull",
-            "parameters": {
-                "windowFrom": "2026-04-07T00:00:00Z",
-                "windowTo": "2026-04-07T23:59:59Z",
+        resp = client.post(
+            "/dsp/transfers",
+            json={
+                "agreementId": "agr-test-001",
+                "assetId": "dataset:facis:net-grid-hourly",
+                "format": "http-pull",
+                "parameters": {
+                    "windowFrom": "2026-04-07T00:00:00Z",
+                    "windowTo": "2026-04-07T23:59:59Z",
+                },
             },
-        })
+        )
         assert resp.status_code == 202
         data = resp.json()
         assert "transferId" in data
@@ -128,15 +131,18 @@ class TestTransferProcess:
 
     def test_get_completed_transfer_has_access_object(self, client: TestClient) -> None:
         # Create transfer
-        create_resp = client.post("/dsp/transfers", json={
-            "agreementId": "agr-test-002",
-            "assetId": "dataset:facis:anomaly-candidates",
-            "format": "http-pull",
-            "parameters": {
-                "windowFrom": "2026-04-07T00:00:00Z",
-                "windowTo": "2026-04-07T23:59:59Z",
+        create_resp = client.post(
+            "/dsp/transfers",
+            json={
+                "agreementId": "agr-test-002",
+                "assetId": "dataset:facis:anomaly-candidates",
+                "format": "http-pull",
+                "parameters": {
+                    "windowFrom": "2026-04-07T00:00:00Z",
+                    "windowTo": "2026-04-07T23:59:59Z",
+                },
             },
-        })
+        )
         transfer_id = create_resp.json()["transferId"]
 
         # Get transfer
@@ -150,15 +156,18 @@ class TestTransferProcess:
         assert "expiresAt" in transfer["access"]
 
     def test_access_url_contains_hmac_and_time_window(self, client: TestClient) -> None:
-        create_resp = client.post("/dsp/transfers", json={
-            "agreementId": "agr-test-003",
-            "assetId": "dataset:facis:weather-hourly",
-            "format": "http-pull",
-            "parameters": {
-                "windowFrom": "2026-04-01T00:00:00Z",
-                "windowTo": "2026-04-07T00:00:00Z",
+        create_resp = client.post(
+            "/dsp/transfers",
+            json={
+                "agreementId": "agr-test-003",
+                "assetId": "dataset:facis:weather-hourly",
+                "format": "http-pull",
+                "parameters": {
+                    "windowFrom": "2026-04-01T00:00:00Z",
+                    "windowTo": "2026-04-07T00:00:00Z",
+                },
             },
-        })
+        )
         transfer_id = create_resp.json()["transferId"]
 
         get_resp = client.get(f"/dsp/transfers/{transfer_id}")
@@ -169,11 +178,14 @@ class TestTransferProcess:
         assert "weather-hourly" in access["url"]
 
     def test_kafka_streaming_transfer(self, client: TestClient) -> None:
-        create_resp = client.post("/dsp/transfers", json={
-            "agreementId": "agr-test-004",
-            "assetId": "dataset:facis:net-grid-hourly",
-            "format": "kafka-streaming",
-        })
+        create_resp = client.post(
+            "/dsp/transfers",
+            json={
+                "agreementId": "agr-test-004",
+                "assetId": "dataset:facis:net-grid-hourly",
+                "format": "kafka-streaming",
+            },
+        )
         transfer_id = create_resp.json()["transferId"]
 
         get_resp = client.get(f"/dsp/transfers/{transfer_id}")
@@ -189,11 +201,14 @@ class TestTransferProcess:
         assert resp.status_code == 404
 
     def test_terminate_transfer(self, client: TestClient) -> None:
-        create_resp = client.post("/dsp/transfers", json={
-            "agreementId": "agr-test-005",
-            "assetId": "dataset:facis:net-grid-hourly",
-            "format": "http-pull",
-        })
+        create_resp = client.post(
+            "/dsp/transfers",
+            json={
+                "agreementId": "agr-test-005",
+                "assetId": "dataset:facis:net-grid-hourly",
+                "format": "http-pull",
+            },
+        )
         transfer_id = create_resp.json()["transferId"]
 
         # Can't terminate a COMPLETED transfer
@@ -202,11 +217,14 @@ class TestTransferProcess:
 
     def test_error_state_includes_reason(self, client: TestClient) -> None:
         # This tests the reason field requirement — we verify it's present in the model
-        create_resp = client.post("/dsp/transfers", json={
-            "agreementId": "agr-test-006",
-            "assetId": "dataset:facis:net-grid-hourly",
-            "format": "http-pull",
-        })
+        create_resp = client.post(
+            "/dsp/transfers",
+            json={
+                "agreementId": "agr-test-006",
+                "assetId": "dataset:facis:net-grid-hourly",
+                "format": "http-pull",
+            },
+        )
         transfer_id = create_resp.json()["transferId"]
 
         get_resp = client.get(f"/dsp/transfers/{transfer_id}")
@@ -218,16 +236,22 @@ class TestTransferProcess:
 
     def test_list_transfers(self, client: TestClient) -> None:
         # Create two transfers
-        client.post("/dsp/transfers", json={
-            "agreementId": "agr-list-1",
-            "assetId": "dataset:facis:net-grid-hourly",
-            "format": "http-pull",
-        })
-        client.post("/dsp/transfers", json={
-            "agreementId": "agr-list-2",
-            "assetId": "dataset:facis:weather-hourly",
-            "format": "http-pull",
-        })
+        client.post(
+            "/dsp/transfers",
+            json={
+                "agreementId": "agr-list-1",
+                "assetId": "dataset:facis:net-grid-hourly",
+                "format": "http-pull",
+            },
+        )
+        client.post(
+            "/dsp/transfers",
+            json={
+                "agreementId": "agr-list-2",
+                "assetId": "dataset:facis:weather-hourly",
+                "format": "http-pull",
+            },
+        )
 
         resp = client.get("/dsp/transfers")
         assert resp.status_code == 200
@@ -236,18 +260,26 @@ class TestTransferProcess:
 
 class TestNegotiation:
     def test_create_negotiation_auto_finalizes(self, client: TestClient) -> None:
-        resp = client.post("/dsp/negotiations", json={
-            "counterparty": "did:web:consumer.example",
-            "offerId": "offer:facis:net-grid-hourly:read",
-        })
+        resp = client.post(
+            "/dsp/negotiations",
+            json={
+                "counterparty": "did:web:consumer.example",
+                "offerId": "offer:facis:net-grid-hourly:read",
+            },
+        )
         assert resp.status_code == 202
         assert "negotiationId" in resp.json()
 
-    def test_get_negotiation_shows_finalized_with_agreement(self, client: TestClient) -> None:
-        create_resp = client.post("/dsp/negotiations", json={
-            "counterparty": "did:web:consumer.example",
-            "offerId": "offer:facis:net-grid-hourly:read",
-        })
+    def test_get_negotiation_shows_finalized_with_agreement(
+        self, client: TestClient
+    ) -> None:
+        create_resp = client.post(
+            "/dsp/negotiations",
+            json={
+                "counterparty": "did:web:consumer.example",
+                "offerId": "offer:facis:net-grid-hourly:read",
+            },
+        )
         neg_id = create_resp.json()["negotiationId"]
 
         get_resp = client.get(f"/dsp/negotiations/{neg_id}")
@@ -257,10 +289,13 @@ class TestNegotiation:
         assert neg["agreementId"] is not None
 
     def test_terminate_negotiation(self, client: TestClient) -> None:
-        create_resp = client.post("/dsp/negotiations", json={
-            "counterparty": "did:web:consumer.example",
-            "offerId": "offer:facis:net-grid-hourly:read",
-        })
+        create_resp = client.post(
+            "/dsp/negotiations",
+            json={
+                "counterparty": "did:web:consumer.example",
+                "offerId": "offer:facis:net-grid-hourly:read",
+            },
+        )
         neg_id = create_resp.json()["negotiationId"]
 
         term_resp = client.post(f"/dsp/negotiations/{neg_id}/terminate")
@@ -273,9 +308,9 @@ class TestE2EFlow:
 
     def test_full_dsp_flow(self, client: TestClient) -> None:
         # 1. Discover datasets
-        cat_resp = client.post("/dsp/catalogue/request", json={
-            "filter": {"assetType": "iot.timeseries"}
-        })
+        cat_resp = client.post(
+            "/dsp/catalogue/request", json={"filter": {"assetType": "iot.timeseries"}}
+        )
         assert cat_resp.status_code == 200
         datasets = cat_resp.json()["datasets"]
         assert len(datasets) > 0
@@ -283,10 +318,13 @@ class TestE2EFlow:
         asset_id = datasets[0]["id"]
 
         # 2. Negotiate (auto-finalizes)
-        neg_resp = client.post("/dsp/negotiations", json={
-            "counterparty": "did:web:consumer.example",
-            "offerId": offer_id,
-        })
+        neg_resp = client.post(
+            "/dsp/negotiations",
+            json={
+                "counterparty": "did:web:consumer.example",
+                "offerId": offer_id,
+            },
+        )
         assert neg_resp.status_code == 202
         neg_id = neg_resp.json()["negotiationId"]
 
@@ -296,15 +334,18 @@ class TestE2EFlow:
         assert agreement_id is not None
 
         # 3. Start transfer with agreement
-        transfer_resp = client.post("/dsp/transfers", json={
-            "agreementId": agreement_id,
-            "assetId": asset_id,
-            "format": "http-pull",
-            "parameters": {
-                "windowFrom": "2026-04-07T00:00:00Z",
-                "windowTo": "2026-04-07T23:59:59Z",
+        transfer_resp = client.post(
+            "/dsp/transfers",
+            json={
+                "agreementId": agreement_id,
+                "assetId": asset_id,
+                "format": "http-pull",
+                "parameters": {
+                    "windowFrom": "2026-04-07T00:00:00Z",
+                    "windowTo": "2026-04-07T23:59:59Z",
+                },
             },
-        })
+        )
         assert transfer_resp.status_code == 202
         transfer_id = transfer_resp.json()["transferId"]
 

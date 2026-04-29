@@ -112,7 +112,9 @@ class TrinoOutputStore:
         """Create the output table if it doesn't exist."""
         if self._table_created:
             return
-        location = f"s3a://{self._s3_bucket}/warehouse/{self._schema}.db/ai_insight_outputs"
+        location = (
+            f"s3a://{self._s3_bucket}/warehouse/{self._schema}.db/ai_insight_outputs"
+        )
         sql = self.DDL.format(
             catalog=self._catalog,
             schema=self._schema,
