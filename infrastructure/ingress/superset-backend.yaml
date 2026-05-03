@@ -1,0 +1,48 @@
+# Stub Service + Endpoints in the orce ns of the IONOS cluster that points
+# at the Stackable cluster's Superset LoadBalancer. Required because
+# nginx-ingress backends must resolve to a real IP via the Service →
+# Endpoints chain in the SAME namespace as the Ingress, and the Stackable
+# Superset Service lives on a different cluster entirely.
+#
+# Why a Service-without-selector + Endpoints rather than ExternalName:
+#   - ExternalName services only work for client-side DNS rewrites; the
+#     ingress controller would 502 because the upstream is a hostname,
+#     not an A-record IP.
+#   - We have a stable public IP for the Stackable Superset LoadBalancer
+#     (212.132.76.221), so a fixed-IP Endpoints object works fine.
+#
+# RISK: the Stackable cluster's LoadBalancer IP is not under our control;
+# if it churns (rare but not impossible), this Endpoints goes stale and
+# /superset 502s. Long-term mitigation is to set up a stable hostname
+# (e.g. `superset-internal.facis.cloud` → Stackable LB) and use it here.
+apiVersion: v1
+kind: Service
+metadata:
+  name: superset-stackable
+  namespace: orce
+  labels:
+    app.kubernetes.io/part-of: facis-fap
+    app.kubernetes.io/component: cross-cluster-shim
+spec:
+  ports:
+    - name: http
+      port: 8088
+      targetPort: 8088
+      protocol: TCP
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  # Endpoints name MUST match the Service name above for the binding to work.
+  name: superset-stackable
+  namespace: orce
+  labels:
+    app.kubernetes.io/part-of: facis-fap
+    app.kubernetes.io/component: cross-cluster-shim
+subsets:
+  - addresses:
+      - ip: 212.132.76.221            # Stackable cluster Superset LoadBalancer EXTERNAL-IP
+    ports:
+      - name: http
+        port: 8088
+        protocol: TCP
