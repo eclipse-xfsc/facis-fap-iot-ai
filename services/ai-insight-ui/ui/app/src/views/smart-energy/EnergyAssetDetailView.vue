@@ -497,36 +497,16 @@ const showJsonAccordion = ref(false)
         <!-- Tab 5: Analytics -->
         <template #tab-5>
           <div class="tab-content">
-            <div class="section-title" style="margin-bottom: 1rem">Active Power — Last 24h</div>
-            <TimeSeriesChart
-              :datasets="sparkDatasets"
-              :labels="sparkLabels"
-              y-axis-label="Active Power (kW)"
-              :height="300"
-            />
-
-            <div class="analytics-summary">
-              <div class="analytics-card">
-                <span class="analytics-card__label">Peak Power</span>
-                <span class="analytics-card__value">{{ Math.max(...sparkData).toFixed(1) }} kW</span>
-              </div>
-              <div class="analytics-card">
-                <span class="analytics-card__label">Min Power</span>
-                <span class="analytics-card__value">{{ Math.min(...sparkData).toFixed(1) }} kW</span>
-              </div>
-              <div class="analytics-card">
-                <span class="analytics-card__label">Avg Power</span>
-                <span class="analytics-card__value">{{ (sparkData.reduce((s, v) => s + v, 0) / sparkData.length).toFixed(1) }} kW</span>
-              </div>
-              <div class="analytics-card">
-                <span class="analytics-card__label">Anomaly Periods</span>
-                <span class="analytics-card__value" style="color: #f59e0b">{{ anomalyIndices.length }}</span>
-              </div>
-            </div>
-
-            <div v-if="anomalyIndices.length > 0" class="anomaly-notice">
-              <i class="pi pi-exclamation-triangle"></i>
-              <span>{{ anomalyIndices.length }} hour(s) flagged as above 95% of baseline power — hours: {{ anomalyIndices.map(i => sparkLabels[i]).join(', ') }}</span>
+            <div class="empty-tab">
+              <i class="pi pi-info-circle" style="font-size:1.5rem;color:#64748b"></i>
+              <p class="empty-tab__title">Power timeline unavailable</p>
+              <p class="empty-tab__sub">
+                The simulation REST flow exposes only current readings (no
+                <code>/api/v1/meters/:id/history</code>). To see historical
+                trends and anomaly highlights for this meter, use the
+                <strong>AI Assistant</strong> chat or
+                <strong>Analytics → Overview</strong>.
+              </p>
             </div>
           </div>
         </template>

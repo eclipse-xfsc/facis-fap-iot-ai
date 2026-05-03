@@ -510,39 +510,9 @@ function fmtRelative(iso: string): string {
           </div>
         </section>
 
-        <!-- Recent Data Products -->
-        <section class="dashboard__section">
-          <div class="section-title flex items-center justify-between">
-            <span>Recent Data Products</span>
-            <Button label="View all" icon="pi pi-arrow-right" icon-pos="right" text size="small" @click="router.push('/data-products/all')" />
-          </div>
-          <div class="products-stack">
-            <div
-              v-for="product in recentProducts"
-              :key="product.id"
-              class="product-row card"
-              @click="router.push(`/data-products/${product.id}`)"
-            >
-              <div class="product-row__icon">
-                <i class="pi pi-box"></i>
-              </div>
-              <div class="product-row__body">
-                <div class="product-row__name">{{ product.name }}</div>
-                <div class="product-row__meta">
-                  <span class="text-xs text-muted">v{{ product.version }}</span>
-                  <span class="text-xs text-muted">·</span>
-                  <span class="text-xs text-muted">{{ product.sourceCount }} sources</span>
-                  <span class="text-xs text-muted">·</span>
-                  <span class="text-xs text-muted">{{ fmtRelative(product.lastUpdated) }}</span>
-                </div>
-              </div>
-              <div class="product-row__badges">
-                <StatusBadge :status="product.apiStatus" size="sm" :show-dot="false" />
-                <StatusBadge :status="product.exportStatus" size="sm" :show-dot="false" />
-              </div>
-            </div>
-          </div>
-        </section>
+        <!-- "Recent Data Products" section removed: no /api/v1/data-products
+             backend exists. Per-domain product views still live under
+             /use-cases/smart-energy/data-products and /use-cases/smart-city/data-products. -->
 
       </div>
     </div>

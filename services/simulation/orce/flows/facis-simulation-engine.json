@@ -1,0 +1,291 @@
+[
+    {
+        "id": "tab-engine",
+        "type": "tab",
+        "label": "FACIS Simulation \u2014 Engine",
+        "disabled": false,
+        "info": "FACIS Simulation \u2014 Engine & State Machine\n\nOwns the lifecycle FSM (initialized | running | paused | stopped) and the\nREST control plane on /api/v1/simulation/{start,pause,reset,status}.\n\nState is held in flow context under the `engine` key and persisted to\n/data/sim-state/state.json on every transition; reloaded on flow startup.\n\nTick advancement happens in the Tick Loop tab (Phase 4)."
+    },
+    {
+        "id": "engine-bootstrap",
+        "type": "inject",
+        "z": "tab-engine",
+        "name": "@startup",
+        "props": [
+            {
+                "p": "payload"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": true,
+        "onceDelay": "1.5",
+        "topic": "",
+        "payload": "",
+        "payloadType": "str",
+        "x": 130,
+        "y": 80,
+        "wires": [
+            [
+                "engine-state-file"
+            ]
+        ]
+    },
+    {
+        "id": "engine-state-file",
+        "type": "file in",
+        "z": "tab-engine",
+        "name": "read state.json",
+        "filename": "/data/sim-state/state.json",
+        "filenameType": "str",
+        "format": "utf8",
+        "chunk": false,
+        "sendError": true,
+        "encoding": "none",
+        "allProps": false,
+        "x": 340,
+        "y": 80,
+        "wires": [
+            [
+                "engine-state-restore"
+            ]
+        ]
+    },
+    {
+        "id": "engine-state-restore",
+        "type": "function",
+        "z": "tab-engine",
+        "name": "restore engine context",
+        "func": "// Idempotence guard: if the engine is already running in-memory and was\n// transitioned recently (last 60s), don't clobber it from disk. Protects\n// against a /start call landing between flow-deploy and this bootstrap.\nconst existing = global.get('engine');\nif (existing && existing.state === 'running'\n    && (Date.now() - (existing.last_transition_at || 0)) < 60000) {\n    node.log('engine already running (in-memory, transition <60s old); skipping restore');\n    return null;\n}\n\nfunction defaultEngine() {\n    return {\n        state: 'initialized',\n        simulation_time: new Date().toISOString(),\n        seed: Number(env.get('BASE_SEED') || 12345),\n        acceleration: Number(env.get('SPEED_FACTOR') || 1),\n        registered_entities: 0,\n        last_transition_at: Date.now()\n    };\n}\n// On startup, parse the persisted state.json (if any) into flow context.\nlet engine;\ntry {\n    if (msg.payload && typeof msg.payload === 'object' && msg.payload.state) {\n        engine = msg.payload;\n    } else if (typeof msg.payload === 'string' && msg.payload.length > 0) {\n        engine = JSON.parse(msg.payload);\n    } else {\n        engine = defaultEngine();\n    }\n} catch (err) {\n    node.warn('Failed to parse persisted engine state, using defaults: ' + err.message);\n    engine = defaultEngine();\n}\nglobal.set('engine', engine);\nnode.log('Engine state loaded: ' + engine.state + ' @ ' + engine.simulation_time);\nreturn null;\n",
+        "outputs": 0,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 580,
+        "y": 80,
+        "wires": []
+    },
+    {
+        "id": "engine-state-catch",
+        "type": "catch",
+        "z": "tab-engine",
+        "name": "no state.json yet",
+        "scope": [
+            "engine-state-file"
+        ],
+        "uncaught": false,
+        "x": 340,
+        "y": 140,
+        "wires": [
+            [
+                "engine-state-default"
+            ]
+        ]
+    },
+    {
+        "id": "engine-state-default",
+        "type": "function",
+        "z": "tab-engine",
+        "name": "init defaults",
+        "func": "// Idempotence guard: never overwrite an already-set engine. The restore\n// path may have set it; the catch-from-missing-file path must not erase it.\nconst existing = global.get('engine');\nif (existing && existing.state) {\n    node.log('engine already set in-memory (state=' + existing.state + '); skipping defaults');\n    return null;\n}\n\nfunction defaultEngine() {\n    return {\n        state: 'initialized',\n        simulation_time: new Date().toISOString(),\n        seed: Number(env.get('BASE_SEED') || 12345),\n        acceleration: Number(env.get('SPEED_FACTOR') || 1),\n        registered_entities: 0,\n        last_transition_at: Date.now()\n    };\n}\n// state.json missing on first boot \u2014 initialise defaults.\nconst engine = defaultEngine();\nglobal.set('engine', engine);\nnode.log('No persisted state found; engine initialised with defaults.');\nreturn null;\n",
+        "outputs": 0,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 560,
+        "y": 140,
+        "wires": []
+    },
+    {
+        "id": "http-in-status",
+        "type": "http in",
+        "z": "tab-engine",
+        "name": "GET /api/v1/simulation/status",
+        "url": "/api/v1/simulation/status",
+        "method": "get",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 170,
+        "y": 220,
+        "wires": [
+            [
+                "fn-status"
+            ]
+        ]
+    },
+    {
+        "id": "fn-status",
+        "type": "function",
+        "z": "tab-engine",
+        "name": "status",
+        "func": "function defaultEngine() {\n    return {\n        state: 'initialized',\n        simulation_time: new Date().toISOString(),\n        seed: Number(env.get('BASE_SEED') || 12345),\n        acceleration: Number(env.get('SPEED_FACTOR') || 1),\n        registered_entities: 0,\n        last_transition_at: Date.now()\n    };\n}\nconst engine = global.get('engine') || defaultEngine();\nmsg.payload = {\n    state: engine.state,\n    simulation_time: engine.simulation_time,\n    seed: engine.seed,\n    acceleration: engine.acceleration,\n    registered_entities: engine.registered_entities || 0\n};\nmsg.statusCode = 200;\nreturn [msg, null];\n",
+        "outputs": 2,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 450,
+        "y": 220,
+        "wires": [
+            [
+                "http-response-ok"
+            ],
+            []
+        ]
+    },
+    {
+        "id": "http-in-start",
+        "type": "http in",
+        "z": "tab-engine",
+        "name": "POST /api/v1/simulation/start",
+        "url": "/api/v1/simulation/start",
+        "method": "post",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 170,
+        "y": 280,
+        "wires": [
+            [
+                "fn-start"
+            ]
+        ]
+    },
+    {
+        "id": "fn-start",
+        "type": "function",
+        "z": "tab-engine",
+        "name": "start",
+        "func": "function defaultEngine() {\n    return {\n        state: 'initialized',\n        simulation_time: new Date().toISOString(),\n        seed: Number(env.get('BASE_SEED') || 12345),\n        acceleration: Number(env.get('SPEED_FACTOR') || 1),\n        registered_entities: 0,\n        last_transition_at: Date.now()\n    };\n}\nconst engine = global.get('engine') || defaultEngine();\nconst body = (msg.payload && typeof msg.payload === 'object') ? msg.payload : {};\n\nif (typeof body.start_time === 'string' && body.start_time.length > 0) {\n    engine.simulation_time = body.start_time;\n}\n\nlet message;\nif (engine.state === 'paused') {\n    engine.state = 'running';\n    message = 'Simulation resumed';\n} else if (engine.state === 'running') {\n    message = 'Simulation already running';\n} else {\n    engine.state = 'running';\n    if (!engine.simulation_time) {\n        engine.simulation_time = new Date().toISOString();\n    }\n    message = 'Simulation started';\n}\n\nengine.last_transition_at = Date.now();\nglobal.set('engine', engine);\n\nconst persistMsg = { payload: JSON.stringify(engine, null, 2),\n                     filename: '/data/sim-state/state.json' };\nmsg.payload = {\n    status: 'started',\n    message: message,\n    simulation_time: engine.simulation_time\n};\nmsg.statusCode = 200;\nreturn [msg, persistMsg];\n",
+        "outputs": 2,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 450,
+        "y": 280,
+        "wires": [
+            [
+                "http-response-ok"
+            ],
+            [
+                "engine-persist"
+            ]
+        ]
+    },
+    {
+        "id": "http-in-pause",
+        "type": "http in",
+        "z": "tab-engine",
+        "name": "POST /api/v1/simulation/pause",
+        "url": "/api/v1/simulation/pause",
+        "method": "post",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 170,
+        "y": 340,
+        "wires": [
+            [
+                "fn-pause"
+            ]
+        ]
+    },
+    {
+        "id": "fn-pause",
+        "type": "function",
+        "z": "tab-engine",
+        "name": "pause",
+        "func": "function defaultEngine() {\n    return {\n        state: 'initialized',\n        simulation_time: new Date().toISOString(),\n        seed: Number(env.get('BASE_SEED') || 12345),\n        acceleration: Number(env.get('SPEED_FACTOR') || 1),\n        registered_entities: 0,\n        last_transition_at: Date.now()\n    };\n}\nconst engine = global.get('engine') || defaultEngine();\nlet message;\nif (engine.state === 'running') {\n    engine.state = 'paused';\n    message = 'Simulation paused';\n} else {\n    message = 'Simulation was not running (state: ' + engine.state + ')';\n}\nengine.last_transition_at = Date.now();\nglobal.set('engine', engine);\n\nconst persistMsg = { payload: JSON.stringify(engine, null, 2),\n                     filename: '/data/sim-state/state.json' };\nmsg.payload = {\n    status: 'paused',\n    message: message,\n    simulation_time: engine.simulation_time\n};\nmsg.statusCode = 200;\nreturn [msg, persistMsg];\n",
+        "outputs": 2,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 450,
+        "y": 340,
+        "wires": [
+            [
+                "http-response-ok"
+            ],
+            [
+                "engine-persist"
+            ]
+        ]
+    },
+    {
+        "id": "http-in-reset",
+        "type": "http in",
+        "z": "tab-engine",
+        "name": "POST /api/v1/simulation/reset",
+        "url": "/api/v1/simulation/reset",
+        "method": "post",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 170,
+        "y": 400,
+        "wires": [
+            [
+                "fn-reset"
+            ]
+        ]
+    },
+    {
+        "id": "fn-reset",
+        "type": "function",
+        "z": "tab-engine",
+        "name": "reset",
+        "func": "function defaultEngine() {\n    return {\n        state: 'initialized',\n        simulation_time: new Date().toISOString(),\n        seed: Number(env.get('BASE_SEED') || 12345),\n        acceleration: Number(env.get('SPEED_FACTOR') || 1),\n        registered_entities: 0,\n        last_transition_at: Date.now()\n    };\n}\nconst engine = global.get('engine') || defaultEngine();\nconst body = (msg.payload && typeof msg.payload === 'object') ? msg.payload : {};\n\nif (typeof body.seed === 'number') {\n    engine.seed = body.seed;\n}\nif (typeof body.start_time === 'string' && body.start_time.length > 0) {\n    engine.simulation_time = body.start_time;\n} else {\n    engine.simulation_time = new Date().toISOString();\n}\nengine.state = 'initialized';\nengine.last_transition_at = Date.now();\nglobal.set('engine', engine);\n\nconst persistMsg = { payload: JSON.stringify(engine, null, 2),\n                     filename: '/data/sim-state/state.json' };\nmsg.payload = {\n    status: 'reset',\n    message: 'Simulation reset to initial state',\n    seed: engine.seed,\n    simulation_time: engine.simulation_time\n};\nmsg.statusCode = 200;\nreturn [msg, persistMsg];\n",
+        "outputs": 2,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 450,
+        "y": 400,
+        "wires": [
+            [
+                "http-response-ok"
+            ],
+            [
+                "engine-persist"
+            ]
+        ]
+    },
+    {
+        "id": "http-response-ok",
+        "type": "http response",
+        "z": "tab-engine",
+        "name": "200 OK",
+        "statusCode": "",
+        "headers": {
+            "Content-Type": "application/json"
+        },
+        "x": 740,
+        "y": 280,
+        "wires": []
+    },
+    {
+        "id": "engine-persist",
+        "type": "file",
+        "z": "tab-engine",
+        "name": "write state.json",
+        "filename": "/data/sim-state/state.json",
+        "filenameType": "str",
+        "appendNewline": false,
+        "createDir": true,
+        "overwriteFile": "true",
+        "encoding": "utf8",
+        "x": 740,
+        "y": 400,
+        "wires": [
+            []
+        ]
+    }
+]

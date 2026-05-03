@@ -1,0 +1,309 @@
+[
+    {
+        "id": "tab-kafka-adapter",
+        "type": "tab",
+        "label": "FACIS Simulation \u2014 Kafka Adapter",
+        "disabled": false,
+        "info": "ORCE-native Kafka adapter for the simulation runtime.\n\nReceives the unified tick envelope from the Feeds tab via\n`sim.envelope` link-in, splits per feed type, and publishes to the\n9 Stackable-Kafka topics with mTLS.\n\nTopic conventions preserved from the legacy facis-simulation-cluster.json:\n  sim.smart_energy.{meter,pv,weather,price,consumer}\n  sim.smart_city.{light,traffic,event,weather}\n\nPrerequisite: node-red-contrib-rdkafka installed via the ORCE PVC\n(see services/simulation/orce/Dockerfile)."
+    },
+    {
+        "id": "comment-kafka",
+        "type": "comment",
+        "z": "tab-kafka-adapter",
+        "name": "ORCE-native Kafka adapter (envelope \u2192 9 topics)",
+        "info": "Driven by the Feeds tab via link-in `sim.envelope`.\nTopic split + rdkafka producers identical to the legacy\nfacis-simulation-cluster.json HTTP-driven flow.",
+        "x": 250,
+        "y": 60,
+        "wires": []
+    },
+    {
+        "id": "kafka-broker-config",
+        "type": "kafka-broker",
+        "name": "FACIS Kafka Cluster",
+        "broker": "212.132.83.222:9093,85.215.37.238:32121,217.160.216.54:32067,85.215.39.90:30604",
+        "clientid": "facis-orce",
+        "securityProtocol": "ssl",
+        "sslCaLocation": "/etc/kafka-certs/ca.crt",
+        "sslCertLocation": "/etc/kafka-certs/tls.crt",
+        "sslKeyLocation": "/etc/kafka-certs/tls.key",
+        "metadataMaxAgeMs": 30000
+    },
+    {
+        "id": "kafka-meter",
+        "type": "rdkafka out",
+        "z": "tab-kafka-adapter",
+        "name": "sim.smart_energy.meter",
+        "broker": "kafka-broker-config",
+        "topic": "sim.smart_energy.meter",
+        "x": 1040,
+        "y": 60,
+        "wires": [
+            [
+                "debug-kafka"
+            ]
+        ]
+    },
+    {
+        "id": "kafka-pv",
+        "type": "rdkafka out",
+        "z": "tab-kafka-adapter",
+        "name": "sim.smart_energy.pv",
+        "broker": "kafka-broker-config",
+        "topic": "sim.smart_energy.pv",
+        "x": 1040,
+        "y": 100,
+        "wires": [
+            [
+                "debug-kafka"
+            ]
+        ]
+    },
+    {
+        "id": "kafka-weather",
+        "type": "rdkafka out",
+        "z": "tab-kafka-adapter",
+        "name": "sim.smart_energy.weather",
+        "broker": "kafka-broker-config",
+        "topic": "sim.smart_energy.weather",
+        "x": 1040,
+        "y": 140,
+        "wires": [
+            [
+                "debug-kafka"
+            ]
+        ]
+    },
+    {
+        "id": "kafka-price",
+        "type": "rdkafka out",
+        "z": "tab-kafka-adapter",
+        "name": "sim.smart_energy.price",
+        "broker": "kafka-broker-config",
+        "topic": "sim.smart_energy.price",
+        "x": 1040,
+        "y": 180,
+        "wires": [
+            [
+                "debug-kafka"
+            ]
+        ]
+    },
+    {
+        "id": "kafka-consumer",
+        "type": "rdkafka out",
+        "z": "tab-kafka-adapter",
+        "name": "sim.smart_energy.consumer",
+        "broker": "kafka-broker-config",
+        "topic": "sim.smart_energy.consumer",
+        "x": 1040,
+        "y": 220,
+        "wires": [
+            [
+                "debug-kafka"
+            ]
+        ]
+    },
+    {
+        "id": "kafka-light",
+        "type": "rdkafka out",
+        "z": "tab-kafka-adapter",
+        "name": "sim.smart_city.light",
+        "broker": "kafka-broker-config",
+        "topic": "sim.smart_city.light",
+        "x": 1040,
+        "y": 260,
+        "wires": [
+            [
+                "debug-kafka"
+            ]
+        ]
+    },
+    {
+        "id": "kafka-traffic",
+        "type": "rdkafka out",
+        "z": "tab-kafka-adapter",
+        "name": "sim.smart_city.traffic",
+        "broker": "kafka-broker-config",
+        "topic": "sim.smart_city.traffic",
+        "x": 1040,
+        "y": 300,
+        "wires": [
+            [
+                "debug-kafka"
+            ]
+        ]
+    },
+    {
+        "id": "kafka-event",
+        "type": "rdkafka out",
+        "z": "tab-kafka-adapter",
+        "name": "sim.smart_city.event",
+        "broker": "kafka-broker-config",
+        "topic": "sim.smart_city.event",
+        "x": 1040,
+        "y": 340,
+        "wires": [
+            [
+                "debug-kafka"
+            ]
+        ]
+    },
+    {
+        "id": "kafka-city-weather",
+        "type": "rdkafka out",
+        "z": "tab-kafka-adapter",
+        "name": "sim.smart_city.weather",
+        "broker": "kafka-broker-config",
+        "topic": "sim.smart_city.weather",
+        "x": 1040,
+        "y": 380,
+        "wires": [
+            [
+                "debug-kafka"
+            ]
+        ]
+    },
+    {
+        "id": "debug-kafka",
+        "type": "debug",
+        "z": "tab-kafka-adapter",
+        "name": "Kafka Delivery Log",
+        "active": false,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 1270,
+        "y": 200,
+        "wires": []
+    },
+    {
+        "id": "5a00312f779505d5",
+        "type": "link in",
+        "z": "tab-kafka-adapter",
+        "name": "\u2190 feeds.kafka.meter",
+        "links": [],
+        "x": 120,
+        "y": 80,
+        "wires": [
+            [
+                "kafka-meter"
+            ]
+        ]
+    },
+    {
+        "id": "400a7edc80f101ae",
+        "type": "link in",
+        "z": "tab-kafka-adapter",
+        "name": "\u2190 feeds.kafka.pv",
+        "links": [],
+        "x": 120,
+        "y": 140,
+        "wires": [
+            [
+                "kafka-pv"
+            ]
+        ]
+    },
+    {
+        "id": "e1c3e4a0a59bfcb8",
+        "type": "link in",
+        "z": "tab-kafka-adapter",
+        "name": "\u2190 feeds.kafka.weather",
+        "links": [],
+        "x": 120,
+        "y": 200,
+        "wires": [
+            [
+                "kafka-weather"
+            ]
+        ]
+    },
+    {
+        "id": "c5954f0f78a7e3f9",
+        "type": "link in",
+        "z": "tab-kafka-adapter",
+        "name": "\u2190 feeds.kafka.price",
+        "links": [],
+        "x": 120,
+        "y": 260,
+        "wires": [
+            [
+                "kafka-price"
+            ]
+        ]
+    },
+    {
+        "id": "a0805ab90944e174",
+        "type": "link in",
+        "z": "tab-kafka-adapter",
+        "name": "\u2190 feeds.kafka.consumer",
+        "links": [],
+        "x": 120,
+        "y": 320,
+        "wires": [
+            [
+                "kafka-consumer"
+            ]
+        ]
+    },
+    {
+        "id": "21ea5f7cdc17eeb0",
+        "type": "link in",
+        "z": "tab-kafka-adapter",
+        "name": "\u2190 feeds.kafka.light",
+        "links": [],
+        "x": 120,
+        "y": 380,
+        "wires": [
+            [
+                "kafka-light"
+            ]
+        ]
+    },
+    {
+        "id": "f209faee76299010",
+        "type": "link in",
+        "z": "tab-kafka-adapter",
+        "name": "\u2190 feeds.kafka.traffic",
+        "links": [],
+        "x": 120,
+        "y": 440,
+        "wires": [
+            [
+                "kafka-traffic"
+            ]
+        ]
+    },
+    {
+        "id": "6d4f36375cc64217",
+        "type": "link in",
+        "z": "tab-kafka-adapter",
+        "name": "\u2190 feeds.kafka.event",
+        "links": [],
+        "x": 120,
+        "y": 500,
+        "wires": [
+            [
+                "kafka-event"
+            ]
+        ]
+    },
+    {
+        "id": "a90f7b95d55ce2f2",
+        "type": "link in",
+        "z": "tab-kafka-adapter",
+        "name": "\u2190 feeds.kafka.city.weather",
+        "links": [],
+        "x": 120,
+        "y": 560,
+        "wires": [
+            [
+                "kafka-city-weather"
+            ]
+        ]
+    }
+]

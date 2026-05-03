@@ -1,0 +1,41 @@
+[
+  {
+    "id": "subflow_trino_token",
+    "type": "subflow",
+    "name": "GetTrinoToken",
+    "info": "OIDC password grant with token cache/refresh. Runtime definition is loaded from flows/ai-insight-anomaly.json.",
+    "in": [
+      {
+        "x": 60,
+        "y": 80,
+        "wires": [
+          {
+            "id": "fn_get_trino_token"
+          }
+        ]
+      }
+    ],
+    "out": [
+      {
+        "x": 430,
+        "y": 60,
+        "wires": [
+          {
+            "id": "fn_get_trino_token",
+            "port": 0
+          }
+        ]
+      },
+      {
+        "x": 430,
+        "y": 120,
+        "wires": [
+          {
+            "id": "fn_get_trino_token",
+            "port": 1
+          }
+        ]
+      }
+    ]
+  }
+]

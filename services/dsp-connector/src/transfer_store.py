@@ -8,7 +8,6 @@ import logging
 import secrets
 from datetime import UTC, datetime, timedelta
 from threading import Lock
-from typing import Any
 from uuid import uuid4
 
 from src.models import (
@@ -23,8 +22,17 @@ logger = logging.getLogger(__name__)
 
 # Valid state transitions per DSP 1.0
 _VALID_TRANSITIONS: dict[TransferState, set[TransferState]] = {
-    TransferState.REQUESTED: {TransferState.STARTED, TransferState.TERMINATED, TransferState.ERROR},
-    TransferState.STARTED: {TransferState.COMPLETED, TransferState.SUSPENDED, TransferState.TERMINATED, TransferState.ERROR},
+    TransferState.REQUESTED: {
+        TransferState.STARTED,
+        TransferState.TERMINATED,
+        TransferState.ERROR,
+    },
+    TransferState.STARTED: {
+        TransferState.COMPLETED,
+        TransferState.SUSPENDED,
+        TransferState.TERMINATED,
+        TransferState.ERROR,
+    },
     TransferState.SUSPENDED: {TransferState.STARTED, TransferState.TERMINATED},
     TransferState.COMPLETED: set(),
     TransferState.TERMINATED: set(),
@@ -77,7 +85,9 @@ class TransferStore:
         )
         with self._lock:
             self._transfers[transfer.id] = transfer
-        logger.info(f"Transfer {transfer.id} created: {request.format} for asset {request.assetId}")
+        logger.info(
+            f"Transfer {transfer.id} created: {request.format} for asset {request.assetId}"
+        )
         return transfer
 
     def get(self, transfer_id: str) -> TransferProcess | None:
@@ -149,11 +159,15 @@ class TransferStore:
         path = f"/api/data/{transfer.assetId}"
         from_ts = transfer.parameters.get("windowFrom", "")
         to_ts = transfer.parameters.get("windowTo", "")
-        expires_at = (datetime.now(UTC) + timedelta(seconds=self._default_ttl_seconds)).isoformat()
+        expires_at = (
+            datetime.now(UTC) + timedelta(seconds=self._default_ttl_seconds)
+        ).isoformat()
 
         # HMAC-SHA256 over canonical message
         message = f"GET:{path}:{from_ts}:{to_ts}:{expires_at}"
-        token = hmac.new(self._hmac_secret, message.encode("utf-8"), hashlib.sha256).hexdigest()
+        token = hmac.new(
+            self._hmac_secret, message.encode("utf-8"), hashlib.sha256
+        ).hexdigest()
 
         url = (
             f"{self._data_api_base_url.rstrip('/')}{path}"
@@ -168,7 +182,9 @@ class TransferStore:
         bootstrap = self._kafka_bootstrap or "kafka.provider.example:9092"
         username = f"user_{transfer.id}"
         password = secrets.token_urlsafe(24)
-        expires_at = (datetime.now(UTC) + timedelta(seconds=self._default_ttl_seconds)).isoformat()
+        expires_at = (
+            datetime.now(UTC) + timedelta(seconds=self._default_ttl_seconds)
+        ).isoformat()
 
         return AccessObject(
             bootstrap=bootstrap,

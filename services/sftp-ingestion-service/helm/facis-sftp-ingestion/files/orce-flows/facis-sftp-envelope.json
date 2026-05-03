@@ -1,0 +1,58 @@
+[
+  {
+    "id": "tab-sftp-envelope",
+    "type": "tab",
+    "label": "FACIS SFTP — Bronze Envelope",
+    "disabled": false,
+    "info": "Builds the 6-field Bronze envelope per record, byte-equivalent to\nsftp_poller.py:163-172.\n\nField order matters for any downstream consumer that hashes or diffs the\nserialised envelope:\n  1. ingest_timestamp\n  2. source_topic\n  3. kafka_partition (always 0)\n  4. kafka_offset    (always 0)\n  5. kafka_key\n  6. raw_payload     (JSON.stringify(record))"
+  },
+  {
+    "id": "sftp-link-in-record",
+    "type": "link in",
+    "z": "tab-sftp-envelope",
+    "name": "← sftp.record",
+    "links": [
+      "sftp-parsers-link-out-record"
+    ],
+    "x": 130,
+    "y": 100,
+    "wires": [
+      [
+        "sftp-fn-envelope"
+      ]
+    ]
+  },
+  {
+    "id": "sftp-fn-envelope",
+    "type": "function",
+    "z": "tab-sftp-envelope",
+    "name": "bronze envelope builder",
+    "func": "const r = msg.record;\nconst envelope = {\n    ingest_timestamp: msg.ingest_timestamp,\n    source_topic: msg.source_topic,\n    kafka_partition: 0,\n    kafka_offset: 0,\n    kafka_key: msg.filename,\n    raw_payload: JSON.stringify(r)\n};\nreturn {\n    filename: msg.filename,\n    routing_topic: env.get('INGEST_DEFAULT_TOPIC') || 'sftp.ingest.raw',\n    envelope: envelope\n};\n",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 410,
+    "y": 100,
+    "wires": [
+      [
+        "sftp-envelope-link-out"
+      ]
+    ]
+  },
+  {
+    "id": "sftp-envelope-link-out",
+    "type": "link out",
+    "z": "tab-sftp-envelope",
+    "name": "sftp.envelope →",
+    "mode": "link",
+    "links": [
+      "sftp-link-in-envelope"
+    ],
+    "x": 660,
+    "y": 100,
+    "wires": []
+  }
+]

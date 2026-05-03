@@ -1,32 +1,11 @@
 <script setup lang="ts">
-import { useRouter, useRoute } from 'vue-router'
-
-const router = useRouter()
-const route = useRoute()
-
-const tabs = [
-  { label: 'Overview', to: '/analytics/overview', icon: 'pi-chart-bar' },
-  { label: 'Trends', to: '/analytics/trends', icon: 'pi-chart-line' },
-  { label: 'Correlations', to: '/analytics/correlations', icon: 'pi-link' },
-  { label: 'Anomalies', to: '/analytics/anomalies', icon: 'pi-exclamation-triangle' },
-  { label: 'Recommendations', to: '/analytics/recommendations', icon: 'pi-lightbulb' }
-]
+// Sub-tab strip removed: only Overview remains. The other four sub-tabs
+// (Trends/Correlations/Anomalies/Recommendations) all needed /history
+// endpoints that the simulation REST flow does not expose.
 </script>
 
 <template>
   <div class="use-case-layout">
-    <div class="use-case-tabs">
-      <button
-        v-for="tab in tabs"
-        :key="tab.to"
-        class="use-case-tab"
-        :class="{ 'use-case-tab--active': route.path.startsWith(tab.to) }"
-        @click="router.push(tab.to)"
-      >
-        <i :class="`pi ${tab.icon}`"></i>
-        {{ tab.label }}
-      </button>
-    </div>
     <div class="use-case-content"><RouterView /></div>
   </div>
 </template>

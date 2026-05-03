@@ -1,0 +1,153 @@
+[
+  {
+    "id": "tab-sftp-observability",
+    "type": "tab",
+    "label": "FACIS SFTP — Health & Metrics",
+    "disabled": false,
+    "info": "GET /api/v1/sftp/health  → {status, service, polling}\nGET /sftp/metrics         → Prometheus text format\n\nMetric families (mirrors src/main.py:36-56):\n  facis_sftp_files_ingested_total{extension}\n  facis_sftp_records_published_total\n  facis_sftp_poll_errors_total\n  facis_sftp_dlq_total{error_type}              (NEW vs Python)\n  facis_sftp_poll_duration_seconds              (histogram, buckets [0.1,0.5,1,5,10,30,60])\n\nPaths are namespaced by service to avoid colliding with the Simulation\nflow's /api/v1/health and /metrics on the shared ORCE pod (BREAKING\nCHANGE vs the Python service).\n\nCatch-all uncaught errors fan into sftp.dlq with error_type='uncaught'."
+  },
+  {
+    "id": "sftp-obs-in-health",
+    "type": "http in",
+    "z": "tab-sftp-observability",
+    "name": "GET /api/v1/sftp/health",
+    "url": "/api/v1/sftp/health",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 180,
+    "y": 80,
+    "wires": [
+      [
+        "sftp-obs-fn-health"
+      ]
+    ]
+  },
+  {
+    "id": "sftp-obs-fn-health",
+    "type": "function",
+    "z": "tab-sftp-observability",
+    "name": "health body",
+    "func": "// `polling` is true if a poll is in flight OR a poll completed within the\n// last 2× the configured interval (i.e. the scheduler is still ticking).\nconst pollIntervalMs = Number(env.get('SFTP_POLL_INTERVAL_SECONDS') || 60) * 1000;\nconst lastPoll = flow.get('last_poll_ms');\nconst inflight = flow.get('poll_inflight') === true;\nconst recently = lastPoll && (Date.now() - lastPoll) < (2 * pollIntervalMs);\nmsg.payload = {\n    status: 'ok',\n    service: 'sftp-ingestion-service',\n    polling: inflight || !!recently\n};\nmsg.headers = { 'Content-Type': 'application/json' };\nmsg.statusCode = 200;\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 440,
+    "y": 80,
+    "wires": [
+      [
+        "sftp-obs-out-health"
+      ]
+    ]
+  },
+  {
+    "id": "sftp-obs-out-health",
+    "type": "http response",
+    "z": "tab-sftp-observability",
+    "name": "200 health",
+    "statusCode": "",
+    "headers": {},
+    "x": 660,
+    "y": 80,
+    "wires": []
+  },
+  {
+    "id": "sftp-obs-in-metrics",
+    "type": "http in",
+    "z": "tab-sftp-observability",
+    "name": "GET /sftp/metrics",
+    "url": "/sftp/metrics",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 180,
+    "y": 160,
+    "wires": [
+      [
+        "sftp-obs-fn-metrics"
+      ]
+    ]
+  },
+  {
+    "id": "sftp-obs-fn-metrics",
+    "type": "function",
+    "z": "tab-sftp-observability",
+    "name": "build prometheus text",
+    "func": "const m = global.get('metrics') || {};\n\nfunction emitCounter(name, help, samples) {\n    let out = '# HELP ' + name + ' ' + help + '\\n';\n    out += '# TYPE ' + name + ' counter\\n';\n    if (samples.length === 0) {\n        out += name + ' 0\\n';\n        return out;\n    }\n    for (const [labels, v] of samples) {\n        const ls = Object.entries(labels).map(([k, vv]) => k + '=\"' + vv + '\"').join(',');\n        out += name + (ls ? '{' + ls + '}' : '') + ' ' + v + '\\n';\n    }\n    return out;\n}\n\nlet body = '';\n\nconst files = m.facis_sftp_files_ingested_total || {};\nbody += emitCounter('facis_sftp_files_ingested_total',\n    'Total files successfully ingested via SFTP',\n    Object.entries(files).map(([extension, v]) => [{ extension }, v]));\n\nbody += emitCounter('facis_sftp_records_published_total',\n    'Total records published to Kafka from SFTP files',\n    [[{}, m.facis_sftp_records_published_total || 0]]);\n\nbody += emitCounter('facis_sftp_poll_errors_total',\n    'Total SFTP poll cycle errors',\n    [[{}, m.facis_sftp_poll_errors_total || 0]]);\n\nconst dlq = m.facis_sftp_dlq_total || {};\nbody += emitCounter('facis_sftp_dlq_total',\n    'Total messages routed to the SFTP DLQ topic',\n    Object.entries(dlq).map(([error_type, v]) => [{ error_type }, v]));\n\n// Histogram\nconst h = m.facis_sftp_poll_duration_seconds || { buckets: {}, sum: 0, count: 0 };\nbody += '# HELP facis_sftp_poll_duration_seconds Duration of each SFTP poll cycle\\n';\nbody += '# TYPE facis_sftp_poll_duration_seconds histogram\\n';\nfor (const b of [0.1, 0.5, 1, 5, 10, 30, 60]) {\n    body += 'facis_sftp_poll_duration_seconds_bucket{le=\"' + b + '\"} ' + (h.buckets[b] || 0) + '\\n';\n}\nbody += 'facis_sftp_poll_duration_seconds_bucket{le=\"+Inf\"} ' + h.count + '\\n';\nbody += 'facis_sftp_poll_duration_seconds_sum ' + h.sum + '\\n';\nbody += 'facis_sftp_poll_duration_seconds_count ' + h.count + '\\n';\n\nmsg.payload = body;\nmsg.headers = { 'Content-Type': 'text/plain; version=0.0.4' };\nmsg.statusCode = 200;\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 460,
+    "y": 160,
+    "wires": [
+      [
+        "sftp-obs-out-metrics"
+      ]
+    ]
+  },
+  {
+    "id": "sftp-obs-out-metrics",
+    "type": "http response",
+    "z": "tab-sftp-observability",
+    "name": "200 metrics",
+    "statusCode": "",
+    "headers": {},
+    "x": 690,
+    "y": 160,
+    "wires": []
+  },
+  {
+    "id": "sftp-obs-catch-uncaught",
+    "type": "catch",
+    "z": "tab-sftp-observability",
+    "name": "uncaught → DLQ",
+    "scope": null,
+    "uncaught": true,
+    "x": 170,
+    "y": 280,
+    "wires": [
+      [
+        "sftp-obs-fn-catch-to-dlq"
+      ]
+    ]
+  },
+  {
+    "id": "sftp-obs-fn-catch-to-dlq",
+    "type": "function",
+    "z": "tab-sftp-observability",
+    "name": "format uncaught for DLQ",
+    "func": "const dlq = {\n    error_type: 'uncaught',\n    error_message: msg.error ? (msg.error.message || String(msg.error)) : 'unknown error',\n    error_timestamp: new Date().toISOString(),\n    filename: null,\n    source_topic: null\n};\nreturn { payload: dlq };\n",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 440,
+    "y": 280,
+    "wires": [
+      [
+        "sftp-obs-link-out-dlq"
+      ]
+    ]
+  },
+  {
+    "id": "sftp-obs-link-out-dlq",
+    "type": "link out",
+    "z": "tab-sftp-observability",
+    "name": "sftp.dlq →",
+    "mode": "link",
+    "links": [
+      "sftp-link-in-dlq"
+    ],
+    "x": 700,
+    "y": 280,
+    "wires": []
+  }
+]

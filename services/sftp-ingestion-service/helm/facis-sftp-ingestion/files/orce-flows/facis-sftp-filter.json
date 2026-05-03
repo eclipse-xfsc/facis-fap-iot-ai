@@ -1,0 +1,129 @@
+[
+  {
+    "id": "tab-sftp-filter",
+    "type": "tab",
+    "label": "FACIS SFTP — File Filter & Routing",
+    "disabled": false,
+    "info": "Defensive guard re-checking the extension/size constraints (already applied\nin the Poller). Routes accepted files to the per-format parser tabs:\n  .json -> sftp.parse.json\n  .csv  -> sftp.parse.csv\n  other -> sftp.parse.raw  (mirrors Python's `raw_content` fallback at\n                            sftp_poller.py:100-101)\nRejected files emit `sftp.dlq` with error_type='filter'."
+  },
+  {
+    "id": "sftp-link-in-file",
+    "type": "link in",
+    "z": "tab-sftp-filter",
+    "name": "← sftp.file.downloaded",
+    "links": [
+      "sftp-link-out-file"
+    ],
+    "x": 130,
+    "y": 100,
+    "wires": [
+      [
+        "sftp-fn-validate-file"
+      ]
+    ]
+  },
+  {
+    "id": "sftp-fn-validate-file",
+    "type": "function",
+    "z": "tab-sftp-filter",
+    "name": "extension + size guard",
+    "func": "const accepted = (env.get('INGEST_ACCEPTED_EXTENSIONS') || '.json,.csv,.avro')\n    .split(',').map(s => s.trim().toLowerCase());\nconst maxSize = Number(env.get('INGEST_MAX_FILE_SIZE_BYTES') || 104857600);\nconst ext = (msg.ext || '').toLowerCase();\nconst size = Number(msg.size_bytes || 0);\nconst reasons = [];\nif (!accepted.includes(ext)) reasons.push('extension_not_accepted:' + ext);\nif (size > maxSize) reasons.push('size_exceeded:' + size);\nif (msg.is_regular === false) reasons.push('not_regular_file');\nif (reasons.length === 0) {\n    return [msg, null];\n}\nconst dlq = {\n    error_type: 'filter',\n    error_message: reasons.join(','),\n    error_timestamp: new Date().toISOString(),\n    filename: msg.filename,\n    source_topic: msg.source_topic\n};\nreturn [null, { payload: dlq, filename: msg.filename }];\n",
+    "outputs": 2,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 380,
+    "y": 100,
+    "wires": [
+      [
+        "sftp-switch-ext"
+      ],
+      [
+        "sftp-filter-link-out-dlq"
+      ]
+    ]
+  },
+  {
+    "id": "sftp-switch-ext",
+    "type": "switch",
+    "z": "tab-sftp-filter",
+    "name": "route by extension",
+    "property": "ext",
+    "propertyType": "msg",
+    "rules": [
+      { "t": "eq", "v": ".json", "vt": "str" },
+      { "t": "eq", "v": ".csv", "vt": "str" },
+      { "t": "else" }
+    ],
+    "checkall": "false",
+    "repair": false,
+    "outputs": 3,
+    "x": 640,
+    "y": 100,
+    "wires": [
+      [
+        "sftp-link-out-parse-json"
+      ],
+      [
+        "sftp-link-out-parse-csv"
+      ],
+      [
+        "sftp-link-out-parse-raw"
+      ]
+    ]
+  },
+  {
+    "id": "sftp-link-out-parse-json",
+    "type": "link out",
+    "z": "tab-sftp-filter",
+    "name": "sftp.parse.json →",
+    "mode": "link",
+    "links": [
+      "sftp-link-in-parse-json"
+    ],
+    "x": 870,
+    "y": 60,
+    "wires": []
+  },
+  {
+    "id": "sftp-link-out-parse-csv",
+    "type": "link out",
+    "z": "tab-sftp-filter",
+    "name": "sftp.parse.csv →",
+    "mode": "link",
+    "links": [
+      "sftp-link-in-parse-csv"
+    ],
+    "x": 870,
+    "y": 100,
+    "wires": []
+  },
+  {
+    "id": "sftp-link-out-parse-raw",
+    "type": "link out",
+    "z": "tab-sftp-filter",
+    "name": "sftp.parse.raw →",
+    "mode": "link",
+    "links": [
+      "sftp-link-in-parse-raw"
+    ],
+    "x": 870,
+    "y": 140,
+    "wires": []
+  },
+  {
+    "id": "sftp-filter-link-out-dlq",
+    "type": "link out",
+    "z": "tab-sftp-filter",
+    "name": "sftp.dlq →",
+    "mode": "link",
+    "links": [
+      "sftp-link-in-dlq"
+    ],
+    "x": 640,
+    "y": 180,
+    "wires": []
+  }
+]

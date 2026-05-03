@@ -1,0 +1,132 @@
+# =============================================================================
+# Kafka mTLS Cert Expiry CronJob
+# =============================================================================
+# Daily check of the client cert mounted into the ORCE pod
+# (`/etc/kafka-certs/tls.crt`). Pushes a metric to Prometheus pushgateway and
+# emits a structured-JSON log line with `days_until_expiry`.
+#
+# Auto-rotation is NOT implemented here — Stackable's secret-operator issues
+# the cert on the *Stackable* cluster, and we don't have an admin path from the
+# IONOS cluster to rotate it on demand. This job ensures we never miss the
+# rotation window: alerts fire 14 days (warning) and 7 days (critical) ahead.
+# Rotation procedure is documented at
+# `services/simulation/docs/orce-runtime/operations-runbook.md`.
+#
+# Inputs:
+#   - Secret/facis-kafka-certs (orce ns) — same as ORCE consumes; the job
+#     reads tls.crt from a read-only mount.
+#   - Optional: PUSHGATEWAY_URL env var. If unset, the job still logs but
+#     skips the metric push. Default points at the in-cluster pushgateway.
+#
+# Apply:
+#   kubectl apply -f infrastructure/orce/kafka-cert-expiry-cronjob.yaml
+#
+# Manual run (for testing):
+#   kubectl create job --from=cronjob/kafka-cert-expiry-check \
+#     kafka-cert-expiry-now -n orce
+#   kubectl logs job/kafka-cert-expiry-now -n orce
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: kafka-cert-expiry-check
+  namespace: orce
+  labels:
+    app.kubernetes.io/name: facis-kafka-cert-expiry
+    app.kubernetes.io/component: operations
+spec:
+  schedule: "0 6 * * *"   # 06:00 UTC daily
+  successfulJobsHistoryLimit: 7
+  failedJobsHistoryLimit: 3
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 120
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: facis-kafka-cert-expiry
+        spec:
+          restartPolicy: Never
+          # Runs as root (uid 0) only because `apk add openssl curl` requires
+          # root to write the apk db. The container reads the mounted cert
+          # read-only and pushes a metric — no mutation in or out of the
+          # cluster. Drops all capabilities.
+          volumes:
+            - name: kafka-certs
+              secret:
+                secretName: facis-kafka-certs
+                items:
+                  - key: tls.crt
+                    path: tls.crt
+                defaultMode: 0444
+          containers:
+            - name: check
+              # alpine has openssl + curl available via apk; tiny image (~7 MB).
+              image: alpine:3.21
+              command: ["sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  # coreutils gives GNU `date -d` (busybox `date` has no -d).
+                  apk add --no-cache --quiet openssl curl coreutils
+                  CERT=/etc/kafka-certs/tls.crt
+                  if [ ! -f "$CERT" ]; then
+                    echo '{"level":"error","msg":"cert not mounted","path":"'"$CERT"'"}' >&2
+                    exit 2
+                  fi
+
+                  # ISO8601 of notAfter, and seconds until expiry.
+                  NOT_AFTER=$(openssl x509 -noout -enddate -in "$CERT" \
+                              | sed 's/notAfter=//')
+                  NOT_AFTER_EPOCH=$(date -d "$NOT_AFTER" +%s)
+                  NOW=$(date +%s)
+                  SECS=$((NOT_AFTER_EPOCH - NOW))
+                  DAYS=$((SECS / 86400))
+                  LEVEL="info"
+                  if [ "$DAYS" -lt 7 ]; then LEVEL="error"
+                  elif [ "$DAYS" -lt 14 ]; then LEVEL="warn"
+                  fi
+
+                  # Structured log (always)
+                  echo "{\"level\":\"$LEVEL\",\"msg\":\"kafka cert expiry check\",\"days\":$DAYS,\"notAfter\":\"$NOT_AFTER\"}"
+
+                  # Push to pushgateway if configured. Tolerant of DNS / connection
+                  # failures — the structured log line above is the primary signal;
+                  # the metric is bonus telemetry.
+                  if [ -n "${PUSHGATEWAY_URL:-}" ]; then
+                    PAYLOAD="# TYPE facis_kafka_cert_days_until_expiry gauge
+                  facis_kafka_cert_days_until_expiry{cert=\"tls.crt\"} $DAYS
+                  # TYPE facis_kafka_cert_check_timestamp_seconds gauge
+                  facis_kafka_cert_check_timestamp_seconds{cert=\"tls.crt\"} $NOW
+                  "
+                    if echo "$PAYLOAD" | curl -fsS --max-time 10 --data-binary @- \
+                         "$PUSHGATEWAY_URL/metrics/job/kafka-cert-expiry-check" >/dev/null 2>&1; then
+                      echo "{\"level\":\"info\",\"msg\":\"metric pushed\",\"pushgateway\":\"$PUSHGATEWAY_URL\"}"
+                    else
+                      echo "{\"level\":\"warn\",\"msg\":\"pushgateway unreachable; structured log is the primary signal\",\"pushgateway\":\"$PUSHGATEWAY_URL\"}"
+                    fi
+                  else
+                    echo '{"level":"warn","msg":"PUSHGATEWAY_URL unset; metric not pushed"}'
+                  fi
+              env:
+                - name: PUSHGATEWAY_URL
+                  value: "http://prometheus-pushgateway.monitoring.svc.cluster.local:9091"
+              volumeMounts:
+                - name: kafka-certs
+                  mountPath: /etc/kafka-certs
+                  readOnly: true
+              resources:
+                requests:
+                  cpu: 20m
+                  memory: 32Mi
+                limits:
+                  cpu: 100m
+                  memory: 64Mi
+              securityContext:
+                runAsUser: 0
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: false   # apk writes to /var/cache
+                capabilities:
+                  drop: [ALL]

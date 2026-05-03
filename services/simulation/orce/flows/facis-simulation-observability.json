@@ -1,0 +1,151 @@
+[
+  {
+    "id": "tab-observability",
+    "type": "tab",
+    "label": "FACIS Simulation \u2014 Observability & Errors",
+    "disabled": false,
+    "info": "FACIS Simulation \u2014 Observability & Errors\n\n  GET /metrics \u2014 Prometheus text-format scrape endpoint exposing\n    facis_sim_ticks_total, facis_kafka_messages_sent_total,\n    facis_mqtt_messages_sent_total, facis_modbus_requests_total,\n    and facis_sim_publish_latency_seconds.\n\n  Catch nodes route uncaught errors from any tab into a structured\n  JSON log line and a Kafka DLQ topic `sim.dead_letter`.\n\nMetric counters live in global context under `metrics.<name>`."
+  },
+  {
+    "id": "in-metrics",
+    "type": "http in",
+    "z": "tab-observability",
+    "name": "GET /metrics",
+    "url": "/metrics",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 150,
+    "y": 100,
+    "wires": [
+      [
+        "fn-metrics"
+      ]
+    ]
+  },
+  {
+    "id": "fn-metrics",
+    "type": "function",
+    "z": "tab-observability",
+    "name": "build prometheus text",
+    "func": "// Build Prometheus text format response from global counter state.\nconst counters = global.get('metrics') || {};\nconst tickCount = (flow.get('kafka_tick_count') || 0)\n    + (flow.get('mqtt_tick_count') || 0);\n\nfunction fmt(name, help, type, samples) {\n    let out = '# HELP ' + name + ' ' + help + '\\n';\n    out += '# TYPE ' + name + ' ' + type + '\\n';\n    for (const [labels, value] of samples) {\n        const labelStr = Object.entries(labels).map(([k, v]) => k + '=\"' + v + '\"').join(',');\n        out += name + (labelStr ? '{' + labelStr + '}' : '') + ' ' + value + '\\n';\n    }\n    return out;\n}\n\nlet body = '';\nbody += fmt('facis_sim_ticks_total', 'Total simulation ticks emitted', 'counter', [\n    [{ runtime: 'orce-native' }, tickCount]\n]);\n\nconst kafkaTotals = counters.kafka_messages_sent_total || {};\nbody += fmt('facis_kafka_messages_sent_total', 'Total Kafka messages sent', 'counter',\n    Object.entries(kafkaTotals).map(([topic, v]) => [{ topic }, v]));\n\nconst mqttTotals = counters.mqtt_messages_sent_total || {};\nbody += fmt('facis_mqtt_messages_sent_total', 'Total MQTT messages sent', 'counter',\n    Object.entries(mqttTotals).map(([topic, v]) => [{ topic }, v]));\n\nconst modbusTotals = counters.modbus_requests_total || {};\nbody += fmt('facis_modbus_requests_total', 'Total Modbus requests served', 'counter',\n    Object.entries(modbusTotals).map(([fc, v]) => [{ register_type: fc }, v]));\n\nmsg.payload = body;\nmsg.headers = { 'Content-Type': 'text/plain; version=0.0.4' };\nmsg.statusCode = 200;\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 400,
+    "y": 100,
+    "wires": [
+      [
+        "out-metrics"
+      ]
+    ]
+  },
+  {
+    "id": "out-metrics",
+    "type": "http response",
+    "z": "tab-observability",
+    "name": "200 metrics",
+    "statusCode": "",
+    "headers": {},
+    "x": 660,
+    "y": 100,
+    "wires": []
+  },
+  {
+    "id": "catch-all",
+    "type": "catch",
+    "z": "tab-observability",
+    "name": "catch all uncaught errors",
+    "scope": null,
+    "uncaught": true,
+    "x": 170,
+    "y": 220,
+    "wires": [
+      [
+        "fn-catch"
+      ]
+    ]
+  },
+  {
+    "id": "fn-catch",
+    "type": "function",
+    "z": "tab-observability",
+    "name": "log + DLQ",
+    "func": "// Structured JSON log + DLQ payload for any uncaught error.\nconst ts = new Date().toISOString();\nconst entry = {\n    timestamp: ts,\n    level: 'error',\n    service: 'facis-simulation-orce',\n    source_tab: msg.error && msg.error.source ? msg.error.source.id : 'unknown',\n    source_name: msg.error && msg.error.source ? msg.error.source.name : null,\n    message: msg.error ? (msg.error.message || String(msg.error)) : 'unknown error',\n    payload_excerpt: typeof msg.payload === 'string' ? msg.payload.slice(0, 256) : null\n};\nnode.error(JSON.stringify(entry));\nmsg.topic = 'sim.dead_letter';\nmsg.payload = JSON.stringify(entry);\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 420,
+    "y": 220,
+    "wires": [
+      [
+        "debug-error",
+        "link-out-dlq"
+      ]
+    ]
+  },
+  {
+    "id": "debug-error",
+    "type": "debug",
+    "z": "tab-observability",
+    "name": "stderr (JSON)",
+    "active": true,
+    "tosidebar": true,
+    "console": true,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 660,
+    "y": 220,
+    "wires": []
+  },
+  {
+    "id": "link-out-dlq",
+    "type": "link out",
+    "z": "tab-observability",
+    "name": "sim.dead_letter \u2192",
+    "mode": "link",
+    "links": [],
+    "x": 670,
+    "y": 280,
+    "wires": []
+  },
+  {
+    "id": "link-in-metric-inc",
+    "type": "link in",
+    "z": "tab-observability",
+    "name": "\u2190 metric.inc",
+    "links": [],
+    "x": 130,
+    "y": 360,
+    "wires": [
+      [
+        "fn-metric-inc"
+      ]
+    ]
+  },
+  {
+    "id": "fn-metric-inc",
+    "type": "function",
+    "z": "tab-observability",
+    "name": "increment counter",
+    "func": "const m = global.get('metrics') || {};\nconst family = msg.payload && msg.payload.family;\nconst label = msg.payload && msg.payload.label;\nconst inc = (msg.payload && typeof msg.payload.value === 'number') ? msg.payload.value : 1;\nif (!family || !label) {\n    node.warn('metric.inc: missing family or label');\n    return null;\n}\nif (!m[family]) m[family] = {};\nm[family][label] = (m[family][label] || 0) + inc;\nglobal.set('metrics', m);\nreturn null;\n",
+    "outputs": 0,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 380,
+    "y": 360,
+    "wires": []
+  }
+]

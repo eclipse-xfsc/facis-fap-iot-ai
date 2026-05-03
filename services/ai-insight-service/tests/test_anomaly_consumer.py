@@ -62,10 +62,12 @@ class TestAnomalyDetection:
 
         # Feed normal readings
         for i in range(10):
-            payload = json.dumps({
-                "active_power_kw": 42.0 + (i % 3) * 0.1,
-                "timestamp": f"2026-04-07T12:{i:02d}:00Z",
-            }).encode()
+            payload = json.dumps(
+                {
+                    "active_power_kw": 42.0 + (i % 3) * 0.1,
+                    "timestamp": f"2026-04-07T12:{i:02d}:00Z",
+                }
+            ).encode()
             detector._process_message("sim.smart_energy.meter", "meter-001", payload)
 
         assert detector.stats_count > 0
@@ -85,17 +87,21 @@ class TestAnomalyDetection:
 
         # Build baseline (30 readings around 42 kW)
         for i in range(30):
-            payload = json.dumps({
-                "active_power_kw": 42.0,
-                "timestamp": f"2026-04-07T12:{i:02d}:00Z",
-            }).encode()
+            payload = json.dumps(
+                {
+                    "active_power_kw": 42.0,
+                    "timestamp": f"2026-04-07T12:{i:02d}:00Z",
+                }
+            ).encode()
             detector._process_message("sim.smart_energy.meter", "meter-001", payload)
 
         # Inject spike (200 kW — way above normal)
-        spike_payload = json.dumps({
-            "active_power_kw": 200.0,
-            "timestamp": "2026-04-07T12:30:00Z",
-        }).encode()
+        spike_payload = json.dumps(
+            {
+                "active_power_kw": 200.0,
+                "timestamp": "2026-04-07T12:30:00Z",
+            }
+        ).encode()
         detector._process_message("sim.smart_energy.meter", "meter-001", spike_payload)
 
         assert len(detected) == 1
@@ -114,11 +120,13 @@ class TestAnomalyDetection:
         # Bronze envelope format (raw_payload is a JSON string)
         for i in range(5):
             inner = json.dumps({"active_power_kw": 42.0, "timestamp": "t"})
-            envelope = json.dumps({
-                "ingest_timestamp": "2026-04-07T12:00:00Z",
-                "source_topic": "sim.smart_energy.meter",
-                "raw_payload": inner,
-            }).encode()
+            envelope = json.dumps(
+                {
+                    "ingest_timestamp": "2026-04-07T12:00:00Z",
+                    "source_topic": "sim.smart_energy.meter",
+                    "raw_payload": inner,
+                }
+            ).encode()
             detector._process_message("topic", "key", envelope)
 
         assert detector.stats_count > 0

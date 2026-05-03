@@ -1,0 +1,156 @@
+[
+  {
+    "id": "tab-sftp-parsers",
+    "type": "tab",
+    "label": "FACIS SFTP — Parsers",
+    "disabled": false,
+    "info": "Three parsers, one function node each:\n\n  JSON  — JSON.parse; if array, return as-is (one record per element);\n          if object, wrap in single-element list. Mirrors\n          sftp_poller.py:87-93. On parse exception → DLQ.\n\n  CSV   — csv-parse/sync (npm) with `columns: true, cast: false,\n          skip_empty_lines: true, relax_column_count: false`. cast=false\n          keeps all values as strings, matching csv.DictReader. The strict\n          column-count is a *tightening* vs Python which silently padded\n          missing columns with None — documented in the README.\n\n  Raw   — `[{raw_content: content.toString('utf8')}]`. Matches Python's\n          fallback at sftp_poller.py:100-101.\n\nAll parsers fan out one `sftp.record` msg per record. Failures route to\n`sftp.dlq` with error_type='parse'."
+  },
+  {
+    "id": "sftp-link-in-parse-json",
+    "type": "link in",
+    "z": "tab-sftp-parsers",
+    "name": "← sftp.parse.json",
+    "links": [
+      "sftp-link-out-parse-json"
+    ],
+    "x": 140,
+    "y": 80,
+    "wires": [
+      [
+        "sftp-fn-parse-json"
+      ]
+    ]
+  },
+  {
+    "id": "sftp-fn-parse-json",
+    "type": "function",
+    "z": "tab-sftp-parsers",
+    "name": "JSON parser",
+    "func": "const filename = msg.filename;\nconst srcTopic = msg.source_topic;\nconst ts = msg.ingest_timestamp;\nlet parsed;\ntry {\n    const text = msg.content.toString('utf8');\n    parsed = JSON.parse(text);\n} catch (e) {\n    return [null, { payload: {\n        error_type: 'parse',\n        error_message: 'json: ' + e.message,\n        error_timestamp: new Date().toISOString(),\n        filename: filename,\n        source_topic: srcTopic\n    }, filename: filename }];\n}\nconst records = Array.isArray(parsed) ? parsed : [parsed];\nconst out = records.map(r => ({\n    filename: filename,\n    source_topic: srcTopic,\n    ingest_timestamp: ts,\n    record: r\n}));\nnode.send([out, null]);\nreturn null;\n",
+    "outputs": 2,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 400,
+    "y": 80,
+    "wires": [
+      [
+        "sftp-parsers-link-out-record"
+      ],
+      [
+        "sftp-parsers-link-out-dlq"
+      ]
+    ]
+  },
+  {
+    "id": "sftp-link-in-parse-csv",
+    "type": "link in",
+    "z": "tab-sftp-parsers",
+    "name": "← sftp.parse.csv",
+    "links": [
+      "sftp-link-out-parse-csv"
+    ],
+    "x": 140,
+    "y": 160,
+    "wires": [
+      [
+        "sftp-fn-parse-csv"
+      ]
+    ]
+  },
+  {
+    "id": "sftp-fn-parse-csv",
+    "type": "function",
+    "z": "tab-sftp-parsers",
+    "name": "CSV parser",
+    "func": "// csv-parse v5+: parse() returns rows as objects when columns:true.\nconst filename = msg.filename;\nconst srcTopic = msg.source_topic;\nconst ts = msg.ingest_timestamp;\nlet rows;\ntry {\n    const text = msg.content.toString('utf8');\n    rows = csvParseSync(text, {\n        columns: true,\n        skip_empty_lines: true,\n        cast: false,\n        relax_column_count: false\n    });\n} catch (e) {\n    return [null, { payload: {\n        error_type: 'parse',\n        error_message: 'csv: ' + e.message,\n        error_timestamp: new Date().toISOString(),\n        filename: filename,\n        source_topic: srcTopic\n    }, filename: filename }];\n}\nconst out = rows.map(r => ({\n    filename: filename,\n    source_topic: srcTopic,\n    ingest_timestamp: ts,\n    record: r\n}));\nnode.send([out, null]);\nreturn null;\n",
+    "outputs": 2,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [
+      {
+        "var": "csvParseSync",
+        "module": "csv-parse/sync",
+        "field": "parse"
+      }
+    ],
+    "x": 400,
+    "y": 160,
+    "wires": [
+      [
+        "sftp-parsers-link-out-record"
+      ],
+      [
+        "sftp-parsers-link-out-dlq"
+      ]
+    ]
+  },
+  {
+    "id": "sftp-link-in-parse-raw",
+    "type": "link in",
+    "z": "tab-sftp-parsers",
+    "name": "← sftp.parse.raw",
+    "links": [
+      "sftp-link-out-parse-raw"
+    ],
+    "x": 140,
+    "y": 240,
+    "wires": [
+      [
+        "sftp-fn-parse-raw"
+      ]
+    ]
+  },
+  {
+    "id": "sftp-fn-parse-raw",
+    "type": "function",
+    "z": "tab-sftp-parsers",
+    "name": "raw passthrough",
+    "func": "const filename = msg.filename;\nconst srcTopic = msg.source_topic;\nconst ts = msg.ingest_timestamp;\n// Python: content.decode('utf-8', errors='replace'). Buffer.toString('utf8')\n// in Node already substitutes U+FFFD for invalid sequences — equivalent.\nconst raw = msg.content.toString('utf8');\nconst out = [{\n    filename: filename,\n    source_topic: srcTopic,\n    ingest_timestamp: ts,\n    record: { raw_content: raw }\n}];\nnode.send([out, null]);\nreturn null;\n",
+    "outputs": 2,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 400,
+    "y": 240,
+    "wires": [
+      [
+        "sftp-parsers-link-out-record"
+      ],
+      []
+    ]
+  },
+  {
+    "id": "sftp-parsers-link-out-record",
+    "type": "link out",
+    "z": "tab-sftp-parsers",
+    "name": "sftp.record →",
+    "mode": "link",
+    "links": [
+      "sftp-link-in-record"
+    ],
+    "x": 660,
+    "y": 160,
+    "wires": []
+  },
+  {
+    "id": "sftp-parsers-link-out-dlq",
+    "type": "link out",
+    "z": "tab-sftp-parsers",
+    "name": "sftp.dlq →",
+    "mode": "link",
+    "links": [
+      "sftp-link-in-dlq"
+    ],
+    "x": 660,
+    "y": 240,
+    "wires": []
+  }
+]

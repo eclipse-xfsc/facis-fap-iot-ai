@@ -1,0 +1,107 @@
+[
+  {
+    "id": "tab-sftp-dlq",
+    "type": "tab",
+    "label": "FACIS SFTP — DLQ",
+    "disabled": false,
+    "info": "Dead-letter publisher for parse, publish, archive, sftp, filter, and\nuncaught failures.\n\nThis is **NEW behaviour** vs the Python service. Python configured\nINGEST_DLQ_TOPIC but never produced to it (parse failures were silently\nlogged; delivery failures were appended to a list and logged).\n\nDLQ envelope shape:\n  {\n    error_type:       'parse'|'publish'|'archive'|'sftp'|'filter'|'uncaught',\n    error_message:    string,\n    error_timestamp:  ISO 8601,\n    filename:         original filename | null,\n    source_topic:     'sftp://host/path/file' | null,\n    original_envelope: <Bronze envelope> | null\n  }\n\nUses the same kafka-broker-config as the Kafka tab (re-declared by ID)."
+  },
+  {
+    "id": "sftp-dlq-broker-config",
+    "type": "kafka-broker",
+    "name": "FACIS Stackable Kafka Cluster (DLQ)",
+    "broker": "${SFTP_KAFKA_BROKERS}",
+    "clientid": "facis-orce-sftp-dlq",
+    "securityProtocol": "ssl",
+    "sslCaLocation": "/etc/kafka-certs/ca.crt",
+    "sslCertLocation": "/etc/kafka-certs/tls.crt",
+    "sslKeyLocation": "/etc/kafka-certs/tls.key"
+  },
+  {
+    "id": "sftp-link-in-dlq",
+    "type": "link in",
+    "z": "tab-sftp-dlq",
+    "name": "← sftp.dlq",
+    "links": [
+      "sftp-link-out-poll-error",
+      "sftp-filter-link-out-dlq",
+      "sftp-parsers-link-out-dlq",
+      "sftp-kafka-link-out-dlq",
+      "sftp-obs-link-out-dlq"
+    ],
+    "x": 130,
+    "y": 100,
+    "wires": [
+      [
+        "sftp-fn-dlq-format"
+      ]
+    ]
+  },
+  {
+    "id": "sftp-fn-dlq-format",
+    "type": "function",
+    "z": "tab-sftp-dlq",
+    "name": "format DLQ envelope + metric",
+    "func": "// Inputs: msg.payload may be the dlq dict itself (from filter/parse/poll/\n// archive paths) OR may be a wrapper with `payload`. Normalise.\nlet src = msg.payload;\nif (src && typeof src === 'object' && src.payload && src.payload.error_type) {\n    src = src.payload;\n}\nif (!src || typeof src !== 'object') {\n    src = { error_type: 'uncaught', error_message: String(msg.payload || msg.error || 'unknown') };\n}\nconst dlq = {\n    error_type: src.error_type || 'uncaught',\n    error_message: src.error_message || 'unknown',\n    error_timestamp: src.error_timestamp || new Date().toISOString(),\n    filename: src.filename || null,\n    source_topic: src.source_topic || null,\n    original_envelope: src.original_envelope || null\n};\n\nconst m = global.get('metrics') || {};\nm.facis_sftp_dlq_total = m.facis_sftp_dlq_total || {};\nm.facis_sftp_dlq_total[dlq.error_type] = (m.facis_sftp_dlq_total[dlq.error_type] || 0) + 1;\nglobal.set('metrics', m);\n\nreturn {\n    topic: env.get('INGEST_DLQ_TOPIC') || 'sftp.ingest.dlq',\n    key: dlq.filename || 'unknown',\n    payload: JSON.stringify(dlq)\n};\n",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 410,
+    "y": 100,
+    "wires": [
+      [
+        "sftp-dlq-out"
+      ]
+    ]
+  },
+  {
+    "id": "sftp-dlq-out",
+    "type": "rdkafka out",
+    "z": "tab-sftp-dlq",
+    "name": "${INGEST_DLQ_TOPIC}",
+    "broker": "sftp-dlq-broker-config",
+    "topic": "${INGEST_DLQ_TOPIC}",
+    "x": 690,
+    "y": 100,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "sftp-dlq-catch",
+    "type": "catch",
+    "z": "tab-sftp-dlq",
+    "name": "DLQ publish failed (do not recurse)",
+    "scope": [
+      "sftp-dlq-out"
+    ],
+    "uncaught": false,
+    "x": 460,
+    "y": 200,
+    "wires": [
+      [
+        "sftp-dlq-debug"
+      ]
+    ]
+  },
+  {
+    "id": "sftp-dlq-debug",
+    "type": "debug",
+    "z": "tab-sftp-dlq",
+    "name": "DLQ failure (stderr)",
+    "active": true,
+    "tosidebar": true,
+    "console": true,
+    "tostatus": false,
+    "complete": "true",
+    "targetType": "full",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 740,
+    "y": 200,
+    "wires": []
+  }
+]

@@ -1,0 +1,85 @@
+[
+  {
+    "id": "subflow-facis-rng",
+    "type": "subflow",
+    "name": "FACIS RNG",
+    "info": "Deterministic seeded RNG used by every simulator subflow.\n\nSeeding strategy mirrors `src/core/random_generator.py` (SHA-256 truncated to 8 bytes); output stream uses `seedrandom('alea')` and is NOT byte-identical to numpy PCG64.\n\nSee `services/simulation/orce/tests/flows/rng.spec.js` for property-based determinism tests.",
+    "category": "FACIS Simulation",
+    "in": [
+      {
+        "x": 50,
+        "y": 80,
+        "wires": [
+          {
+            "id": "fn-rng-compute"
+          }
+        ]
+      }
+    ],
+    "out": [
+      {
+        "x": 600,
+        "y": 80,
+        "wires": [
+          {
+            "id": "fn-rng-compute",
+            "port": 0
+          }
+        ]
+      }
+    ],
+    "env": [
+      {
+        "name": "BASE_SEED",
+        "type": "num",
+        "value": "12345",
+        "ui": {
+          "label": {
+            "en-US": "Base seed"
+          },
+          "type": "input",
+          "opts": {
+            "types": [
+              "num"
+            ]
+          }
+        }
+      }
+    ],
+    "meta": {
+      "module": "facis-simulation-orce",
+      "version": "0.1.0",
+      "author": "FACIS",
+      "license": "Apache-2.0"
+    },
+    "color": "#A6E1FA",
+    "icon": "font-awesome/fa-random"
+  },
+  {
+    "id": "fn-rng-compute",
+    "type": "function",
+    "z": "subflow-facis-rng",
+    "name": "rng compute",
+    "func": "// FACIS Simulation RNG \u2014 deterministic, JS-native.\n//\n// Mirrors src/core/random_generator.py:\n//   entity seed key  : \"{base_seed}:{entity_id}\"\n//   tick seed key    : \"{base_seed}:{entity_id}:{timestamp_ms}\"\n//   sha256 \u2192 first 8 bytes (16 hex chars) \u2192 seedrandom.alea(seedHex)\n//\n// Output stream is NOT byte-identical to numpy PCG64 (documented break).\n// The seeding strategy is identical so call sites map 1:1.\n//\n// Inputs (msg.payload):\n//   base_seed     (number, optional \u2014 defaults to subflow env BASE_SEED)\n//   entity_id     (string, optional \u2014 defaults to \"default\")\n//   timestamp_ms  (number, optional \u2014 defaults to 0; pass to scope per tick)\n//   action        (string)  one of: uniform | normal | gauss | int | choice | sequence\n//   params        (object)  per-action parameters (see switch below)\n//\n// Output (msg.payload):\n//   value, seed_hash, base_seed, entity_id, timestamp_ms, action\n\nconst baseSeed =\n    (msg.payload && typeof msg.payload.base_seed === 'number')\n        ? msg.payload.base_seed\n        : Number(env.get('BASE_SEED') || 12345);\nconst entityId = (msg.payload && msg.payload.entity_id) || 'default';\nconst tsMs =\n    (msg.payload && typeof msg.payload.timestamp_ms === 'number')\n        ? msg.payload.timestamp_ms\n        : 0;\nconst action = (msg.payload && msg.payload.action) || 'uniform';\nconst params = (msg.payload && msg.payload.params) || {};\n\nconst seedKey = String(baseSeed) + ':' + String(entityId) + ':' + String(tsMs);\nconst seedHex = crypto.createHash('sha256').update(seedKey).digest('hex').slice(0, 16);\nconst rng = seedrandom.alea(seedHex);\n\nlet value;\nswitch (action) {\n    case 'uniform': {\n        const min = (typeof params.min === 'number') ? params.min : 0;\n        const max = (typeof params.max === 'number') ? params.max : 1;\n        value = min + (max - min) * rng();\n        break;\n    }\n    case 'normal':\n    case 'gauss': {\n        const mean = (typeof params.mean === 'number') ? params.mean : 0;\n        const stddev = (typeof params.stddev === 'number') ? params.stddev : 1;\n        let u = 0;\n        let v = 0;\n        while (u === 0) u = rng();\n        while (v === 0) v = rng();\n        const z = Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);\n        value = mean + stddev * z;\n        break;\n    }\n    case 'int': {\n        const min = Math.ceil((typeof params.min === 'number') ? params.min : 0);\n        const max = Math.floor((typeof params.max === 'number') ? params.max : 1);\n        value = Math.floor(rng() * (max - min + 1)) + min;\n        break;\n    }\n    case 'choice': {\n        const items = Array.isArray(params.items) ? params.items : [];\n        if (items.length === 0) {\n            node.error('rng: choice action requires non-empty params.items', msg);\n            return null;\n        }\n        value = items[Math.floor(rng() * items.length)];\n        break;\n    }\n    case 'sequence': {\n        const count = (typeof params.count === 'number') ? params.count : 1;\n        const seq = [];\n        for (let i = 0; i < count; i += 1) seq.push(rng());\n        value = seq;\n        break;\n    }\n    default:\n        node.error('rng: unknown action ' + action, msg);\n        return null;\n}\n\nmsg.payload = {\n    value: value,\n    seed_hash: seedHex,\n    base_seed: baseSeed,\n    entity_id: entityId,\n    timestamp_ms: tsMs,\n    action: action\n};\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [
+      {
+        "var": "seedrandom",
+        "module": "seedrandom"
+      },
+      {
+        "var": "crypto",
+        "module": "crypto"
+      }
+    ],
+    "x": 320,
+    "y": 80,
+    "wires": [
+      []
+    ]
+  }
+]

@@ -1,63 +1,44 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { AlertEvent } from '@/data/types'
-
-const INITIAL_ALERTS: AlertEvent[] = [
-  {
-    id: 'alert-001',
-    useCase: 'Smart Energy',
-    source: 'Meter-SITE-A-001',
-    category: 'Data Quality',
-    severity: 'warning',
-    timestamp: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-    status: 'open',
-    message: 'Active power reading anomaly detected: 42 kW spike above baseline for >3 minutes.'
-  },
-  {
-    id: 'alert-002',
-    useCase: 'Smart City',
-    source: 'Zone-CBD-03',
-    category: 'Device Health',
-    severity: 'error',
-    timestamp: new Date(Date.now() - 18 * 60 * 1000).toISOString(),
-    status: 'open',
-    message: 'Luminaire LU-0312 not responding to dim commands. Fault state confirmed.'
-  },
-  {
-    id: 'alert-003',
-    useCase: 'Smart Energy',
-    source: 'PV-System-02',
-    category: 'Performance',
-    severity: 'info',
-    timestamp: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
-    status: 'acknowledged',
-    message: 'PV output 18% below forecast for current irradiance conditions. Possible soiling event.'
-  },
-  {
-    id: 'alert-004',
-    useCase: 'Platform',
-    source: 'MQTT Adapter',
-    category: 'Connectivity',
-    severity: 'critical',
-    timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-    status: 'resolved',
-    message: 'MQTT broker connection lost for 4m 32s. 128 messages buffered and replayed on reconnect.'
-  },
-  {
-    id: 'alert-005',
-    useCase: 'Smart City',
-    source: 'TrafficSensor-N12',
-    category: 'Data Quality',
-    severity: 'warning',
-    timestamp: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
-    status: 'open',
-    message: 'Vehicle count sensor reporting values 3σ above weekly average. Manual verification recommended.'
-  }
-]
+import { getAlerts } from '@/services/api'
 
 export const useNotificationsStore = defineStore('notifications', () => {
-  const alerts = ref<AlertEvent[]>([...INITIAL_ALERTS])
+  // Alerts come from /api/v1/alerts (Phase-5 ORCE flow). The flow's catch
+  // node pushes uncaught flow errors onto a bounded ring buffer; views may
+  // also unshift locally-detected anomalies via addAlert() for immediate
+  // display. No mock seed — empty until either source produces data.
+  const alerts = ref<AlertEvent[]>([])
   const readIds = ref<Set<string>>(new Set())
+  const loaded = ref(false)
+
+  async function loadFromApi(): Promise<void> {
+    if (loaded.value) return
+    try {
+      const resp = await getAlerts()
+      if (resp && Array.isArray(resp.alerts)) {
+        const ALLOWED_SEV: AlertEvent['severity'][] = ['critical', 'error', 'warning', 'info']
+        const ALLOWED_STATUS: AlertEvent['status'][] = ['open', 'acknowledged', 'resolved']
+        alerts.value = resp.alerts
+          .filter((a): a is Record<string, unknown> => a !== null && typeof a === 'object')
+          .map((a) => ({
+            id: String(a.id ?? `alert-${Date.now()}`),
+            useCase: (a.useCase as AlertEvent['useCase']) ?? 'Platform',
+            source: String(a.source ?? 'unknown'),
+            category: String(a.category ?? 'Runtime'),
+            severity: (ALLOWED_SEV.includes(a.severity as AlertEvent['severity'])
+              ? a.severity
+              : 'info') as AlertEvent['severity'],
+            timestamp: String(a.timestamp ?? new Date().toISOString()),
+            status: (ALLOWED_STATUS.includes(a.status as AlertEvent['status'])
+              ? a.status
+              : 'open') as AlertEvent['status'],
+            message: String(a.message ?? ''),
+          }))
+        loaded.value = true
+      }
+    } catch { /* leave alerts as-is on transient failure */ }
+  }
 
   const unreadCount = computed(() =>
     alerts.value.filter(a => !readIds.value.has(a.id) && a.status !== 'resolved').length
@@ -112,6 +93,8 @@ export const useNotificationsStore = defineStore('notifications', () => {
     unreadCount,
     openAlerts,
     criticalAlerts,
+    loaded,
+    loadFromApi,
     addAlert,
     markRead,
     markAllRead,

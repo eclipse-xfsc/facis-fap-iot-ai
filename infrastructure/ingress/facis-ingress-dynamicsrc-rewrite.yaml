@@ -1,0 +1,40 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: facis-ingress-dynamicsrc-rewrite
+  namespace: orce
+  annotations:
+    # Strip the /orce prefix so requests for /orce/dynamicsrc/<file> reach the
+    # ORCE pod's static handler at /dynamicsrc/<file>.
+    #
+    # Why this exists:
+    #   The colleague's customised Node-RED editor (red.min.js + theme/scripts/
+    #   guided-script.js + theme/css/guided-style.css) hardcodes RELATIVE asset
+    #   paths like "dynamicsrc/images/nodes/common/info-icon.svg" and constructs
+    #   font URLs as ${window.location.origin + window.location.pathname} +
+    #   "dynamicsrc/...". When the editor is mounted under /orce/ those resolve
+    #   to /orce/dynamicsrc/... which 404s — Node-RED's static handler maps
+    #   /data > / (root), not /orce.
+    #
+    #   The shipped red.min.js lives under /opt/maestro/... which is read-only
+    #   in the running container, so we can't patch the file in place. This
+    #   Ingress rewrite restores the URLs the editor expects without modifying
+    #   anything inside the pod.
+    nginx.ingress.kubernetes.io/rewrite-target: /dynamicsrc/$2
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - fap-iotai.facis.cloud
+      secretName: facis-wild
+  rules:
+    - host: fap-iotai.facis.cloud
+      http:
+        paths:
+          - path: /orce/dynamicsrc(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: orce
+                port:
+                  number: 1880

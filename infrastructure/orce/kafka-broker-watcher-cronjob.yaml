@@ -1,0 +1,137 @@
+# =============================================================================
+# Kafka Broker Watcher CronJob
+# =============================================================================
+# Defence-in-depth against Stackable Kafka NodePort drift.
+#
+# The primary recovery mechanism is client-side: rdkafka has
+# `metadata.max.age.ms=30000` set in the kafka-broker config node, so it
+# refreshes broker metadata every 30s and tolerates NodePort changes.
+# This CronJob handles the edge case where:
+#   - The NodePorts have changed AND
+#   - The previously-discovered list is so stale that no member is reachable AND
+#   - We want the source-of-truth in `kafka.json` to stay aligned for the
+#     next clean redeploy.
+#
+# Behaviour:
+#   - Every 15 min, the cron pod runs `kcat -L -b $KAFKA_BOOTSTRAP` (the stable
+#     address) to discover current advertised broker NodePorts.
+#   - Compares against the broker list currently deployed in ORCE (fetched via
+#     Admin API).
+#   - If different on TWO consecutive runs (the "stable for 2 cycles" rule —
+#     protects against false positives during a Stackable rolling restart),
+#     the watcher re-renders kafka.json and POSTs it back via the Admin API.
+#   - Always writes structured JSON to stdout for log aggregation.
+#
+# Inputs (cluster-side; not in source control):
+#   - Secret/facis-kafka-certs in `orce` ns (ca.crt + tls.crt + tls.key).
+#   - Secret/facis-orce-admin   in `orce` ns (key `token`).
+#   - ConfigMap/facis-watch-kafka-brokers-script — created from
+#     services/simulation/orce/scripts/watch-kafka-brokers.sh:
+#       kubectl create configmap facis-watch-kafka-brokers-script -n orce \
+#         --from-file=watch.sh=services/simulation/orce/scripts/watch-kafka-brokers.sh
+#
+# Apply:
+#   kubectl apply -f infrastructure/orce/kafka-broker-watcher-cronjob.yaml
+#
+# Manual trigger (for testing or after a known restart):
+#   kubectl create job --from=cronjob/kafka-broker-watcher \
+#     kafka-broker-watcher-now -n orce
+#   kubectl logs job/kafka-broker-watcher-now -n orce
+#
+# Roll back:
+#   kubectl delete cronjob kafka-broker-watcher -n orce
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: kafka-broker-watcher
+  namespace: orce
+  labels:
+    app.kubernetes.io/name: facis-kafka-broker-watcher
+    app.kubernetes.io/component: operations
+spec:
+  schedule: "*/15 * * * *"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 300
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: facis-kafka-broker-watcher
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+          # PVC holds the "previous brokers" memo across runs (1 line of text)
+          volumes:
+            - name: state
+              persistentVolumeClaim:
+                claimName: kafka-broker-watcher-state
+            - name: kafka-certs
+              secret:
+                secretName: facis-kafka-certs
+                defaultMode: 0400
+            - name: script
+              configMap:
+                name: facis-watch-kafka-brokers-script
+                defaultMode: 0555
+          containers:
+            - name: watcher
+              # edenhill/kcat ships kcat + curl + python3 on alpine.
+              image: edenhill/kcat:1.7.1
+              command: ["sh", "/scripts/watch.sh"]
+              env:
+                - name: ORCE_ADMIN_URL
+                  value: "http://orce.orce.svc.cluster.local:1880/orce"
+                - name: ORCE_ADMIN_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: facis-orce-admin
+                      key: token
+                - name: KAFKA_BOOTSTRAP
+                  value: "212.132.83.222:9093"
+                - name: KAFKA_CERT_DIR
+                  value: "/etc/kafka-certs"
+                - name: STATE_DIR
+                  value: "/var/run/watcher-state"
+              volumeMounts:
+                - name: state
+                  mountPath: /var/run/watcher-state
+                - name: kafka-certs
+                  mountPath: /etc/kafka-certs
+                  readOnly: true
+                - name: script
+                  mountPath: /scripts
+                  readOnly: true
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 200m
+                  memory: 128Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+---
+# Tiny PVC for the cycle-to-cycle state memo (single text file).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: kafka-broker-watcher-state
+  namespace: orce
+  labels:
+    app.kubernetes.io/name: facis-kafka-broker-watcher
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi   # IONOS CSI minimum

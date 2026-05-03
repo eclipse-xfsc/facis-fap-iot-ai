@@ -5,6 +5,7 @@ from src.storage.trino_output_store import TrinoOutputStore
 
 class _FakeTrinoConfig:
     """Minimal config that prevents real Trino connections."""
+
     host = "localhost"
     port = 8080
     user = "test"
@@ -26,7 +27,11 @@ def test_save_and_get() -> None:
         input_data={"rows": 100},
         llm_model="gpt-4.1-mini",
         output_text="Summary text",
-        structured_output={"summary": "test", "key_findings": [], "recommendations": []},
+        structured_output={
+            "summary": "test",
+            "key_findings": [],
+            "recommendations": [],
+        },
     )
     assert record.id
     assert record.insight_type == "anomaly-report"

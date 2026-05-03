@@ -1,24 +1,24 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import PageHeader from '@/components/common/PageHeader.vue'
-import { getSimHealth } from '@/services/api'
+import { getAdminRoles } from '@/services/api'
+import { auth } from '@/auth'
 
-// Static role user counts — no admin user management API available
-const ROLE_USER_COUNTS: Record<string, number> = { admin: 1, operator: 2, analyst: 2, viewer: 2 }
+const ROLE_USER_COUNTS = ref<Record<string, number>>({ admin: 0, operator: 0, analyst: 0, viewer: 0 })
 
 const isLive = ref(false)
 const currentUser = ref<{ email: string; role: string } | null>(null)
 
 onMounted(async () => {
-  const health = await getSimHealth()
-  if (health?.status === 'ok' || health?.status === 'healthy') {
-    const stored = sessionStorage.getItem('facis_user')
-    currentUser.value = stored
-      ? JSON.parse(stored)
-      : { email: 'admin@facis.local', role: 'admin' }
+  currentUser.value = auth.user ? { email: auth.user.email, role: auth.user.role } : null
+  const resp = await getAdminRoles()
+  if (resp) {
     isLive.value = true
+    for (const r of resp.roles) {
+      ROLE_USER_COUNTS.value[r.name] = r.member_count ?? 0
+    }
   }
 })
 
@@ -32,14 +32,14 @@ interface RoleDef {
   permissions: string[]
 }
 
-const roles: RoleDef[] = [
+const roles = computed<RoleDef[]>(() => [
   {
     name: 'admin',
     label: 'Admin',
     description: 'Full platform access. Can manage users, configuration, integrations, schemas, and all modules. Responsible for system operations and security.',
     color: '#ef4444',
     icon: 'pi-shield',
-    userCount: ROLE_USER_COUNTS['admin'],
+    userCount: ROLE_USER_COUNTS.value['admin'] ?? 0,
     permissions: ['Full Read', 'Full Write', 'User Management', 'Role Assignment', 'System Config', 'API Key Management', 'Export API', 'Admin Settings', 'Audit Log']
   },
   {
@@ -48,7 +48,7 @@ const roles: RoleDef[] = [
     description: 'Operational access. Can manage integrations, configure schemas, restart adapters, and manage data flows. Cannot manage users or system settings.',
     color: '#f59e0b',
     icon: 'pi-cog',
-    userCount: ROLE_USER_COUNTS['operator'],
+    userCount: ROLE_USER_COUNTS.value['operator'] ?? 0,
     permissions: ['Read All', 'Integration Config', 'Adapter Management', 'Schema Mapping', 'Alert Management', 'Data Product Write', 'Export API']
   },
   {
@@ -57,7 +57,7 @@ const roles: RoleDef[] = [
     description: 'Analytical access. Can view all data products, run queries, generate reports, and interact with the AI assistant. Read-only on platform configuration.',
     color: '#3b82f6',
     icon: 'pi-chart-bar',
-    userCount: ROLE_USER_COUNTS['analyst'],
+    userCount: ROLE_USER_COUNTS.value['analyst'] ?? 0,
     permissions: ['Read All', 'Data Product Management', 'Analytics', 'AI Assistant', 'Report Generation', 'Export Data']
   },
   {
@@ -66,10 +66,10 @@ const roles: RoleDef[] = [
     description: 'Read-only access to dashboards, use cases, and public data products. Cannot modify any platform configuration or access administrative functions.',
     color: '#64748b',
     icon: 'pi-eye',
-    userCount: ROLE_USER_COUNTS['viewer'],
+    userCount: ROLE_USER_COUNTS.value['viewer'] ?? 0,
     permissions: ['Read Dashboard', 'Read Use Cases', 'Read Data Products', 'Read Analytics', 'Read Alerts']
   }
-]
+])
 
 // Permission matrix
 interface ModulePermission {

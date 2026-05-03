@@ -1,0 +1,56 @@
+# Ingress that routes https://fap-iotai.facis.cloud/superset/* to the
+# Stackable cluster's Superset (via the cross-cluster shim Service +
+# Endpoints in superset-backend.yaml).
+#
+# Why a separate Ingress:
+#   The path-rewrite annotation `nginx.ingress.kubernetes.io/rewrite-target`
+#   is global per Ingress object and would break the existing /api/v1, /orce,
+#   /aiInsight etc. paths if applied to the main facis-ingress. Same pattern
+#   we use for /orce/dynamicsrc.
+#
+# How prefixed routing works end-to-end:
+#   1. Browser requests /superset/login
+#   2. nginx-ingress rewrites the path to /login (capture group $2)
+#   3. Upstream Superset receives /login, returns HTML
+#   4. Superset's HTML contains <script src="/superset/static/...">
+#      because we set STATIC_ASSETS_PREFIX='/superset' in the SupersetCluster
+#      CR's configOverrides
+#   5. Browser follows /superset/static/... → ingress rewrites to /static/...
+#      → Superset serves the asset
+#
+# The X-Forwarded-Prefix header tells Flask-AppBuilder (which Superset uses)
+# to generate prefixed URLs in OAuth callbacks. Combined with
+# ENABLE_PROXY_FIX=True in superset_config.py, Flask trusts the upstream
+# proxy headers we send.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: facis-ingress-superset
+  namespace: orce
+  labels:
+    app.kubernetes.io/part-of: facis-fap
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+    # `configuration-snippet` is admin-disabled on this cluster. Superset
+    # handles its URL prefix entirely server-side via STATIC_ASSETS_PREFIX
+    # and WEBSERVER_BASEURL set in the SupersetCluster CR's
+    # configOverrides.superset_config.py — no per-request X-Forwarded-Prefix
+    # header is needed.
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [fap-iotai.facis.cloud]
+      secretName: facis-wild
+  rules:
+    - host: fap-iotai.facis.cloud
+      http:
+        paths:
+          - path: /superset(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: superset-stackable
+                port:
+                  number: 8088

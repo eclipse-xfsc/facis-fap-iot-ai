@@ -1,0 +1,13 @@
+{
+  "name": "facis-sftp-orce-tests",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Flow-level tests for the FACIS SFTP Ingestion ORCE flows.",
+  "scripts": {
+    "test": "node --test flows"
+  },
+  "devDependencies": {
+    "csv-parse": "^5.5.0"
+  },
+  "license": "Apache-2.0"
+}

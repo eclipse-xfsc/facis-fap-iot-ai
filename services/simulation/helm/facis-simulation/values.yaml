@@ -4,6 +4,42 @@
 # All values are documented inline. Override any value with --set or -f.
 
 # ---------------------------------------------------------------------------
+# Runtime Mode
+# ---------------------------------------------------------------------------
+# Selects which runtime owns the simulation lifecycle, tick generation, and
+# protocol publishing.
+#
+#   orce   (default) — ORCE-native flows on the existing ORCE pod own the
+#                       simulation runtime. The Python deployment in this chart
+#                       is scaled to 0 and acts as a rollback fallback.
+#                       Helm post-install hook deploys flow JSON to the ORCE
+#                       Admin API (see orceFlowDeploy below).
+#   legacy           — Python service owns the runtime; ORCE flows act as
+#                       passive Kafka/MQTT adapters consuming /api/sim/tick.
+compatibilityMode: orce
+
+# ---------------------------------------------------------------------------
+# ORCE Flow Deployment (active when compatibilityMode = "orce")
+# ---------------------------------------------------------------------------
+orceFlowDeploy:
+  # -- Whether to render the ConfigMap + post-install Job that deploy flows
+  enabled: true
+  # -- ORCE Admin API base URL (in-cluster)
+  orceAdminUrl: http://facis-orce.orce.svc.cluster.local:1880
+  # -- Secret holding the ORCE admin bearer token under key "token"
+  adminTokenSecret: facis-orce-admin
+  # -- Sub-path under the chart's `files/` directory containing flow JSON
+  #    Populate via `services/simulation/helm/facis-simulation/sync-flows.sh`
+  flowsDir: orce-flows
+  # -- Container image used by the deployment Job (must include curl + jq)
+  jobImage:
+    repository: alpine/curl
+    tag: "8.10.1"
+    pullPolicy: IfNotPresent
+  # -- Optional initial wait for the ORCE pod readiness probe (seconds)
+  preDeploySleepSeconds: 5
+
+# ---------------------------------------------------------------------------
 # Container Image
 # ---------------------------------------------------------------------------
 image:
@@ -26,7 +62,9 @@ fullnameOverride: ""
 # ---------------------------------------------------------------------------
 # Replica count
 # ---------------------------------------------------------------------------
-# -- Number of replicas (1 recommended — simulation is stateful/deterministic)
+# -- Number of replicas (1 recommended — simulation is stateful/deterministic).
+# When compatibilityMode == "orce", this value is ignored and the deployment
+# is scaled to 0 (the ORCE pod owns the runtime).
 replicaCount: 1
 
 # ---------------------------------------------------------------------------

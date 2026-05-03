@@ -1,0 +1,133 @@
+[
+  {
+    "id": "dataset:facis:net-grid-hourly",
+    "metadata": {
+      "title": "Net Grid Hourly KPIs",
+      "description": "Hourly consumption, generation, net grid, and cost metrics",
+      "assetType": "iot.timeseries",
+      "format": "iceberg/parquet",
+      "temporalResolution": "PT1H",
+      "schema": "gold",
+      "table": "net_grid_hourly"
+    },
+    "offers": [
+      {
+        "id": "offer:facis:net-grid-hourly:read",
+        "policySummary": {
+          "purpose": "analytics",
+          "rate_limit": "10 req/min",
+          "ttl": "PT1H"
+        }
+      }
+    ]
+  },
+  {
+    "id": "dataset:facis:energy-balance-hourly",
+    "metadata": {
+      "title": "Energy Balance Hourly",
+      "description": "Hourly energy consumption and PV generation balance",
+      "assetType": "iot.timeseries",
+      "format": "iceberg/parquet",
+      "temporalResolution": "PT1H",
+      "schema": "gold",
+      "table": "energy_balance_hourly"
+    },
+    "offers": [
+      {
+        "id": "offer:facis:energy-balance-hourly:read",
+        "policySummary": {
+          "purpose": "analytics",
+          "rate_limit": "10 req/min",
+          "ttl": "PT1H"
+        }
+      }
+    ]
+  },
+  {
+    "id": "dataset:facis:anomaly-candidates",
+    "metadata": {
+      "title": "Anomaly Candidates",
+      "description": "Statistical outlier detection (z-score > 2σ) from energy meter readings",
+      "assetType": "iot.analytics",
+      "format": "iceberg/parquet",
+      "schema": "gold",
+      "table": "anomaly_candidates"
+    },
+    "offers": [
+      {
+        "id": "offer:facis:anomaly-candidates:read",
+        "policySummary": {
+          "purpose": "analytics",
+          "rate_limit": "10 req/min",
+          "ttl": "PT1H"
+        }
+      }
+    ]
+  },
+  {
+    "id": "dataset:facis:event-impact-daily",
+    "metadata": {
+      "title": "Event Impact Daily",
+      "description": "Daily city event impact with severity and zone correlation",
+      "assetType": "iot.timeseries",
+      "format": "iceberg/parquet",
+      "temporalResolution": "P1D",
+      "schema": "gold",
+      "table": "event_impact_daily"
+    },
+    "offers": [
+      {
+        "id": "offer:facis:event-impact-daily:read",
+        "policySummary": {
+          "purpose": "analytics",
+          "rate_limit": "10 req/min",
+          "ttl": "PT1H"
+        }
+      }
+    ]
+  },
+  {
+    "id": "dataset:facis:weather-hourly",
+    "metadata": {
+      "title": "Weather Hourly",
+      "description": "Hourly weather conditions (temperature, irradiance, humidity, wind, cloud cover)",
+      "assetType": "iot.timeseries",
+      "format": "iceberg/parquet",
+      "temporalResolution": "PT1H",
+      "schema": "gold",
+      "table": "weather_hourly"
+    },
+    "offers": [
+      {
+        "id": "offer:facis:weather-hourly:read",
+        "policySummary": {
+          "purpose": "analytics",
+          "rate_limit": "10 req/min",
+          "ttl": "PT1H"
+        }
+      }
+    ]
+  },
+  {
+    "id": "dataset:facis:streetlight-zone-hourly",
+    "metadata": {
+      "title": "Streetlight Zone Hourly",
+      "description": "Hourly streetlight dimming and power metrics per zone",
+      "assetType": "iot.timeseries",
+      "format": "iceberg/parquet",
+      "temporalResolution": "PT1H",
+      "schema": "gold",
+      "table": "streetlight_zone_hourly"
+    },
+    "offers": [
+      {
+        "id": "offer:facis:streetlight-zone-hourly:read",
+        "policySummary": {
+          "purpose": "analytics",
+          "rate_limit": "10 req/min",
+          "ttl": "PT1H"
+        }
+      }
+    ]
+  }
+]

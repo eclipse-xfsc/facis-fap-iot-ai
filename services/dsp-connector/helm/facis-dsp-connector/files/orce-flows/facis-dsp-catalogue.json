@@ -1,0 +1,167 @@
+[
+  {
+    "id": "tab-dsp-catalogue",
+    "type": "tab",
+    "label": "FACIS DSP — Catalogue",
+    "disabled": false,
+    "info": "FR-DSP-001 — POST /dsp/catalogue/request.\n\nThe catalogue is a static list of FACIS Gold-layer dataset offers. It is\nmounted into the ORCE pod as a read-only ConfigMap at\n/data/dsp-config/datasets.json and loaded into flow.context once at startup.\n\nFilter + cursor logic mirrors src/dsp-connector/catalogue_store.py:7-139:\n  - filter.assetType        -> exact match on metadata.assetType\n  - filter.datasetIds        -> set membership on dataset.id\n  - page.limit (default 50)  -> slice size\n  - page.cursor              -> integer offset; non-numeric -> 0\n  - nextCursor               -> str(start+limit) when more remain, else null"
+  },
+  {
+    "id": "dsp-cat-bootstrap",
+    "type": "inject",
+    "z": "tab-dsp-catalogue",
+    "name": "@startup",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": true,
+    "onceDelay": "0.5",
+    "topic": "",
+    "payload": "",
+    "payloadType": "str",
+    "x": 130,
+    "y": 80,
+    "wires": [
+      [
+        "dsp-cat-read"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-cat-read",
+    "type": "file in",
+    "z": "tab-dsp-catalogue",
+    "name": "read datasets.json",
+    "filename": "/data/dsp-config/datasets.json",
+    "filenameType": "str",
+    "format": "utf8",
+    "chunk": false,
+    "sendError": true,
+    "encoding": "none",
+    "allProps": false,
+    "x": 360,
+    "y": 80,
+    "wires": [
+      [
+        "dsp-cat-load"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-cat-load",
+    "type": "function",
+    "z": "tab-dsp-catalogue",
+    "name": "load FACIS_DATASETS",
+    "func": "let datasets = [];\ntry {\n    if (typeof msg.payload === 'string' && msg.payload.length > 0) {\n        datasets = JSON.parse(msg.payload);\n    } else if (Array.isArray(msg.payload)) {\n        datasets = msg.payload;\n    }\n} catch (err) {\n    node.error('Failed to parse /data/dsp-config/datasets.json: ' + err.message);\n    datasets = [];\n}\nif (!Array.isArray(datasets)) {\n    node.error('datasets.json did not parse to a JSON array; got ' + typeof datasets);\n    datasets = [];\n}\nflow.set('catalogue', datasets);\nnode.log('DSP catalogue: ' + datasets.length + ' dataset(s) loaded');\nreturn null;\n",
+    "outputs": 0,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 600,
+    "y": 80,
+    "wires": []
+  },
+  {
+    "id": "dsp-cat-read-catch",
+    "type": "catch",
+    "z": "tab-dsp-catalogue",
+    "name": "datasets.json missing",
+    "scope": [
+      "dsp-cat-read"
+    ],
+    "uncaught": false,
+    "x": 360,
+    "y": 140,
+    "wires": [
+      [
+        "dsp-cat-init-empty"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-cat-init-empty",
+    "type": "function",
+    "z": "tab-dsp-catalogue",
+    "name": "init empty catalogue",
+    "func": "flow.set('catalogue', []);\nnode.warn('DSP catalogue: /data/dsp-config/datasets.json missing — serving empty catalogue. Mount the ConfigMap.');\nreturn null;\n",
+    "outputs": 0,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 610,
+    "y": 140,
+    "wires": []
+  },
+  {
+    "id": "dsp-cat-in",
+    "type": "http in",
+    "z": "tab-dsp-catalogue",
+    "name": "POST /dsp/catalogue/request",
+    "url": "/dsp/catalogue/request",
+    "method": "post",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 190,
+    "y": 260,
+    "wires": [
+      [
+        "dsp-cat-query"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-cat-query",
+    "type": "function",
+    "z": "tab-dsp-catalogue",
+    "name": "query_catalogue",
+    "func": "// Mirrors catalogue_store.query_catalogue() filter + cursor logic.\nconst datasets = flow.get('catalogue') || [];\nconst body = (msg.payload && typeof msg.payload === 'object') ? msg.payload : {};\nconst filter = body.filter || {};\nconst page = body.page || {};\n\nconst limit = (typeof page.limit === 'number' && page.limit > 0) ? page.limit : 50;\nconst cursorRaw = page.cursor;\n\nlet filtered = datasets;\nif (filter.assetType) {\n    filtered = filtered.filter(d => d && d.metadata && d.metadata.assetType === filter.assetType);\n}\nif (Array.isArray(filter.datasetIds) && filter.datasetIds.length > 0) {\n    const ids = new Set(filter.datasetIds);\n    filtered = filtered.filter(d => d && ids.has(d.id));\n}\n\n// Python: int(cursor) on ValueError -> 0; missing/null -> 0.\nlet start = 0;\nif (cursorRaw !== null && cursorRaw !== undefined && cursorRaw !== '') {\n    const parsed = parseInt(cursorRaw, 10);\n    start = Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;\n}\n\nconst slice = filtered.slice(start, start + limit);\nconst nextCursor = (start + limit) < filtered.length ? String(start + limit) : null;\n\nmsg.payload = { datasets: slice, nextCursor: nextCursor };\nmsg.headers = { 'Content-Type': 'application/json' };\nmsg.statusCode = 200;\nreturn [msg, { payload: { family: 'facis_dsp_catalogue_requests_total' } }];\n",
+    "outputs": 2,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 470,
+    "y": 260,
+    "wires": [
+      [
+        "dsp-cat-response"
+      ],
+      [
+        "dsp-cat-link-out-metric"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-cat-response",
+    "type": "http response",
+    "z": "tab-dsp-catalogue",
+    "name": "200 catalogue",
+    "statusCode": "",
+    "headers": {},
+    "x": 720,
+    "y": 260,
+    "wires": []
+  },
+  {
+    "id": "dsp-cat-link-out-metric",
+    "type": "link out",
+    "z": "tab-dsp-catalogue",
+    "name": "dsp.metric.inc →",
+    "mode": "link",
+    "links": [
+      "dsp-link-in-metric-inc"
+    ],
+    "x": 720,
+    "y": 320,
+    "wires": []
+  }
+]

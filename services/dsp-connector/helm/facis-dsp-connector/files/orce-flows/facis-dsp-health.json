@@ -1,0 +1,139 @@
+[
+  {
+    "id": "tab-dsp-health",
+    "type": "tab",
+    "label": "FACIS DSP — Health & Metrics",
+    "disabled": false,
+    "info": "GET /api/v1/dsp/health — returns {status, service, transfers_count}.\nGET /dsp/metrics             — Prometheus text format with 4 counter families:\n  facis_dsp_catalogue_requests_total\n  facis_dsp_transfer_requests_total{format}\n  facis_dsp_transfer_completions_total\n  facis_dsp_transfer_errors_total\n\nPaths are namespaced by service to avoid colliding with the Simulation flow's\n/api/v1/health and /metrics on the shared ORCE pod (BREAKING CHANGE vs the\nPython service which served /api/v1/health and /metrics)."
+  },
+  {
+    "id": "dsp-in-health",
+    "type": "http in",
+    "z": "tab-dsp-health",
+    "name": "GET /api/v1/dsp/health",
+    "url": "/api/v1/dsp/health",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 170,
+    "y": 80,
+    "wires": [
+      [
+        "dsp-fn-health"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-fn-health",
+    "type": "function",
+    "z": "tab-dsp-health",
+    "name": "build health body",
+    "func": "const transfers = flow.get('transfers') || {};\nmsg.payload = {\n    status: 'ok',\n    service: 'dsp-connector',\n    transfers_count: Object.keys(transfers).length\n};\nmsg.headers = { 'Content-Type': 'application/json' };\nmsg.statusCode = 200;\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 430,
+    "y": 80,
+    "wires": [
+      [
+        "dsp-out-health"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-out-health",
+    "type": "http response",
+    "z": "tab-dsp-health",
+    "name": "200 health",
+    "statusCode": "",
+    "headers": {},
+    "x": 660,
+    "y": 80,
+    "wires": []
+  },
+  {
+    "id": "dsp-in-metrics",
+    "type": "http in",
+    "z": "tab-dsp-health",
+    "name": "GET /dsp/metrics",
+    "url": "/dsp/metrics",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 170,
+    "y": 160,
+    "wires": [
+      [
+        "dsp-fn-metrics"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-fn-metrics",
+    "type": "function",
+    "z": "tab-dsp-health",
+    "name": "build prometheus text",
+    "func": "// DSP-specific Prometheus text-format renderer. Counter families live in\n// global.metrics.<family> so the Simulation tab's /metrics handler stays\n// untouched. Cross-service counters in the same global object are fine —\n// each tab renders only the families it owns.\nconst counters = global.get('metrics') || {};\n\nfunction fmt(name, help, samples) {\n    let out = '# HELP ' + name + ' ' + help + '\\n';\n    out += '# TYPE ' + name + ' counter\\n';\n    if (samples.length === 0) {\n        out += name + ' 0\\n';\n        return out;\n    }\n    for (const [labels, value] of samples) {\n        const labelStr = Object.entries(labels)\n            .map(([k, v]) => k + '=\"' + v + '\"').join(',');\n        out += name + (labelStr ? '{' + labelStr + '}' : '') + ' ' + value + '\\n';\n    }\n    return out;\n}\n\nlet body = '';\n\nconst cat = counters.facis_dsp_catalogue_requests_total || {};\nbody += fmt('facis_dsp_catalogue_requests_total',\n            'Total catalogue requests',\n            Object.entries(cat).map(([_, v]) => [{}, v]));\n\nconst req = counters.facis_dsp_transfer_requests_total || {};\nbody += fmt('facis_dsp_transfer_requests_total',\n            'Total transfer requests',\n            Object.entries(req).map(([format, v]) => [{ format }, v]));\n\nconst comp = counters.facis_dsp_transfer_completions_total || {};\nbody += fmt('facis_dsp_transfer_completions_total',\n            'Total completed transfers',\n            Object.entries(comp).map(([_, v]) => [{}, v]));\n\nconst err = counters.facis_dsp_transfer_errors_total || {};\nbody += fmt('facis_dsp_transfer_errors_total',\n            'Total transfer errors',\n            Object.entries(err).map(([_, v]) => [{}, v]));\n\nmsg.payload = body;\nmsg.headers = { 'Content-Type': 'text/plain; version=0.0.4' };\nmsg.statusCode = 200;\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 430,
+    "y": 160,
+    "wires": [
+      [
+        "dsp-out-metrics"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-out-metrics",
+    "type": "http response",
+    "z": "tab-dsp-health",
+    "name": "200 metrics",
+    "statusCode": "",
+    "headers": {},
+    "x": 660,
+    "y": 160,
+    "wires": []
+  },
+  {
+    "id": "dsp-link-in-metric-inc",
+    "type": "link in",
+    "z": "tab-dsp-health",
+    "name": "← dsp.metric.inc",
+    "links": [
+      "dsp-cat-link-out-metric",
+      "dsp-tx-link-out-metric",
+      "dsp-errors-link-out-metric"
+    ],
+    "x": 150,
+    "y": 280,
+    "wires": [
+      [
+        "dsp-fn-metric-inc"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-fn-metric-inc",
+    "type": "function",
+    "z": "tab-dsp-health",
+    "name": "increment counter",
+    "func": "// msg.payload = { family: 'facis_dsp_...', label: '_total'|'<format>'|..., value?: number }\nconst m = global.get('metrics') || {};\nconst family = msg.payload && msg.payload.family;\nconst label = (msg.payload && msg.payload.label) || '_total';\nconst inc = (msg.payload && typeof msg.payload.value === 'number') ? msg.payload.value : 1;\nif (!family) {\n    node.warn('dsp.metric.inc: missing family');\n    return null;\n}\nif (!m[family]) m[family] = {};\nm[family][label] = (m[family][label] || 0) + inc;\nglobal.set('metrics', m);\nreturn null;\n",
+    "outputs": 0,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 410,
+    "y": 280,
+    "wires": []
+  }
+]

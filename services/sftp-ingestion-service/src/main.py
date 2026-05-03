@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 import uvicorn
 from fastapi import FastAPI
@@ -132,10 +132,8 @@ async def lifespan(app: FastAPI):
     _running = False
     if _poll_task:
         _poll_task.cancel()
-        try:
+        with suppress(asyncio.CancelledError):
             await _poll_task
-        except asyncio.CancelledError:
-            pass
     if _publisher:
         _publisher.flush(timeout=5.0)
 

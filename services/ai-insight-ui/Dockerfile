@@ -1,4 +1,12 @@
 # FACIS AI Insight UI — Multi-stage build
+#
+# DEPRECATED FOR PRODUCTION as of 2026-04-29.
+# The production deployment serves the Vue SPA via uibuilder inside the
+# existing ORCE pod (see docs/deployment/orce-native-runbook.md). This
+# Dockerfile + the helm chart's standalone-Nginx variant are kept ONLY
+# for local development. Do not deploy the resulting image to the IONOS
+# cluster.
+
 FROM node:22-alpine AS builder
 WORKDIR /app
 COPY ui/app/package.json ui/app/package-lock.json* ./

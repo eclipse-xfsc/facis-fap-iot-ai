@@ -1,0 +1,67 @@
+[
+  {
+    "id": "subflow-facis-meter",
+    "type": "subflow",
+    "name": "FACIS Meter",
+    "info": "FACIS Simulation \u2014 Energy meter (Janitza UMG 96RM-shaped readings).\nMirrors src/simulators/energy_meter/{simulator,load_curves}.py.\nCumulative energy uses the deterministic year-anchored integration\nfrom `_calculate_cumulative_energy`. Physics duplicated in\ntests/flows/smart-energy.spec.js \u2014 keep in sync.",
+    "category": "FACIS Simulation",
+    "in": [
+      {
+        "x": 50,
+        "y": 80,
+        "wires": [
+          {
+            "id": "fn-meter-compute"
+          }
+        ]
+      }
+    ],
+    "out": [
+      {
+        "x": 600,
+        "y": 80,
+        "wires": [
+          {
+            "id": "fn-meter-compute",
+            "port": 0
+          }
+        ]
+      }
+    ],
+    "env": [],
+    "meta": {
+      "module": "facis-simulation-orce",
+      "version": "0.1.0",
+      "license": "Apache-2.0"
+    },
+    "color": "#A6E3A1",
+    "icon": "font-awesome/fa-bolt"
+  },
+  {
+    "id": "fn-meter-compute",
+    "type": "function",
+    "z": "subflow-facis-meter",
+    "name": "energy-meter-simulator compute",
+    "func": "function makeRng(baseSeed, entityId, tag, tsMs) {\n    const key = String(baseSeed) + ':' + String(entityId) + ':' + String(tag) + ':' + String(tsMs);\n    const seedHex = crypto.createHash('sha256').update(key).digest('hex').slice(0, 16);\n    return seedrandom.alea(seedHex);\n}\nfunction uniform(rng, min, max) { return min + (max - min) * rng(); }\nfunction normal(rng, mean, stddev) {\n    let u = 0; let v = 0;\n    while (u === 0) u = rng();\n    while (v === 0) v = rng();\n    const z = Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);\n    return mean + stddev * z;\n}\nfunction isWeekend(d) { const w = d.getUTCDay(); return w === 0 || w === 6; }\n\nconst WEEKDAY = [0.3, 0.28, 0.25, 0.25, 0.27, 0.35, 0.55, 0.75, 0.9, 0.95, 1.0, 0.98, 0.85, 0.92, 0.98, 0.95, 0.88, 0.7, 0.5, 0.45, 0.4, 0.38, 0.35, 0.32];\nconst WEEKEND = [0.2, 0.18, 0.16, 0.15, 0.15, 0.18, 0.25, 0.35, 0.45, 0.5, 0.55, 0.52, 0.45, 0.48, 0.5, 0.48, 0.42, 0.35, 0.3, 0.28, 0.25, 0.23, 0.22, 0.21];\n\nconst DEFAULT_CFG = {\n    meter_id: 'meter-default',\n    base_power_kw: 10,\n    peak_power_kw: 50,\n    nominal_voltage_v: 230,\n    voltage_variance_pct: 5,\n    nominal_frequency_hz: 50,\n    frequency_variance_hz: 0.05,\n    power_factor_min: 0.95,\n    power_factor_max: 0.99,\n    initial_energy_kwh: 0\n};\n\nfunction loadFactor(date) {\n    const curve = isWeekend(date) ? WEEKEND : WEEKDAY;\n    const hour = date.getUTCHours();\n    const minute = date.getUTCMinutes();\n    const cur = curve[hour];\n    const nxt = curve[(hour + 1) % 24];\n    return cur + (nxt - cur) * (minute / 60);\n}\n\nfunction loadFactorWithNoise(date, rng) {\n    const base = loadFactor(date);\n    const noise = normal(rng, 0, 0.05);\n    return Math.max(0.1, Math.min(1.0, base + noise));\n}\n\nfunction distributePower(totalW, rng, imbalance) {\n    const share = totalW / 3;\n    const i1 = uniform(rng, -imbalance, imbalance);\n    const i2 = uniform(rng, -imbalance, imbalance);\n    const i3 = -(i1 + i2);\n    return [share * (1 + i1), share * (1 + i2), share * (1 + i3)];\n}\n\nfunction cumulativeEnergy(date, cfg) {\n    const ref = Date.UTC(date.getUTCFullYear(), 0, 1, 0, 0, 0);\n    const ms = date.getTime();\n    if (ms <= ref) return cfg.initial_energy_kwh;\n    const totalHours = (ms - ref) / 3600000;\n    const avgLoadFactor = 0.53;\n    const avgPowerKw = cfg.base_power_kw + (cfg.peak_power_kw - cfg.base_power_kw) * avgLoadFactor;\n    return cfg.initial_energy_kwh + avgPowerKw * totalHours;\n}\n\nfunction generateMeter(payload) {\n    const baseSeed = (typeof payload.base_seed === 'number') ? payload.base_seed : 12345;\n    const entityId = payload.entity_id || 'meter-default';\n    const tsMs = (typeof payload.timestamp_ms === 'number') ? payload.timestamp_ms : 0;\n    const isoTs = payload.timestamp || new Date(tsMs).toISOString();\n    const siteId = payload.site_id || '';\n    const cfg = Object.assign({}, DEFAULT_CFG, payload.config || {});\n    const mode = payload.mode || 'normal';\n    const date = new Date(isoTs);\n    const rng = makeRng(baseSeed, entityId, 'meter', tsMs);\n\n    const lf = loadFactorWithNoise(date, rng);\n    let totalKw = cfg.base_power_kw + (cfg.peak_power_kw - cfg.base_power_kw) * lf;\n    if (mode === 'event') {\n        const minOfDay = date.getUTCHours() * 60 + date.getUTCMinutes();\n        if (minOfDay >= 600 && minOfDay < 620) totalKw *= 2.0;\n    }\n    const totalW = totalKw * 1000;\n\n    const [p1, p2, p3] = distributePower(totalW, rng, 0.08);\n    const vVar = cfg.nominal_voltage_v * (cfg.voltage_variance_pct / 100);\n    const v1 = cfg.nominal_voltage_v + uniform(rng, -vVar, vVar);\n    const v2 = cfg.nominal_voltage_v + uniform(rng, -vVar, vVar);\n    const v3 = cfg.nominal_voltage_v + uniform(rng, -vVar, vVar);\n    const pf = uniform(rng, cfg.power_factor_min, cfg.power_factor_max);\n    const i1 = v1 > 0 ? p1 / (v1 * pf) : 0;\n    const i2 = v2 > 0 ? p2 / (v2 * pf) : 0;\n    const i3 = v3 > 0 ? p3 / (v3 * pf) : 0;\n    const freq = cfg.nominal_frequency_hz + uniform(rng, -cfg.frequency_variance_hz, cfg.frequency_variance_hz);\n    const energy = cumulativeEnergy(date, cfg);\n\n    return {\n        site_id: siteId,\n        timestamp: isoTs,\n        meter_id: cfg.meter_id || entityId,\n        readings: {\n            active_power_l1_w: p1, active_power_l2_w: p2, active_power_l3_w: p3,\n            voltage_l1_v: v1, voltage_l2_v: v2, voltage_l3_v: v3,\n            current_l1_a: i1, current_l2_a: i2, current_l3_a: i3,\n            power_factor: pf, frequency_hz: freq, total_energy_kwh: energy\n        }\n    };\n}\n\nmsg.payload = generateMeter(msg.payload || {});\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [
+      {
+        "var": "seedrandom",
+        "module": "seedrandom"
+      },
+      {
+        "var": "crypto",
+        "module": "crypto"
+      }
+    ],
+    "x": 320,
+    "y": 80,
+    "wires": [
+      []
+    ]
+  }
+]

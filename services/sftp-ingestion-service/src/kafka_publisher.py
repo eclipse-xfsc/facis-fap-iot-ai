@@ -30,7 +30,9 @@ class IngestKafkaPublisher:
             if config.ssl_ca_location:
                 producer_config["ssl.ca.location"] = config.ssl_ca_location
             if config.ssl_certificate_location:
-                producer_config["ssl.certificate.location"] = config.ssl_certificate_location
+                producer_config["ssl.certificate.location"] = (
+                    config.ssl_certificate_location
+                )
             if config.ssl_key_location:
                 producer_config["ssl.key.location"] = config.ssl_key_location
 
@@ -42,7 +44,9 @@ class IngestKafkaPublisher:
             self._delivery_errors.append(str(err))
             logger.error(f"Kafka delivery failed: {err}")
         else:
-            logger.debug(f"Delivered to {msg.topic()}[{msg.partition()}] @ {msg.offset()}")
+            logger.debug(
+                f"Delivered to {msg.topic()}[{msg.partition()}] @ {msg.offset()}"
+            )
 
     def publish(self, topic: str, key: str, envelope: dict) -> None:
         """Publish a single Bronze envelope to Kafka."""

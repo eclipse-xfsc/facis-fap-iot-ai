@@ -18,10 +18,14 @@ const notifications = useNotificationsStore()
 const isLive        = ref(false)
 
 onMounted(async () => {
-  try {
-    const [metersRes, lightsRes, eventsRes] = await Promise.all([getMeters(), getStreetlights(), getCityEvents()])
+  // 1. Pull persisted alerts from /api/v1/alerts (the ORCE catch-ring buffer).
+  await notifications.loadFromApi()
 
-    // Energy anomaly alerts
+  // 2. Augment with locally-computed anomalies from the live simulation feeds
+  //    so users see something even before any backend error fires.
+  try {
+    const [metersRes, _lightsRes, eventsRes] = await Promise.all([getMeters(), getStreetlights(), getCityEvents()])
+
     for (const meter of (metersRes?.meters ?? []).slice(0, 2)) {
       const hist = await getMeterHistory(meter.meter_id)
       if (!hist?.readings?.length) continue
@@ -41,7 +45,6 @@ onMounted(async () => {
       }
     }
 
-    // City event alerts from live API
     for (const z of (eventsRes?.zones ?? []).slice(0, 3)) {
       const curr = await getCityEventCurrent(z.zone_id)
       if (!curr || !curr.active) continue
@@ -61,7 +64,7 @@ onMounted(async () => {
     }
 
     isLive.value = true
-  } catch { /* keep existing alerts */ }
+  } catch { /* keep whatever loadFromApi populated */ }
 })
 
 const searchQuery   = ref('')

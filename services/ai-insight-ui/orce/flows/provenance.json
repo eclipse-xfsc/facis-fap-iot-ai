@@ -1,0 +1,64 @@
+[
+  {
+    "id": "tab_aiui_provenance",
+    "type": "tab",
+    "label": "AI Insight UI — Provenance",
+    "disabled": false,
+    "info": "Exposes provenance routes for the UI:\n  GET /api/v1/provenance/transfers — lists DSP data-transfer events from global.transfers (DSP transfer-process flow writes here)\n  GET /api/v1/provenance/insights  — lists AI Insight outputs persisted by the AI Insight backend tabs (read from global.ai_insight_outputs)"
+  },
+  {
+    "id": "node_prov_transfers_get",
+    "type": "http in",
+    "z": "tab_aiui_provenance",
+    "name": "GET /api/v1/provenance/transfers",
+    "url": "/api/v1/provenance/transfers",
+    "method": "get",
+    "x": 180,
+    "y": 100,
+    "wires": [["fn_prov_transfers_build"]]
+  },
+  {
+    "id": "fn_prov_transfers_build",
+    "type": "function",
+    "z": "tab_aiui_provenance",
+    "name": "build transfers response",
+    "func": "const map = global.get('transfers') || {};\n// transfers may be a Map-like object or an array of records.\nlet rows = [];\nif (Array.isArray(map)) rows = map.slice();\nelse if (map && typeof map === 'object') rows = Object.values(map);\nrows.sort((a, b) => {\n  const ta = new Date((a && (a.created_at || a.updated_at || a.timestamp)) || 0).getTime();\n  const tb = new Date((b && (b.created_at || b.updated_at || b.timestamp)) || 0).getTime();\n  return tb - ta;\n});\nmsg.headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };\nmsg.statusCode = 200;\nmsg.payload = { transfers: rows, count: rows.length };\nreturn msg;\n",
+    "outputs": 1,
+    "x": 500,
+    "y": 100,
+    "wires": [["node_prov_resp"]]
+  },
+  {
+    "id": "node_prov_insights_get",
+    "type": "http in",
+    "z": "tab_aiui_provenance",
+    "name": "GET /api/v1/provenance/insights",
+    "url": "/api/v1/provenance/insights",
+    "method": "get",
+    "x": 180,
+    "y": 180,
+    "wires": [["fn_prov_insights_build"]]
+  },
+  {
+    "id": "fn_prov_insights_build",
+    "type": "function",
+    "z": "tab_aiui_provenance",
+    "name": "build insights response",
+    "func": "// AI Insight backend stores outputs in global.ai_insight_outputs (object keyed by output_id).\n// Optional file fallback: /data/ai-insight-state/outputs.json (only used if global is empty).\nconst byId = global.get('ai_insight_outputs') || {};\nlet rows = [];\nif (Array.isArray(byId)) rows = byId.slice();\nelse if (byId && typeof byId === 'object') rows = Object.values(byId);\nrows = rows.map((r) => ({\n  output_id:    r.output_id || r.id,\n  insight_type: r.insight_type || r.type || null,\n  created_at:   r.created_at || r.generated_at || r.timestamp || null,\n  user_roles:   r.user_roles || null,\n  asset_id:     r.asset_id || r.subject || null,\n  agreement_id: r.agreement_id || null,\n  hmac:         (r.signed_url || '').split('hmac=')[1] || null,\n  bytes:        r.bytes || null\n}));\nrows.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());\nmsg.headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };\nmsg.statusCode = 200;\nmsg.payload = { insights: rows, count: rows.length };\nreturn msg;\n",
+    "outputs": 1,
+    "x": 500,
+    "y": 180,
+    "wires": [["node_prov_resp"]]
+  },
+  {
+    "id": "node_prov_resp",
+    "type": "http response",
+    "z": "tab_aiui_provenance",
+    "name": "200 JSON",
+    "statusCode": "",
+    "headers": {},
+    "x": 800,
+    "y": 140,
+    "wires": []
+  }
+]

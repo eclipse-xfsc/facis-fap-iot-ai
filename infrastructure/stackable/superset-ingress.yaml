@@ -1,0 +1,42 @@
+# Stackable-cluster Ingress that exposes Superset at
+# https://fap-iotai-superset.facis.cloud, terminating TLS with the shared
+# *.facis.cloud wildcard. Replaces the previous path-based attempt
+# (/superset under fap-iotai.facis.cloud on the IONOS cluster), which
+# couldn't work because Superset's pre-built React bundle hardcodes
+# absolute /static/... asset paths and its /api/v1/* collided with the
+# FACIS API on the same host.
+#
+# The wildcard cert lives in the keycloak namespace as `keycloak-tls`
+# (CN=*.facis.cloud, SAN includes facis.cloud). We replicate it here as
+# `superset-tls` so the ingress controller can pick it up from the same
+# namespace as the Ingress object.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: superset
+  namespace: stackable
+  labels:
+    app.kubernetes.io/part-of: facis-fap
+    app.kubernetes.io/name: superset
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - fap-iotai-superset.facis.cloud
+      secretName: superset-tls
+  rules:
+    - host: fap-iotai-superset.facis.cloud
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: superset-node
+                port:
+                  name: http

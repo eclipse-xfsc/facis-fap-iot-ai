@@ -1,7 +1,13 @@
-Feature: Docker Deployment
+Feature: Container Deployment
   As a DevOps engineer
-  I want containerized deployment
-  So that I can deploy consistently across environments
+  I want containerized deployment of the simulation image
+  So that the same artefact runs consistently in CI, staging, and production
+  #
+  # Per the FACIS Technical Development Requirements ("No Docker Compose
+  # permitted"), multi-service orchestration is performed exclusively via
+  # Helm and Kubernetes — see helm_deployment.feature. The scenarios below
+  # validate the Docker IMAGE (build, env-driven config, volume mount), not
+  # any compose-based topology.
 
   Scenario: Container startup
     Given the Docker image is built
@@ -21,9 +27,3 @@ Feature: Docker Deployment
     When simulation generates data
     Then data should be persisted to the volume
     And data should survive container restart
-
-  Scenario: Docker Compose multi-service deployment
-    Given a docker-compose.yml with simulation and MQTT broker
-    When I run docker-compose up
-    Then all services should start and interconnect
-    And simulation should publish to the MQTT broker

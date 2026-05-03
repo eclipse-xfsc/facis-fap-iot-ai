@@ -1,0 +1,19 @@
+{{- if and (eq (default "orce" .Values.compatibilityMode) "orce") .Values.dspStatePvc.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Values.dspStatePvc.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "facis-dsp-connector.labels" . | nindent 4 }}
+    app.kubernetes.io/component: dsp-state
+spec:
+  accessModes:
+    {{- toYaml .Values.dspStatePvc.accessModes | nindent 4 }}
+  resources:
+    requests:
+      storage: {{ .Values.dspStatePvc.size }}
+  {{- with .Values.dspStatePvc.storageClassName }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+{{- end }}

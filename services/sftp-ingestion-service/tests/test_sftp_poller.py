@@ -27,16 +27,22 @@ class TestParseFile:
         assert result[0]["power_kw"] == 42.5
 
     def test_parse_json_array(self, poller: SftpPoller) -> None:
-        content = json.dumps([
-            {"meter_id": "meter-001", "power_kw": 42.5},
-            {"meter_id": "meter-002", "power_kw": 38.1},
-        ]).encode()
+        content = json.dumps(
+            [
+                {"meter_id": "meter-001", "power_kw": 42.5},
+                {"meter_id": "meter-002", "power_kw": 38.1},
+            ]
+        ).encode()
         result = poller._parse_file("readings.json", content)
         assert len(result) == 2
         assert result[1]["meter_id"] == "meter-002"
 
     def test_parse_csv(self, poller: SftpPoller) -> None:
-        content = b"meter_id,power_kw,timestamp\nmeter-001,42.5,2026-04-07T12:00:00Z\nmeter-002,38.1,2026-04-07T12:01:00Z"
+        content = (
+            b"meter_id,power_kw,timestamp\n"
+            b"meter-001,42.5,2026-04-07T12:00:00Z\n"
+            b"meter-002,38.1,2026-04-07T12:01:00Z"
+        )
         result = poller._parse_file("readings.csv", content)
         assert len(result) == 2
         assert result[0]["meter_id"] == "meter-001"

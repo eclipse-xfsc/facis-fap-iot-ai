@@ -1,0 +1,40 @@
+# Strategic-merge patch that mounts the Stackable mTLS Kafka certs into the
+# ORCE pod at /etc/kafka-certs/. The kafka-broker config node in
+# services/simulation/orce/flows/facis-simulation-kafka.json references those
+# paths for sslCaLocation / sslCertLocation / sslKeyLocation.
+#
+# The certs themselves live in the `facis-kafka-certs` Secret in the `orce`
+# namespace. That Secret is created out-of-band from
+# `Credentials and configs/credentials.txt` and is NOT in source — never
+# commit cert material to git.
+#
+# Apply:
+#   kubectl create secret generic facis-kafka-certs -n orce \
+#     --from-file=ca.crt=... --from-file=tls.crt=... --from-file=tls.key=...
+#   kubectl patch deployment orce -n orce \
+#     --type=strategic --patch-file=infrastructure/orce/kafka-certs-patch.yaml
+#
+# WARNING: Stackable's secret-operator issues short-lived client certs
+# (~3 months in this case). When tls.crt approaches expiry, refresh both
+# the file in `Credentials and configs/credentials.txt` and the Secret here.
+spec:
+  template:
+    spec:
+      volumes:
+        - name: kafka-certs
+          secret:
+            secretName: facis-kafka-certs
+            items:
+              - key: ca.crt
+                path: ca.crt
+              - key: tls.crt
+                path: tls.crt
+              - key: tls.key
+                path: tls.key
+            defaultMode: 0400
+      containers:
+        - name: orce
+          volumeMounts:
+            - name: kafka-certs
+              mountPath: /etc/kafka-certs
+              readOnly: true

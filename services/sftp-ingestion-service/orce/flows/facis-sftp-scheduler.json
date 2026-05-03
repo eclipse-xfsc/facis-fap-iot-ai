@@ -1,0 +1,67 @@
+[
+  {
+    "id": "tab-sftp-scheduler",
+    "type": "tab",
+    "label": "FACIS SFTP — Scheduler",
+    "disabled": false,
+    "info": "Polls every SFTP_POLL_INTERVAL_SECONDS (default 60s) and emits a tick to\nthe Poller tab. The repeat interval is read from the env var at deploy\ntime — change it via the chart `Secret/<release>-sftp-orce-env` and\nredeploy the flow for the change to take effect.\n\nA flow-context flag `poll_inflight` prevents tick pile-up if a slow SFTP\ncycle is still in progress when the next tick fires."
+  },
+  {
+    "id": "sftp-tick-bootstrap",
+    "type": "inject",
+    "z": "tab-sftp-scheduler",
+    "name": "every SFTP_POLL_INTERVAL_SECONDS",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "${SFTP_POLL_INTERVAL_SECONDS}",
+    "crontab": "",
+    "once": true,
+    "onceDelay": "5",
+    "topic": "sftp.tick",
+    "payload": "",
+    "payloadType": "str",
+    "x": 200,
+    "y": 100,
+    "wires": [
+      [
+        "sftp-fn-tick-guard"
+      ]
+    ]
+  },
+  {
+    "id": "sftp-fn-tick-guard",
+    "type": "function",
+    "z": "tab-sftp-scheduler",
+    "name": "tick guard (drop if in-flight)",
+    "func": "if (flow.get('poll_inflight') === true) {\n    node.warn('sftp tick dropped: previous poll still in-flight');\n    return null;\n}\nmsg.tick_id = Date.now();\nflow.set('poll_seq', (flow.get('poll_seq') || 0) + 1);\nmsg.poll_seq = flow.get('poll_seq');\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 480,
+    "y": 100,
+    "wires": [
+      [
+        "sftp-link-out-tick"
+      ]
+    ]
+  },
+  {
+    "id": "sftp-link-out-tick",
+    "type": "link out",
+    "z": "tab-sftp-scheduler",
+    "name": "sftp.poll.tick →",
+    "mode": "link",
+    "links": [
+      "sftp-link-in-poll-tick"
+    ],
+    "x": 730,
+    "y": 100,
+    "wires": []
+  }
+]

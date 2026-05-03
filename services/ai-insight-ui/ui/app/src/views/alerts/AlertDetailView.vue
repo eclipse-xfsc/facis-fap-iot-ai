@@ -76,22 +76,10 @@ const relatedTransformations = computed(() => {
   ]
 })
 
-// Related data products
-const relatedProducts = computed(() => {
-  if (!alert.value) return []
-  if (alert.value.useCase === 'Smart Energy') {
-    return [
-      { id: 'dp-001', name: 'Energy Consumption Timeseries', version: '2.1.0', apiStatus: 'available' },
-      { id: 'dp-005', name: 'Energy Flexibility Profile', version: '0.9.0', apiStatus: 'available' }
-    ]
-  }
-  if (alert.value.useCase === 'Smart City') {
-    return [
-      { id: 'dp-003', name: 'Smart Lighting Status', version: '1.0.1', apiStatus: 'available' }
-    ]
-  }
-  return []
-})
+// Related data products: removed — there is no /api/v1/data-products backend
+// to look these up against. Returning [] hides the "Related Data Products"
+// card entirely (template guard already does v-if relatedProducts.length > 0).
+const relatedProducts = computed<Array<{ id: string; name: string; version: string; apiStatus: string }>>(() => [])
 
 // Audit entries from real API call log
 const auditHistory = computed(() => [

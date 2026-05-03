@@ -45,9 +45,35 @@ RUN mkdir -p /opt/jsonforms-staging && \
         @emotion/styled \
         node-red-contrib-uibuilder
 
+# ── Simulation + DSP + SFTP runtime modules ─────────────────────────
+# node-red-contrib-modbus: Modbus TCP master + slave nodes used by the
+#   ORCE-native Modbus adapter (replaces src/api/modbus/server.py).
+# seedrandom: deterministic JS-native PRNG used by the simulation engine
+#   subflows. Same (base_seed, entity_id, ts_ms) → same float sequence,
+#   byte-stable across pod restarts.
+# ssh2-sftp-client: strict-host-key-verifying SFTP client used by the
+#   FACIS SFTP Ingestion ORCE flow (services/sftp-ingestion-service/orce/).
+#   Replaces paramiko in the legacy Python service.
+# csv-parse: header-aware CSV parser used by the FACIS SFTP Ingestion ORCE
+#   flow. Replaces csv.DictReader. Runs in strict-column-count mode to
+#   surface malformed rows through the DLQ.
+#
+# NOTE: the SFTP ingestion flows live in a different service tree but share
+# this image because the ORCE pod is shared infrastructure. A change here
+# rebuilds the simulation image — this cross-service coupling is documented
+# in services/sftp-ingestion-service/orce/README.md.
+RUN mkdir -p /opt/sim-runtime-staging && \
+    cd /opt/sim-runtime-staging && \
+    npm init -y && \
+    npm install \
+        node-red-contrib-modbus \
+        seedrandom \
+        ssh2-sftp-client \
+        csv-parse
+
 # ── Custom entrypoint ───────────────────────────────────────────────
-# Copies rdkafka + jsonforms into /data/node_modules at startup,
-# applies SSL patch, then delegates to the original ORCE entrypoint.
+# Copies rdkafka + jsonforms + sim-runtime modules into /data/node_modules
+# at startup, applies SSL patch, then delegates to the original ORCE entrypoint.
 COPY entrypoint.sh /usr/local/bin/entrypoint-rdkafka.sh
 RUN chmod +x /usr/local/bin/entrypoint-rdkafka.sh
 

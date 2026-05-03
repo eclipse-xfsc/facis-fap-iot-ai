@@ -1,0 +1,67 @@
+[
+  {
+    "id": "subflow-facis-traffic",
+    "type": "subflow",
+    "name": "FACIS Traffic",
+    "info": "FACIS Simulation \u2014 Smart-city traffic index (0-100).\nMirrors src/simulators/smart_city/traffic.py.",
+    "category": "FACIS Simulation",
+    "in": [
+      {
+        "x": 50,
+        "y": 80,
+        "wires": [
+          {
+            "id": "fn-traffic-compute"
+          }
+        ]
+      }
+    ],
+    "out": [
+      {
+        "x": 600,
+        "y": 80,
+        "wires": [
+          {
+            "id": "fn-traffic-compute",
+            "port": 0
+          }
+        ]
+      }
+    ],
+    "env": [],
+    "meta": {
+      "module": "facis-simulation-orce",
+      "version": "0.1.0",
+      "license": "Apache-2.0"
+    },
+    "color": "#90CAF9",
+    "icon": "font-awesome/fa-car"
+  },
+  {
+    "id": "fn-traffic-compute",
+    "type": "function",
+    "z": "subflow-facis-traffic",
+    "name": "traffic compute",
+    "func": "function makeRng(baseSeed, entityId, tag, tsMs) {\n    const key = String(baseSeed) + ':' + String(entityId) + ':' + String(tag) + ':' + String(tsMs);\n    const seedHex = crypto.createHash('sha256').update(key).digest('hex').slice(0, 16);\n    return seedrandom.alea(seedHex);\n}\nfunction uniform(rng, a, b) { return a + (b - a) * rng(); }\nfunction isWeekend(d) { const w = d.getUTCDay(); return w === 0 || w === 6; }\nfunction dayOfYear(d) {\n    const start = Date.UTC(d.getUTCFullYear(), 0, 0);\n    return Math.floor((d.getTime() - start) / 86400000);\n}\nfunction calcSunTimes(date, latitude, longitude) {\n    const doy = dayOfYear(date);\n    const decl = 23.45 * Math.sin((Math.PI / 180) * (360 / 365) * (doy - 81));\n    const declRad = decl * Math.PI / 180;\n    const latRad = latitude * Math.PI / 180;\n    let cosHa = -Math.tan(latRad) * Math.tan(declRad);\n    cosHa = Math.max(-1, Math.min(1, cosHa));\n    const haDeg = Math.acos(cosHa) * 180 / Math.PI;\n    const noonH = 12 - longitude / 15;\n    let sunriseH = Math.max(0, Math.min(23.99, noonH - haDeg / 15));\n    let sunsetH = Math.max(0, Math.min(23.99, noonH + haDeg / 15));\n    function fmt(h) {\n        const hh = Math.floor(h);\n        const mm = Math.floor((h - hh) * 60);\n        return String(hh).padStart(2, '0') + ':' + String(mm).padStart(2, '0');\n    }\n    return [fmt(sunriseH), fmt(sunsetH), sunriseH, sunsetH];\n}\n\nfunction baseTraffic(hour, weekend) {\n    let i;\n    if (hour < 5) i = 10;\n    else if (hour < 7) i = 10 + 55 * ((hour - 5) / 2);\n    else if (hour < 9) { const pf = 1 - Math.abs(hour - 8); i = 65 + 20 * pf; }\n    else if (hour < 10) i = 65 - 25 * (hour - 9);\n    else if (hour < 16) i = 40;\n    else if (hour < 17) i = 40 + 30 * (hour - 16);\n    else if (hour < 19) { const pf = 1 - Math.abs(hour - 18); i = 70 + 15 * pf; }\n    else if (hour < 21) i = 70 - 40 * ((hour - 19) / 2);\n    else if (hour < 23) i = 30 - 15 * ((hour - 21) / 2);\n    else i = 10;\n    if (weekend) i *= 0.7;\n    return Math.max(0, Math.min(100, i));\n}\n\nfunction generateTraffic(payload) {\n    const baseSeed = (typeof payload.base_seed === 'number') ? payload.base_seed : 12345;\n    const entityId = payload.entity_id || 'traffic-default';\n    const tsMs = (typeof payload.timestamp_ms === 'number') ? payload.timestamp_ms : 0;\n    const isoTs = payload.timestamp || new Date(tsMs).toISOString();\n    const cityId = payload.city_id || 'city-berlin';\n    const zoneId = payload.zone_id || 'zone-001';\n    const date = new Date(isoTs);\n    const rng = makeRng(baseSeed, entityId, 'traffic', tsMs);\n    const hour = date.getUTCHours() + date.getUTCMinutes() / 60;\n    let idx = baseTraffic(hour, isWeekend(date));\n    idx = Math.max(0, Math.min(100, idx + uniform(rng, -8, 8)));\n    return {\n        city_id: cityId, zone_id: zoneId,\n        timestamp: isoTs, traffic_index: idx\n    };\n}\n\nmsg.payload = generateTraffic(msg.payload || {});\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [
+      {
+        "var": "seedrandom",
+        "module": "seedrandom"
+      },
+      {
+        "var": "crypto",
+        "module": "crypto"
+      }
+    ],
+    "x": 320,
+    "y": 80,
+    "wires": [
+      []
+    ]
+  }
+]

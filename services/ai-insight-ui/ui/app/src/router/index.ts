@@ -50,27 +50,17 @@ const routes: RouteRecordRaw[] = [
           { path: 'assets', name: 'EnergyAssets', component: () => import('@/views/smart-energy/EnergyAssetsView.vue'), meta: { title: 'Energy Assets' } },
           { path: 'assets/:id', name: 'EnergyAssetDetail', component: () => import('@/views/smart-energy/EnergyAssetDetailView.vue'), meta: { title: 'Asset Detail' } },
           { path: 'context', name: 'EnergyContext', component: () => import('@/views/smart-energy/EnergyContextView.vue'), meta: { title: 'Context Data' } },
-          { path: 'insights', name: 'EnergyInsights', component: () => import('@/views/smart-energy/EnergyInsightsView.vue'), meta: { title: 'AI Insights' } },
+          // 'insights' sub-route removed: EnergyInsightsView is fully history-driven and no /history endpoints exist on the simulation REST flow. AI Assistant + Analytics Overview cover the same surface.
           { path: 'data-products', name: 'EnergyDataProducts', component: () => import('@/views/smart-energy/EnergyDataProductsView.vue'), meta: { title: 'Energy Data Products' } },
           { path: 'data-products/:id', name: 'EnergyDataProductDetail', component: () => import('@/views/smart-energy/EnergyDataProductDetailView.vue'), meta: { title: 'Data Product Detail' } }
         ]
       },
-      {
-        path: 'smart-city',
-        name: 'SmartCity',
-        component: () => import('@/views/smart-city/SmartCityView.vue'),
-        meta: { title: 'Smart City', requiresAuth: true, roles: ['viewer', 'analyst', 'operator', 'admin'] },
-        children: [
-          { path: '', redirect: 'overview' },
-          { path: 'overview', name: 'SmartCityOverview', component: () => import('@/views/smart-city/CityOverviewView.vue'), meta: { title: 'City Overview' } },
-          { path: 'zones', name: 'CityZones', component: () => import('@/views/smart-city/CityZonesView.vue'), meta: { title: 'Lighting Zones' } },
-          { path: 'zones/:id', name: 'CityZoneDetail', component: () => import('@/views/smart-city/CityZoneDetailView.vue'), meta: { title: 'Zone Detail' } },
-          { path: 'context', name: 'CityContext', component: () => import('@/views/smart-city/CityContextView.vue'), meta: { title: 'Context Data' } },
-          { path: 'analytics', name: 'CityAnalytics', component: () => import('@/views/smart-city/CityAnalyticsView.vue'), meta: { title: 'City Analytics' } },
-          { path: 'data-products', name: 'CityDataProducts', component: () => import('@/views/smart-city/CityDataProductsView.vue'), meta: { title: 'City Data Products' } },
-          { path: 'data-products/:id', name: 'CityDataProductDetail', component: () => import('@/views/smart-city/CityDataProductDetailView.vue'), meta: { title: 'Data Product Detail' } }
-        ]
-      }
+      // Smart City use case removed: the simulation engine emits no
+      // streetlight / traffic / event / city-weather feeds. All seven views
+      // depended on /api/v1/{streetlights,traffic,events,city-weather/*}
+      // which 404. AI Insight city-status remains accessible via the AI
+      // Assistant chat and as one of the three cards in Analytics Overview.
+      // Restore from git history once those simulation feeds exist.
     ]
   },
 
@@ -89,20 +79,10 @@ const routes: RouteRecordRaw[] = [
     ]
   },
 
-  // ─── Data Products ─────────────────────────────────────────────────────────
-  {
-    path: '/data-products',
-    name: 'DataProducts',
-    component: () => import('@/views/DataProductsView.vue'),
-    meta: { title: 'Data Products', requiresAuth: true, roles: ['viewer', 'analyst', 'operator', 'admin'] },
-    children: [
-      { path: '', redirect: 'all' },
-      { path: 'all', name: 'AllDataProducts', component: () => import('@/views/data-products/AllProductsView.vue'), meta: { title: 'All Products' } },
-      { path: 'energy', name: 'EnergyProducts', component: () => import('@/views/data-products/EnergyProductsView.vue'), meta: { title: 'Energy Products' } },
-      { path: 'smart-city', name: 'CityProducts', component: () => import('@/views/data-products/CityProductsView.vue'), meta: { title: 'Smart City Products' } },
-      { path: ':id', name: 'DataProductDetail', component: () => import('@/views/data-products/ProductDetailView.vue'), meta: { title: 'Product Detail' } }
-    ]
-  },
+  // ─── Data Products section removed: no /api/v1/data-products backend exists.
+  //     Smart-energy and smart-city use cases keep their own per-domain views.
+  //     If the DSP catalogue is ever exposed as /api/v1/data-products, restore
+  //     this block and wire the view to that endpoint.
 
   // ─── Analytics ─────────────────────────────────────────────────────────────
   {
@@ -113,10 +93,9 @@ const routes: RouteRecordRaw[] = [
     children: [
       { path: '', redirect: 'overview' },
       { path: 'overview', name: 'AnalyticsOverview', component: () => import('@/views/analytics/AnalyticsOverviewView.vue'), meta: { title: 'Analytics Overview' } },
-      { path: 'trends', name: 'Trends', component: () => import('@/views/analytics/TrendsView.vue'), meta: { title: 'Trend Analysis' } },
-      { path: 'correlations', name: 'Correlations', component: () => import('@/views/analytics/CorrelationsView.vue'), meta: { title: 'Correlations' } },
-      { path: 'anomalies', name: 'Anomalies', component: () => import('@/views/analytics/AnomaliesView.vue'), meta: { title: 'Anomaly Detection' } },
-      { path: 'recommendations', name: 'Recommendations', component: () => import('@/views/analytics/RecommendationsView.vue'), meta: { title: 'Recommendations' } }
+      // Trends / Correlations / Anomalies / Recommendations sub-tabs removed:
+      // they all required /history endpoints that don't exist. The Overview
+      // already shows the LLM-narrated energy/anomaly/city insight cards.
     ]
   },
 
@@ -212,7 +191,9 @@ const routes: RouteRecordRaw[] = [
 ]
 
 const router = createRouter({
-  history: createWebHistory(),
+  // Use vite's BASE_URL (set from vite.config.ts `base`) so deep links and
+  // navigation work under the /aiInsight/ sub-path served by ORCE/uibuilder.
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes
 })
 

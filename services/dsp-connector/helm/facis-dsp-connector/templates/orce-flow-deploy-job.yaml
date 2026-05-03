@@ -1,0 +1,88 @@
+{{- if and (eq (default "orce" .Values.compatibilityMode) "orce") .Values.orceFlowDeploy.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "facis-dsp-connector.fullname" . }}-orce-flow-deploy
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "facis-dsp-connector.labels" . | nindent 4 }}
+    app.kubernetes.io/component: orce-flow-deploy
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  ttlSecondsAfterFinished: 600
+  backoffLimit: 2
+  template:
+    metadata:
+      labels:
+        {{- include "facis-dsp-connector.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: orce-flow-deploy
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: {{ include "facis-dsp-connector.serviceAccountName" . }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      volumes:
+        - name: flows
+          configMap:
+            name: {{ include "facis-dsp-connector.fullname" . }}-orce-flows
+      containers:
+        - name: deploy
+          image: "{{ .Values.orceFlowDeploy.jobImage.repository }}:{{ .Values.orceFlowDeploy.jobImage.tag }}"
+          imagePullPolicy: {{ .Values.orceFlowDeploy.jobImage.pullPolicy }}
+          env:
+            - name: ORCE_ADMIN_URL
+              value: {{ .Values.orceFlowDeploy.orceAdminUrl | quote }}
+            - name: ORCE_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.orceFlowDeploy.adminTokenSecret }}
+                  key: token
+            - name: PRE_DEPLOY_SLEEP
+              value: {{ .Values.orceFlowDeploy.preDeploySleepSeconds | quote }}
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              echo "[orce-flow-deploy] waiting ${PRE_DEPLOY_SLEEP}s for ORCE readiness..."
+              sleep "${PRE_DEPLOY_SLEEP}"
+
+              cd /flows
+              # Concatenate every flow JSON file (each is a top-level array)
+              # into a single combined deployment payload.
+              jq -s 'add' *.json > /tmp/combined.json
+
+              echo "[orce-flow-deploy] POST ${ORCE_ADMIN_URL}/flows ($(wc -c </tmp/combined.json) bytes)"
+              curl -sS --fail \
+                -H "Authorization: Bearer ${ORCE_ADMIN_TOKEN}" \
+                -H "Content-Type: application/json" \
+                -H "Node-RED-Deployment-Type: full" \
+                -X POST "${ORCE_ADMIN_URL}/flows" \
+                --data @/tmp/combined.json
+
+              echo
+              echo "[orce-flow-deploy] deploy ok"
+          volumeMounts:
+            - name: flows
+              mountPath: /flows
+              readOnly: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            capabilities:
+              drop:
+                - ALL
+{{- end }}

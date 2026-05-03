@@ -1,0 +1,67 @@
+[
+  {
+    "id": "subflow-facis-streetlights",
+    "type": "subflow",
+    "name": "FACIS Streetlights",
+    "info": "FACIS Simulation \u2014 Smart-city streetlight dimming.\nMirrors src/simulators/smart_city/streetlight.py.\nActive-event boost preserved: severity 2 \u2192 +30%, severity 3 \u2192 +50% (capped at 100).",
+    "category": "FACIS Simulation",
+    "in": [
+      {
+        "x": 50,
+        "y": 80,
+        "wires": [
+          {
+            "id": "fn-streetlight-compute"
+          }
+        ]
+      }
+    ],
+    "out": [
+      {
+        "x": 600,
+        "y": 80,
+        "wires": [
+          {
+            "id": "fn-streetlight-compute",
+            "port": 0
+          }
+        ]
+      }
+    ],
+    "env": [],
+    "meta": {
+      "module": "facis-simulation-orce",
+      "version": "0.1.0",
+      "license": "Apache-2.0"
+    },
+    "color": "#FFC107",
+    "icon": "font-awesome/fa-lightbulb-o"
+  },
+  {
+    "id": "fn-streetlight-compute",
+    "type": "function",
+    "z": "subflow-facis-streetlights",
+    "name": "streetlight compute",
+    "func": "function makeRng(baseSeed, entityId, tag, tsMs) {\n    const key = String(baseSeed) + ':' + String(entityId) + ':' + String(tag) + ':' + String(tsMs);\n    const seedHex = crypto.createHash('sha256').update(key).digest('hex').slice(0, 16);\n    return seedrandom.alea(seedHex);\n}\nfunction uniform(rng, a, b) { return a + (b - a) * rng(); }\nfunction isWeekend(d) { const w = d.getUTCDay(); return w === 0 || w === 6; }\nfunction dayOfYear(d) {\n    const start = Date.UTC(d.getUTCFullYear(), 0, 0);\n    return Math.floor((d.getTime() - start) / 86400000);\n}\nfunction calcSunTimes(date, latitude, longitude) {\n    const doy = dayOfYear(date);\n    const decl = 23.45 * Math.sin((Math.PI / 180) * (360 / 365) * (doy - 81));\n    const declRad = decl * Math.PI / 180;\n    const latRad = latitude * Math.PI / 180;\n    let cosHa = -Math.tan(latRad) * Math.tan(declRad);\n    cosHa = Math.max(-1, Math.min(1, cosHa));\n    const haDeg = Math.acos(cosHa) * 180 / Math.PI;\n    const noonH = 12 - longitude / 15;\n    let sunriseH = Math.max(0, Math.min(23.99, noonH - haDeg / 15));\n    let sunsetH = Math.max(0, Math.min(23.99, noonH + haDeg / 15));\n    function fmt(h) {\n        const hh = Math.floor(h);\n        const mm = Math.floor((h - hh) * 60);\n        return String(hh).padStart(2, '0') + ':' + String(mm).padStart(2, '0');\n    }\n    return [fmt(sunriseH), fmt(sunsetH), sunriseH, sunsetH];\n}\n\nconst DEFAULT_CFG = {\n    light_id: 'light-default',\n    zone_id: 'zone-001',\n    rated_power_w: 100,\n    latitude: 52.52,\n    longitude: 13.405\n};\n\nfunction baseDimming(hour, sunrise, sunset) {\n    const dawnStart = sunrise - 0.5; const dawnEnd = sunrise + 0.5;\n    const duskStart = sunset - 0.5; const duskEnd = sunset + 0.5;\n    if (hour < dawnStart || hour >= duskEnd) return 100;\n    if (hour < dawnEnd) return 100 * (1 - (hour - dawnStart) / (dawnEnd - dawnStart));\n    if (hour < duskStart) return 0;\n    if (hour < duskEnd) return 100 * ((hour - duskStart) / (duskEnd - duskStart));\n    return 0;\n}\n\nfunction generateStreetlight(payload) {\n    const baseSeed = (typeof payload.base_seed === 'number') ? payload.base_seed : 12345;\n    const entityId = payload.entity_id || 'light-default';\n    const tsMs = (typeof payload.timestamp_ms === 'number') ? payload.timestamp_ms : 0;\n    const isoTs = payload.timestamp || new Date(tsMs).toISOString();\n    const cityId = payload.city_id || 'city-berlin';\n    const siteId = payload.site_id || '';\n    const cfg = Object.assign({}, DEFAULT_CFG, payload.config || {});\n    const activeEvent = payload.active_event || null;\n    const date = new Date(isoTs);\n    const rng = makeRng(baseSeed, entityId, 'light', tsMs);\n\n    const [, , sunriseH, sunsetH] = calcSunTimes(date, cfg.latitude, cfg.longitude);\n    const hour = date.getUTCHours() + date.getUTCMinutes() / 60;\n    let dim = baseDimming(hour, sunriseH, sunsetH);\n    dim = Math.max(0, Math.min(100, dim + uniform(rng, -3, 3)));\n    if (activeEvent && activeEvent.active && activeEvent.zone_id === cfg.zone_id) {\n        const sev = (typeof activeEvent.severity === 'number') ? activeEvent.severity :\n                    (activeEvent.severity === 'HIGH' ? 3 : activeEvent.severity === 'MEDIUM' ? 2 : 1);\n        let boost = 0;\n        if (sev >= 3) boost = 50;\n        else if (sev >= 2) boost = 30;\n        dim = Math.min(100, dim + boost);\n    }\n    const power = (dim / 100) * cfg.rated_power_w;\n    return {\n        site_id: siteId, city_id: cityId, zone_id: cfg.zone_id,\n        light_id: cfg.light_id || entityId, timestamp: isoTs,\n        dimming_level_pct: dim, power_w: power\n    };\n}\n\nmsg.payload = generateStreetlight(msg.payload || {});\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [
+      {
+        "var": "seedrandom",
+        "module": "seedrandom"
+      },
+      {
+        "var": "crypto",
+        "module": "crypto"
+      }
+    ],
+    "x": 320,
+    "y": 80,
+    "wires": [
+      []
+    ]
+  }
+]

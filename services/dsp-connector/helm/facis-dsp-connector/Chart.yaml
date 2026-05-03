@@ -1,0 +1,6 @@
+apiVersion: v2
+name: facis-dsp-connector
+description: Eclipse Dataspace Protocol connector for the FACIS FAP IoT & AI platform. Supports compatibilityMode=orce (ORCE-native flows) and compatibilityMode=legacy (Python service).
+type: application
+version: 0.2.0
+appVersion: "1.0.0"

@@ -91,7 +91,23 @@ if [ -d "${JSONFORMS_STAGING}/node-red-contrib-uibuilder" ]; then
     echo "[entrypoint] JSON Forms + uibuilder modules ready"
 fi
 
-# ── 3. Register modules in /data/package.json ────────────────────────
+# ── 3. Simulation runtime modules (modbus contrib + seedrandom) ─────
+# Required by the ORCE-native simulation runtime introduced in commit
+# "Phase 1: scaffold ORCE simulation runtime". seedrandom is consumed by
+# function nodes via functionExternalModules; node-red-contrib-modbus
+# adds the modbus-server / modbus-flex-server slave nodes.
+SIM_RUNTIME_STAGING="/opt/sim-runtime-staging/node_modules"
+
+if [ -d "${SIM_RUNTIME_STAGING}" ]; then
+    for pkg in $(ls -1 "${SIM_RUNTIME_STAGING}/" 2>/dev/null); do
+        if [ -d "${SIM_RUNTIME_STAGING}/${pkg}" ] && [ ! -d "${TARGET}/${pkg}" ]; then
+            cp -a "${SIM_RUNTIME_STAGING}/${pkg}" "${TARGET}/${pkg}"
+        fi
+    done
+    echo "[entrypoint] simulation runtime modules ready"
+fi
+
+# ── 4. Register modules in /data/package.json ────────────────────────
 # Node-RED only loads modules listed in /data/package.json
 if [ -f /data/package.json ]; then
     node -e "
@@ -101,7 +117,11 @@ if [ -f /data/package.json ]; then
         let changed = false;
         const deps = {
             'node-red-contrib-rdkafka': '*',
-            'node-red-contrib-uibuilder': '*'
+            'node-red-contrib-uibuilder': '*',
+            'node-red-contrib-modbus': '*',
+            'seedrandom': '*',
+            'ssh2-sftp-client': '*',
+            'csv-parse': '*'
         };
         for (const [name, ver] of Object.entries(deps)) {
             if (!pkg.dependencies[name]) {
@@ -116,8 +136,8 @@ if [ -f /data/package.json ]; then
     "
 fi
 
-# ── 4. Fix ownership ────────────────────────────────────────────────
+# ── 5. Fix ownership ────────────────────────────────────────────────
 chown -R node-red:node-red "${TARGET}" 2>/dev/null || true
 
-# ── 5. Delegate to the original ORCE entrypoint ─────────────────────
+# ── 6. Delegate to the original ORCE entrypoint ─────────────────────
 exec /usr/src/node-red/entrypoint.sh "$@"

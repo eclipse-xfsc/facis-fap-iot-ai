@@ -1,0 +1,279 @@
+[
+  {
+    "id": "tab-dsp-state",
+    "type": "tab",
+    "label": "FACIS DSP — State Bootstrap & Persistence",
+    "disabled": false,
+    "info": "Owns the PVC-backed JSON state files for transfers and negotiations.\n\nStartup: read /data/dsp-state/transfers.json and /data/dsp-state/negotiations.json\ninto flow context. On read failure (first boot), initialise empty maps.\n\nMutations on other tabs use `flow.set('transfers'|'negotiations', ...)` synchronously,\nthen fire the `dsp.persist.transfers` or `dsp.persist.negotiations` link with an empty\ntrigger. The receiver re-serialises the latest snapshot to disk (overwrite mode).\n\nSingle-replica only — file-based state is not multi-replica safe.\nWhen Postgres backing is added (out of scope), this tab is replaced wholesale."
+  },
+  {
+    "id": "dsp-state-startup",
+    "type": "inject",
+    "z": "tab-dsp-state",
+    "name": "@startup",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": true,
+    "onceDelay": "0.5",
+    "topic": "",
+    "payload": "",
+    "payloadType": "str",
+    "x": 130,
+    "y": 80,
+    "wires": [
+      [
+        "dsp-read-transfers",
+        "dsp-read-negotiations"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-read-transfers",
+    "type": "file in",
+    "z": "tab-dsp-state",
+    "name": "read transfers.json",
+    "filename": "/data/dsp-state/transfers.json",
+    "filenameType": "str",
+    "format": "utf8",
+    "chunk": false,
+    "sendError": true,
+    "encoding": "none",
+    "allProps": false,
+    "x": 360,
+    "y": 60,
+    "wires": [
+      [
+        "dsp-restore-transfers"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-restore-transfers",
+    "type": "function",
+    "z": "tab-dsp-state",
+    "name": "restore transfers context",
+    "func": "let transfers = {};\ntry {\n    if (typeof msg.payload === 'string' && msg.payload.length > 0) {\n        transfers = JSON.parse(msg.payload);\n    } else if (msg.payload && typeof msg.payload === 'object') {\n        transfers = msg.payload;\n    }\n} catch (err) {\n    node.warn('Failed to parse transfers.json, starting empty: ' + err.message);\n    transfers = {};\n}\nflow.set('transfers', transfers);\nnode.log('DSP state: ' + Object.keys(transfers).length + ' transfer(s) restored');\nreturn null;\n",
+    "outputs": 0,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 620,
+    "y": 60,
+    "wires": []
+  },
+  {
+    "id": "dsp-read-transfers-catch",
+    "type": "catch",
+    "z": "tab-dsp-state",
+    "name": "transfers.json missing",
+    "scope": [
+      "dsp-read-transfers"
+    ],
+    "uncaught": false,
+    "x": 360,
+    "y": 120,
+    "wires": [
+      [
+        "dsp-init-transfers"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-init-transfers",
+    "type": "function",
+    "z": "tab-dsp-state",
+    "name": "init empty transfers",
+    "func": "flow.set('transfers', {});\nnode.log('DSP state: no transfers.json yet — initialised empty map');\nreturn null;\n",
+    "outputs": 0,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 620,
+    "y": 120,
+    "wires": []
+  },
+  {
+    "id": "dsp-read-negotiations",
+    "type": "file in",
+    "z": "tab-dsp-state",
+    "name": "read negotiations.json",
+    "filename": "/data/dsp-state/negotiations.json",
+    "filenameType": "str",
+    "format": "utf8",
+    "chunk": false,
+    "sendError": true,
+    "encoding": "none",
+    "allProps": false,
+    "x": 360,
+    "y": 200,
+    "wires": [
+      [
+        "dsp-restore-negotiations"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-restore-negotiations",
+    "type": "function",
+    "z": "tab-dsp-state",
+    "name": "restore negotiations context",
+    "func": "let negotiations = {};\ntry {\n    if (typeof msg.payload === 'string' && msg.payload.length > 0) {\n        negotiations = JSON.parse(msg.payload);\n    } else if (msg.payload && typeof msg.payload === 'object') {\n        negotiations = msg.payload;\n    }\n} catch (err) {\n    node.warn('Failed to parse negotiations.json, starting empty: ' + err.message);\n    negotiations = {};\n}\nflow.set('negotiations', negotiations);\nnode.log('DSP state: ' + Object.keys(negotiations).length + ' negotiation(s) restored');\nreturn null;\n",
+    "outputs": 0,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 640,
+    "y": 200,
+    "wires": []
+  },
+  {
+    "id": "dsp-read-negotiations-catch",
+    "type": "catch",
+    "z": "tab-dsp-state",
+    "name": "negotiations.json missing",
+    "scope": [
+      "dsp-read-negotiations"
+    ],
+    "uncaught": false,
+    "x": 370,
+    "y": 260,
+    "wires": [
+      [
+        "dsp-init-negotiations"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-init-negotiations",
+    "type": "function",
+    "z": "tab-dsp-state",
+    "name": "init empty negotiations",
+    "func": "flow.set('negotiations', {});\nnode.log('DSP state: no negotiations.json yet — initialised empty map');\nreturn null;\n",
+    "outputs": 0,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 640,
+    "y": 260,
+    "wires": []
+  },
+  {
+    "id": "dsp-link-in-persist-transfers",
+    "type": "link in",
+    "z": "tab-dsp-state",
+    "name": "← dsp.persist.transfers",
+    "links": [
+      "dsp-tx-link-out-persist"
+    ],
+    "x": 150,
+    "y": 380,
+    "wires": [
+      [
+        "dsp-serialise-transfers"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-serialise-transfers",
+    "type": "function",
+    "z": "tab-dsp-state",
+    "name": "serialise transfers",
+    "func": "// Empty trigger pattern — receiver re-reads the latest snapshot.\n// Avoids stale-payload races when two mutations fire near-simultaneously.\nconst transfers = flow.get('transfers') || {};\nreturn {\n    payload: JSON.stringify(transfers, null, 2),\n    filename: '/data/dsp-state/transfers.json'\n};\n",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 400,
+    "y": 380,
+    "wires": [
+      [
+        "dsp-write-transfers"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-write-transfers",
+    "type": "file",
+    "z": "tab-dsp-state",
+    "name": "write transfers.json",
+    "filename": "",
+    "filenameType": "msg",
+    "appendNewline": false,
+    "createDir": true,
+    "overwriteFile": "true",
+    "encoding": "utf8",
+    "x": 640,
+    "y": 380,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "dsp-link-in-persist-negotiations",
+    "type": "link in",
+    "z": "tab-dsp-state",
+    "name": "← dsp.persist.negotiations",
+    "links": [
+      "dsp-neg-link-out-persist"
+    ],
+    "x": 150,
+    "y": 460,
+    "wires": [
+      [
+        "dsp-serialise-negotiations"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-serialise-negotiations",
+    "type": "function",
+    "z": "tab-dsp-state",
+    "name": "serialise negotiations",
+    "func": "const negotiations = flow.get('negotiations') || {};\nreturn {\n    payload: JSON.stringify(negotiations, null, 2),\n    filename: '/data/dsp-state/negotiations.json'\n};\n",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 410,
+    "y": 460,
+    "wires": [
+      [
+        "dsp-write-negotiations"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-write-negotiations",
+    "type": "file",
+    "z": "tab-dsp-state",
+    "name": "write negotiations.json",
+    "filename": "",
+    "filenameType": "msg",
+    "appendNewline": false,
+    "createDir": true,
+    "overwriteFile": "true",
+    "encoding": "utf8",
+    "x": 660,
+    "y": 460,
+    "wires": [
+      []
+    ]
+  }
+]

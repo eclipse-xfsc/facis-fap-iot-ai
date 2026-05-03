@@ -1,0 +1,111 @@
+# Strategic-merge patch that adds an `init-ai-ui` initContainer to the ORCE
+# Deployment. The container untars the AI Insight UI Vue bundle from a
+# ConfigMap onto the persistent /data volume so the uibuilder node can serve
+# it from /data/uibuilder/aiInsight/src/.
+#
+# Why this exists:
+#   The AI UI Vue bundle (helm/facis-ai-insight-ui/files/ui/) is ~2.8 MB
+#   uncompressed (~760 KB gzipped). Helm's configmap-ui.yaml only renders
+#   index.html — it cannot embed the 100+ asset files. The colleague's
+#   ops-runbook tells operators to `kubectl cp` the dist/ in by hand, which
+#   does not survive pod restarts. This init container makes the bundle
+#   restart-survivable and idempotent.
+#
+# Inputs:
+#   - ConfigMap `ai-insight-ui-bundle` in namespace `orce` with one
+#     binaryData key `bundle.tar.gz` containing the gzipped UI dist/ tree.
+#     The ConfigMap MUST carry annotation `facis.cloud/bundle-sha256`.
+#     Created out-of-band:
+#         tar --owner=0 --group=0 -czf /tmp/aiInsight-bundle.tar.gz \
+#           -C services/ai-insight-ui/helm/facis-ai-insight-ui/files/ui .
+#         SHA=$(shasum -a 256 /tmp/aiInsight-bundle.tar.gz | cut -d' ' -f1)
+#         kubectl create configmap ai-insight-ui-bundle -n orce \
+#           --from-file=bundle.tar.gz=/tmp/aiInsight-bundle.tar.gz
+#         kubectl annotate configmap ai-insight-ui-bundle -n orce \
+#           facis.cloud/bundle-sha256="$SHA" --overwrite
+#
+# Behaviour:
+#   - On every boot: compares the ConfigMap-mounted bundle.tar.gz to
+#     /mnt/orce-data/uibuilder/aiInsight/src/.bundle.sha256. If they
+#     differ (or the marker is missing), re-extracts the tarball into
+#     /mnt/orce-data/uibuilder/aiInsight/src/, otherwise skips.
+#   - First boot: creates the directory and extracts.
+#   - chowns the result to 1000:1000 (the Node-RED runtime user).
+#
+# Apply:
+#   kubectl patch deployment orce -n orce \
+#     --type=strategic --patch-file=infrastructure/orce/init-ai-ui-patch.yaml
+#
+# Roll back:
+#   Remove the init-ai-ui container and the ai-ui-bundle volume:
+#     kubectl patch deployment orce -n orce --type=json -p='[
+#       {"op":"remove","path":"/spec/template/spec/initContainers/INDEX"},
+#       {"op":"remove","path":"/spec/template/spec/volumes/INDEX"}
+#     ]'
+spec:
+  template:
+    spec:
+      volumes:
+        - name: ai-ui-bundle
+          configMap:
+            name: ai-insight-ui-bundle
+            items:
+              - key: bundle.tar.gz
+                path: bundle.tar.gz
+      initContainers:
+        - name: init-ai-ui
+          image: ecofacis/xfsc-orce:2.0.12
+          securityContext:
+            runAsUser: 0
+          command:
+            - sh
+            - -c
+            - |
+              set -u
+              SRC=/etc/ai-ui-bundle/bundle.tar.gz
+              DST=/mnt/orce-data/uibuilder/aiInsight/src
+              MARK="$DST/.bundle.sha256"
+
+              if [ ! -f "$SRC" ]; then
+                echo "[init-ai-ui] WARN: bundle ConfigMap not mounted at $SRC; skipping"
+                exit 0
+              fi
+
+              NEW_SHA=$(sha256sum "$SRC" | awk '{print $1}')
+              OLD_SHA=""
+              [ -f "$MARK" ] && OLD_SHA=$(cat "$MARK" 2>/dev/null || true)
+
+              if [ "$NEW_SHA" = "$OLD_SHA" ] && [ -f "$DST/index.html" ]; then
+                echo "[init-ai-ui] bundle already up to date (sha256=$NEW_SHA)"
+                exit 0
+              fi
+
+              echo "[init-ai-ui] extracting bundle (old=$OLD_SHA new=$NEW_SHA)"
+              # Wipe and re-extract — bundle is small (~3 MB) and this avoids
+              # leftover files from a previous build (e.g. renamed asset chunks).
+              rm -rf "$DST"
+              mkdir -p "$DST"
+              tar -xzf "$SRC" -C "$DST"
+
+              if [ ! -f "$DST/index.html" ]; then
+                echo "[init-ai-ui] FAIL: index.html not found after extract"
+                ls -la "$DST" || true
+                exit 1
+              fi
+
+              echo "$NEW_SHA" > "$MARK"
+              chown -R 1000:1000 "$DST" 2>/dev/null || true
+              echo "[init-ai-ui] done — bundle extracted to $DST"
+          volumeMounts:
+            - mountPath: /mnt/orce-data
+              name: orce-data
+            - mountPath: /etc/ai-ui-bundle
+              name: ai-ui-bundle
+              readOnly: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi

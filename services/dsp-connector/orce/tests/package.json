@@ -1,0 +1,10 @@
+{
+  "name": "facis-dsp-connector-orce-tests",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Flow-level tests for the FACIS DSP Connector ORCE flows. Mirrors services/simulation/orce/tests.",
+  "scripts": {
+    "test": "node --test flows"
+  },
+  "license": "Apache-2.0"
+}

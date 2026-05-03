@@ -1,0 +1,104 @@
+# podOverrides for NiFiCluster/nifi (stackable ns) that mounts the Trino
+# JDBC driver jar into the running NiFi container.
+#
+# Approach: emptyDir + per-pod initContainer that downloads the jar from
+# Maven Central on each pod start. ~5 MB download, ~2 s. Idempotent.
+#
+# Why not a shared PVC: the cluster's only storage classes
+# (ionos-enterprise-{hdd,ssd}) are RWO block storage; the existing
+# nifi-jdbc-pvc.yaml manifest in services/simulation/k8s/nifi/ requests
+# ReadOnlyMany which would never bind on this cluster. emptyDir + initContainer
+# is what Stackable docs themselves recommend for sub-5 MB driver jars.
+#
+# Why this file lives in infrastructure/stackable/: it patches a Stackable
+# Operator CR (NiFiCluster), not the running pod directly. Apply with:
+#
+#   export KUBECONFIG=".../kubeconfig-stackable.yml"
+#   kubectl patch nificluster nifi -n stackable --type=merge \
+#     --patch-file=infrastructure/stackable/nifi-jdbc-podoverride.yaml
+#
+# IMPORTANT: --type=merge on the operator's CR REPLACES the entire
+# podOverrides field. The existing import-public-cas initContainer and
+# rapidssl-intermediate volume must be re-included verbatim below or they'll
+# be wiped. After apply, the operator triggers a rolling restart of the
+# NiFi StatefulSet (~2 min for 2 pods).
+spec:
+  nodes:
+    roleGroups:
+      default:
+        podOverrides:
+          spec:
+            # ── PRESERVED FROM ORIGINAL ──────────────────────────────
+            initContainers:
+              - name: import-public-cas
+                image: oci.stackable.tech/sdp/nifi:2.6.0-stackable25.11.0
+                command:
+                  - /bin/bash
+                  - -c
+                  - |
+                    keytool -importkeystore \
+                      -srckeystore /etc/pki/ca-trust/extracted/java/cacerts \
+                      -srcstorepass changeit \
+                      -srcstoretype JKS \
+                      -destkeystore /stackable/server_tls/truststore.p12 \
+                      -deststorepass secret \
+                      -deststoretype PKCS12 \
+                      -noprompt
+                    keytool -importcert \
+                      -alias rapidssl-intermediate \
+                      -file /tmp/certs/rapidssl.pem \
+                      -keystore /stackable/server_tls/truststore.p12 \
+                      -storepass secret \
+                      -storetype PKCS12 \
+                      -noprompt
+                securityContext:
+                  runAsUser: 1000
+                volumeMounts:
+                  - mountPath: /stackable/server_tls
+                    name: truststore
+                  - mountPath: /tmp/certs
+                    name: rapidssl-intermediate
+              # ── NEW: download the Trino JDBC driver into shared emptyDir ──
+              - name: fetch-trino-jdbc
+                image: curlimages/curl:8.5.0
+                securityContext:
+                  runAsUser: 1000
+                command:
+                  - sh
+                  - -c
+                  - |
+                    set -eux
+                    DRIVER_VERSION="${TRINO_JDBC_VERSION:-467}"
+                    URL="https://repo1.maven.org/maven2/io/trino/trino-jdbc/${DRIVER_VERSION}/trino-jdbc-${DRIVER_VERSION}.jar"
+                    DEST="/jdbc/trino-jdbc-${DRIVER_VERSION}.jar"
+                    if [ -f "$DEST" ]; then
+                      echo "Driver already present at $DEST"
+                      exit 0
+                    fi
+                    curl -fSL --retry 3 --connect-timeout 10 -o "$DEST" "$URL"
+                    SIZE=$(stat -c%s "$DEST" 2>/dev/null || stat -f%z "$DEST" 2>/dev/null)
+                    [ "$SIZE" -gt 1000000 ] || { echo "JAR too small: $SIZE"; exit 1; }
+                    echo "Downloaded $SIZE bytes to $DEST"
+                env:
+                  - name: TRINO_JDBC_VERSION
+                    value: "467"
+                volumeMounts:
+                  - name: trino-jdbc-driver
+                    mountPath: /jdbc
+
+            # ── Mount the JAR read-only into the nifi container ──────
+            containers:
+              - name: nifi          # operator's strategic-merge key
+                volumeMounts:
+                  - name: trino-jdbc-driver
+                    mountPath: /stackable/userdata/jdbc
+                    readOnly: true
+
+            # ── PRESERVED + NEW shared emptyDir ──────────────────────
+            volumes:
+              - name: rapidssl-intermediate
+                configMap:
+                  name: rapidssl-intermediate
+              - name: trino-jdbc-driver
+                emptyDir:
+                  sizeLimit: 50Mi

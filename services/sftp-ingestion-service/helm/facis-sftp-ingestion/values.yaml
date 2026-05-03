@@ -2,6 +2,46 @@
 # FACIS SFTP Ingestion Service — Helm Values
 # =============================================================================
 
+# ---------------------------------------------------------------------------
+# Runtime Mode
+# ---------------------------------------------------------------------------
+# Selects which runtime polls SFTP and produces to Kafka.
+#
+#   orce   (default) — ORCE-native flows on the existing ORCE pod own the
+#                       runtime. The Python deployment in this chart is
+#                       scaled to 0 and acts as a rollback fallback.
+#                       Helm post-install hook deploys the flow ConfigMap
+#                       to the ORCE Admin API.
+#   legacy           — Python service polls SFTP and produces to Kafka.
+#                       ORCE flow ConfigMap + Job are NOT rendered.
+compatibilityMode: orce
+
+# ---------------------------------------------------------------------------
+# ORCE Flow Deployment (active when compatibilityMode = "orce")
+# ---------------------------------------------------------------------------
+orceFlowDeploy:
+  enabled: true
+  orceAdminUrl: http://facis-orce.orce.svc.cluster.local:1880
+  adminTokenSecret: facis-orce-admin
+  flowsDir: orce-flows
+  jobImage:
+    repository: alpine/curl
+    tag: "8.10.1"
+    pullPolicy: IfNotPresent
+  preDeploySleepSeconds: 5
+
+# ---------------------------------------------------------------------------
+# ORCE Pod Environment (orce mode)
+# ---------------------------------------------------------------------------
+# The SFTP flow reads SFTP_*, INGEST_*, and SFTP_KAFKA_BROKERS via env.get().
+# Those env vars must be set on the ORCE pod, not on this chart's Deployment.
+# This block renders a single Secret consumed by the ORCE chart via
+# `extraEnvFrom: [secretRef: <name>]`. The ORCE chart change is a deploy-time
+# prerequisite documented in the chart README.
+orcePodEnv:
+  renderSecret: true
+  secretName: facis-sftp-orce-env
+
 image:
   repository: ghcr.io/eclipse-xfsc/facis-fap-iot-ai/sftp-ingestion-service
   tag: ""
@@ -11,6 +51,8 @@ imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
+# -- Number of Python pod replicas. Ignored when compatibilityMode==orce
+#    (Deployment scales to 0 in orce mode).
 replicaCount: 1
 
 # ---------------------------------------------------------------------------
@@ -25,10 +67,17 @@ sftp:
   remotePath: /ingest
   archivePath: /archive
   pollIntervalSeconds: 60
+  # -- Path inside the ORCE pod to a file in the OpenSSH known_hosts format.
+  #    Required in orce mode unless allowUnknownHosts is true.
+  knownHostsFile: ""
+  # -- DANGEROUS: skip host-key verification. Off by default to match
+  #    paramiko's RejectPolicy semantics from the Python service.
+  allowUnknownHosts: false
 
 # ---------------------------------------------------------------------------
 # Kafka Connection
 # ---------------------------------------------------------------------------
+# Legacy-mode fields:
 kafka:
   bootstrapServers: kafka:9092
   clientId: facis-sftp-ingestion
@@ -37,6 +86,11 @@ kafka:
     caLocation: ""
     certificateLocation: ""
     keyLocation: ""
+  # -- ORCE mode uses ALL 3 Stackable broker addresses comma-separated.
+  #    The single bootstrap address fails on metadata refresh.
+  #    Discover via `kcat -L` and update on every NodePort change.
+  #    Example: "217.160.222.177:31193,217.160.219.79:31186,213.165.77.54:30212"
+  brokers: "kafka-0:9094,kafka-1:9094,kafka-2:9094"
 
 # ---------------------------------------------------------------------------
 # Ingestion Settings
