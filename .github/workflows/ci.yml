@@ -13,7 +13,7 @@ jobs:
       run:
         working-directory: services/simulation
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -40,7 +40,7 @@ jobs:
       run:
         working-directory: services/simulation
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -75,7 +75,7 @@ jobs:
       run:
         working-directory: services/ai-insight-service
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -102,7 +102,7 @@ jobs:
       run:
         working-directory: services/ai-insight-service
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -127,7 +127,7 @@ jobs:
       run:
         working-directory: services/sftp-ingestion-service
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -151,7 +151,7 @@ jobs:
       run:
         working-directory: services/sftp-ingestion-service
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -176,7 +176,7 @@ jobs:
       run:
         working-directory: services/dsp-connector
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -200,7 +200,7 @@ jobs:
       run:
         working-directory: services/dsp-connector
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -222,7 +222,7 @@ jobs:
   test-orce-flows:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
@@ -248,7 +248,7 @@ jobs:
       run:
         working-directory: services/ai-insight-service/orce
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -268,7 +268,7 @@ jobs:
     needs: [test-simulation, test-ai-insight, test-sftp-ingestion, test-dsp-connector, test-orce-flows, test-ai-insight-orce]
     if: github.ref == 'refs/heads/main'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
