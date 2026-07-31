@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS bronze.<table_name> (
 )
 WITH (
     format = 'PARQUET',
-    partitioning = ARRAY['day(ingestion_timestamp)']
+    partitioning = ARRAY['hour(ingestion_timestamp)']
 )
 ```
 
@@ -332,10 +332,10 @@ This view uses UNION ALL across: energy consumption spikes (active_power_kw > me
 
 ```bash
 # Create all schemas, tables, and views
-python scripts/setup_lakehouse.py --env-file .env.cluster
+python infrastructure/lakehouse/setup_lakehouse.py --env-file .env.cluster
 
 # Tear down (drops everything)
-python scripts/setup_lakehouse.py --env-file .env.cluster --teardown
+python infrastructure/lakehouse/setup_lakehouse.py --env-file .env.cluster --teardown
 ```
 
 The script authenticates via Keycloak OIDC and executes DDL statements against Trino.
@@ -344,7 +344,7 @@ The script authenticates via Keycloak OIDC and executes DDL statements against T
 
 ```bash
 # Full WP3 validation (39 checks across all layers)
-python scripts/validate_lakehouse.py --env-file .env.cluster
+python infrastructure/lakehouse/validate_lakehouse.py --env-file .env.cluster
 
 # Legacy demo validation
 python scripts/demo_lakehouse.py --env-file .env.cluster
@@ -364,7 +364,7 @@ The script authenticates via Keycloak OIDC using a `fresh_conn()` helper that ac
 The NiFi pipeline is configured via:
 
 ```bash
-python scripts/setup_nifi.py --env-file .env.cluster
+python infrastructure/lakehouse/setup_nifi.py --env-file .env.cluster
 ```
 
 See [Deployment & Operations](../deployment/deployment-operations.md) for full NiFi setup details.
@@ -377,7 +377,7 @@ See [Deployment & Operations](../deployment/deployment-operations.md) for full N
 | Trino JDBC driver | Must be present on each NiFi node; currently deployed to `/tmp/jdbc/` (requires volume mount for persistence) |
 | Silver view performance | Views query raw JSON; for high-volume production, consider materializing Silver as Iceberg tables |
 | Gold view joins | Cross-feed joins (net_grid_hourly, energy_cost_daily, pv_self_consumption_daily) depend on time alignment; timestamp truncation to hour/day ensures correct joins |
-| S3 partitioning | Bronze tables are partitioned by `day(ingestion_timestamp)` for efficient time-range pruning |
+| S3 partitioning | Bronze tables are partitioned by `hour(ingestion_timestamp)` for efficient time-range pruning |
 | OIDC token expiry | Keycloak tokens are short-lived; long-running scripts must refresh tokens between query batches (see `fresh_conn()` in validate_lakehouse.py) |
 | Anomaly detection | `gold.anomaly_candidates` uses z-scores (>2σ) and may return zero rows for well-behaved data — this is expected, not an error |
 | Correlated subqueries | Trino does not support correlated subqueries inside GROUP BY; use proper JOINs between pre-aggregated subqueries instead |
@@ -387,8 +387,8 @@ See [Deployment & Operations](../deployment/deployment-operations.md) for full N
 | Symptom | Cause | Solution |
 |---|---|---|
 | `401 Invalid credentials` during script run | OIDC token expired or wrong `.env.cluster` credentials | Verify `FACIS_OIDC_USERNAME`, `PASSWORD`, and `CLIENT_SECRET` in `.env.cluster`. Tokens are short-lived; scripts use `fresh_conn()` to auto-refresh. |
-| `SCHEMA_NOT_FOUND: Schema 'bronze' does not exist` | Schemas not created yet | Run `python scripts/setup_lakehouse.py --env-file .env.cluster` (without `--teardown`). |
-| Bronze tables exist but are empty | NiFi pipeline not running or Kafka topics have no data | 1) Verify simulation is posting to ORCE/Kafka. 2) Run `python scripts/setup_nifi.py --env-file .env.cluster`. 3) Check NiFi UI for error bulletins. |
+| `SCHEMA_NOT_FOUND: Schema 'bronze' does not exist` | Schemas not created yet | Run `python infrastructure/lakehouse/setup_lakehouse.py --env-file .env.cluster` (without `--teardown`). |
+| Bronze tables exist but are empty | NiFi pipeline not running or Kafka topics have no data | 1) Verify simulation is posting to ORCE/Kafka. 2) Run `python infrastructure/lakehouse/setup_nifi.py --env-file .env.cluster`. 3) Check NiFi UI for error bulletins. |
 | `AUTOCOMMIT_WRITE_CONFLICT` errors in NiFi logs | Concurrent Iceberg writes from multiple NiFi tasks | Transient; NiFi automatically retries. Reduce NiFi concurrent task count if persistent. |
 | Gold view returns NULL for price/cost columns | Meter and price data don't overlap at the same hour | Expected for `net_grid_hourly`; use `gold.energy_cost_daily` (daily granularity) which has broader time alignment. |
 | `gold.anomaly_candidates` returns zero rows | No statistical outliers (values within 2σ of mean) | Expected behavior for well-behaved data. The view will populate when genuine outliers appear. |

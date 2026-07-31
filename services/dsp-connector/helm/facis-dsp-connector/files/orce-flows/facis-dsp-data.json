@@ -1,0 +1,126 @@
+[
+  {
+    "id": "tab-dsp-data",
+    "type": "tab",
+    "label": "FACIS DSP — Data Pull",
+    "disabled": false,
+    "info": "GET /api/data/:assetId — HTTP Pull Profile data endpoint (NF-2 /\nFR-DL-001). Verifies the HMAC-signed URL produced by dsp-tx-create's\nprovisionHttpPull() (see facis-dsp-transfers.json), then serves the\nrequested Gold-layer dataset from Trino (facis-dsp-data.json / Task 2).\n\nReplaces the ai-insight-service Python stub at the same literal path\n(services/ai-insight-service/src/api/rest/routes/dsp.py's data_router),\nwhich only ever returned {\"status\":\"authorized\"} and — separately — was\nnever reachable via the live Ingress at all (no /api/data rule existed\nthere until this flow added one; see infrastructure/ingress/facis-ingress.yaml).\nThe Python route is left in place but is now dead code; not deleted here,\nsee orce/README.md's NF-2 section for why."
+  },
+  {
+    "id": "dsp-data-in",
+    "type": "http in",
+    "z": "tab-dsp-data",
+    "name": "GET /api/data/:assetId",
+    "url": "/api/data/:assetId",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 170,
+    "y": 80,
+    "wires": [
+      [
+        "dsp-data-verify-fn"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-data-verify-fn",
+    "type": "function",
+    "z": "tab-dsp-data",
+    "name": "verify HMAC signature",
+    "func": "function dspError(statusCode, code, reasons) {\n    msg.statusCode = statusCode;\n    msg.payload = { '@context': 'https://w3id.org/dspace/2025/1/context.jsonld', '@type': 'dspace:Error', 'dspace:code': code, 'dspace:reason': reasons };\n    msg.headers = { 'Content-Type': 'application/json' };\n    return [msg, null];\n}\n\nfunction timingSafeEqualStr(a, b) {\n    const bufA = Buffer.from(String(a), 'utf8');\n    const bufB = Buffer.from(String(b), 'utf8');\n    if (bufA.length !== bufB.length) return false;\n    return crypto.timingSafeEqual(bufA, bufB);\n}\n\nfunction unspacePlus(s) { return (s || '').replace(/ /g, '+'); }\n\nconst assetId = msg.req.params.assetId;\nconst q = msg.req.query || {};\nconst token = q.token || '';\n// Express's default 'extended' query parser (qs) decodes an unescaped\n// literal '+' in the raw query string to a space (standard\n// application/x-www-form-urlencoded behavior: qs's decoder runs\n// str.replace(/\\+/g, ' ') before decodeURIComponent). provisionHttpPull()\n// signs URLs with a literal '+' in the UTC offset suffix of expiresAt\n// (e.g. ...123000+00:00) without percent-encoding it, so by the time it\n// reaches here via msg.req.query it has already been turned into a space.\n// Undo that here, before HMAC reconstruction, so the signature still\n// matches what was actually signed. from/to are normalized too in case a\n// caller ever supplies a '+'-offset timestamp there.\nconst expiresAt = unspacePlus(q.expiresAt || '');\nconst fromTs = unspacePlus(q.from || '');\nconst toTs = unspacePlus(q.to || '');\nconst agreementId = q.agreementId || '';\nconst roles = q.roles || '';\n\nconst secret = env.get('DSP_HMAC_SECRET');\nif (!secret) {\n    node.error('dsp-data-verify-fn: DSP_HMAC_SECRET unset');\n    return dspError(503, 'signing_not_configured', ['DSP_HMAC_SECRET is not configured']);\n}\nif (!token || !expiresAt) {\n    return dspError(401, 'invalid_token', ['token and expiresAt query params are required']);\n}\n\nconst path = '/api/data/' + assetId;\nconst encodedAgreementId = encodeURIComponent(agreementId);\nconst encodedRoles = encodeURIComponent(roles);\nconst message = 'GET:' + path + ':' + fromTs + ':' + toTs + ':' + expiresAt + ':' + encodedAgreementId + ':' + encodedRoles;\nconst expected = crypto.createHmac('sha256', Buffer.from(secret, 'utf8')).update(message, 'utf8').digest('hex');\n\nif (!timingSafeEqualStr(token, expected)) {\n    return dspError(401, 'invalid_token', ['HMAC signature does not match']);\n}\n\nconst expiryMs = Date.parse(expiresAt);\nif (!Number.isFinite(expiryMs) || Date.now() > expiryMs) {\n    return dspError(401, 'token_expired', ['signed URL expired at ' + expiresAt]);\n}\n\n// NF-12: per-agreement rate limit on the data-pull endpoint. The\n// agreementId is bound into the verified HMAC message above, so the\n// limiter key cannot be spoofed independently of the signature.\nconst rlEnabled = String(env.get('DSP_RATE_LIMIT__ENABLED') || 'true').toLowerCase() !== 'false';\nconst rlRpm = Math.max(1, Number(env.get('DSP_RATE_LIMIT__REQUESTS_PER_MINUTE') || 10));\nif (rlEnabled) {\n    const bucketKey = 'dspDataRateLimitBuckets';\n    const buckets = global.get(bucketKey) || {};\n    const limiterKey = agreementId || 'anonymous';\n    const now = Date.now();\n    const windowMs = 60 * 1000;\n    let bucket = buckets[limiterKey];\n    if (!bucket || now - bucket.windowStart >= windowMs) {\n        bucket = { windowStart: now, count: 0 };\n    }\n    if (bucket.count >= rlRpm) {\n        const retryAfter = Math.max(1, Math.ceil((bucket.windowStart + windowMs - now) / 1000));\n        buckets[limiterKey] = bucket;\n        global.set(bucketKey, buckets);\n        const out = dspError(429, 'rate_limit_exceeded',\n            ['agreement ' + limiterKey + ' exceeded ' + rlRpm + ' requests/minute']);\n        msg.headers['Retry-After'] = String(retryAfter);\n        return out;\n    }\n    bucket.count += 1;\n    buckets[limiterKey] = bucket;\n    global.set(bucketKey, buckets);\n}\n\nmsg._dspDataWindow = { assetId: assetId, from: fromTs, to: toTs, agreementId: agreementId, roles: roles };\nreturn [null, msg];\n",
+    "outputs": 2,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [
+      {
+        "var": "crypto",
+        "module": "crypto"
+      }
+    ],
+    "x": 430,
+    "y": 80,
+    "wires": [
+      [
+        "dsp-data-response"
+      ],
+      [
+        "dsp-data-lookup-fn"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-data-response",
+    "type": "http response",
+    "z": "tab-dsp-data",
+    "name": "data response",
+    "statusCode": "",
+    "headers": {},
+    "x": 850,
+    "y": 80,
+    "wires": []
+  },
+  {
+    "id": "dsp-data-lookup-fn",
+    "type": "function",
+    "z": "tab-dsp-data",
+    "name": "catalogue lookup",
+    "func": "// Reads /data/dsp-config/datasets.json directly rather than sharing\n// facis-dsp-catalogue.json's flow.get('catalogue') cache: Node-RED's\n// flow context is scoped per-tab, not shared across tabs, and this file\n// is tiny/static, so a per-request re-read is a deliberate, minimal-\n// blast-radius simplification (see this plan's Global Constraints).\nfunction dspError(statusCode, code, reasons) {\n    msg.statusCode = statusCode;\n    msg.payload = { '@context': 'https://w3id.org/dspace/2025/1/context.jsonld', '@type': 'dspace:Error', 'dspace:code': code, 'dspace:reason': reasons };\n    msg.headers = { 'Content-Type': 'application/json' };\n    return msg;\n}\n\nlet datasets;\ntry {\n    datasets = JSON.parse(fs.readFileSync(env.get('DSP_DATASETS_PATH') || '/data/dsp-config/datasets.json', 'utf8'));\n} catch (err) {\n    node.error('dsp-data-lookup-fn: failed to read datasets.json: ' + (err && err.message ? err.message : err));\n    return [null, dspError(500, 'catalogue_unavailable', ['dataset catalogue could not be loaded'])];\n}\n\nconst win = msg._dspDataWindow;\nconst dataset = Array.isArray(datasets) ? datasets.find(d => d && d.id === win.assetId) : null;\nif (!dataset || !dataset.metadata || !dataset.metadata.schema || !dataset.metadata.table) {\n    return [null, dspError(404, 'asset_not_found', ['no catalogue entry for assetId ' + win.assetId])];\n}\n\nwin.schema = dataset.metadata.schema;\nwin.table = dataset.metadata.table;\nwin.timeColumn = dataset.metadata.timeColumn || null;\nreturn [msg, null];\n",
+    "outputs": 2,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [
+      {
+        "var": "fs",
+        "module": "fs"
+      }
+    ],
+    "x": 610,
+    "y": 80,
+    "wires": [
+      [
+        "dsp-data-trino-fn"
+      ],
+      [
+        "dsp-data-response"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-data-trino-fn",
+    "type": "function",
+    "z": "tab-dsp-data",
+    "name": "query Trino",
+    "func": "const ISO_RE = /^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$/;\n\nfunction dspError(statusCode, code, reasons) {\n    msg.statusCode = statusCode;\n    msg.payload = { '@context': 'https://w3id.org/dspace/2025/1/context.jsonld', '@type': 'dspace:Error', 'dspace:code': code, 'dspace:reason': reasons };\n    msg.headers = { 'Content-Type': 'application/json' };\n    return msg;\n}\n\n(async () => {\n    const win = msg._dspDataWindow;\n    if ((win.from && !ISO_RE.test(win.from)) || (win.to && !ISO_RE.test(win.to))) {\n        node.send(dspError(400, 'invalid_window', ['from/to must be ISO 8601 timestamps']));\n        return;\n    }\n\n    const catalog = env.get('DSP_TRINO_CATALOG') || 'fap-iotai-stackable';\n    let sql = 'SELECT * FROM \"' + catalog + '\".' + win.schema + '.' + win.table;\n    if (win.timeColumn && win.from && win.to) {\n        const fromSql = win.from.replace('T', ' ').replace(/Z$/, '').replace(/[+-]\\d{2}:\\d{2}$/, '');\n        const toSql = win.to.replace('T', ' ').replace(/Z$/, '').replace(/[+-]\\d{2}:\\d{2}$/, '');\n        sql += ' WHERE ' + win.timeColumn + \" BETWEEN TIMESTAMP '\" + fromSql + \"' AND TIMESTAMP '\" + toSql + \"'\";\n    }\n    // ponytail: single-page-plus-nextUri ceiling appropriate for Gold-layer\n    // hourly/daily aggregates (at most a few thousand rows for any realistic\n    // window). Add OFFSET-based paging in the SQL itself if a dataset ever\n    // needs more than this per pull.\n    sql += ' LIMIT 5000';\n\n    const trinoUrl = env.get('DSP_TRINO_URL') || 'https://trino-coordinator.stackable.svc.cluster.local:8443';\n    const user = env.get('DSP_TRINO_USER') || 'admin';\n    const pass = env.get('DSP_TRINO_PASSWORD') || '';\n    const auth = 'Basic ' + Buffer.from(user + ':' + pass).toString('base64');\n\n    function trinoRequest(urlStr, body) {\n        return new Promise((resolve, reject) => {\n            const u = new urlmod.URL(urlStr);\n            const mod = u.protocol === 'http:' ? http : https;\n            const opts = {\n                method: body ? 'POST' : 'GET',\n                hostname: u.hostname,\n                port: u.port || (u.protocol === 'http:' ? 80 : 443),\n                path: u.pathname + u.search,\n                headers: {\n                    Authorization: auth,\n                    'X-Trino-User': user,\n                    'X-Trino-Catalog': catalog,\n                    'X-Trino-Schema': win.schema,\n                    'Content-Type': 'text/plain'\n                },\n                rejectUnauthorized: false\n            };\n            const req = mod.request(opts, (res) => {\n                let data = '';\n                res.on('data', (c) => { data += c; });\n                res.on('end', () => {\n                    try { resolve(JSON.parse(data)); } catch (e) { reject(e); }\n                });\n            });\n            req.on('error', reject);\n            if (body) req.write(body);\n            req.end();\n        });\n    }\n\n    try {\n        let result = await trinoRequest(trinoUrl + '/v1/statement', sql);\n        let columns = null;\n        let rows = [];\n        let iterations = 0;\n        while (result && iterations < 25) {\n            iterations++;\n            if (result.error) throw new Error('Trino error: ' + JSON.stringify(result.error));\n            if (result.columns) columns = result.columns;\n            if (result.data) rows = rows.concat(result.data);\n            if (!result.nextUri) break;\n            result = await trinoRequest(result.nextUri, null);\n        }\n        const colNames = (columns || []).map(c => c.name);\n        const objRows = rows.map(r => {\n            const o = {};\n            colNames.forEach((name, i) => { o[name] = r[i]; });\n            return o;\n        });\n        msg.statusCode = 200;\n        msg.payload = { assetId: win.assetId, schema: win.schema, table: win.table, columns: colNames, rows: objRows, rowCount: objRows.length };\n        msg.headers = { 'Content-Type': 'application/json' };\n        node.send(msg);\n    } catch (err) {\n        node.error('dsp-data-trino-fn: Trino query failed: ' + (err && err.message ? err.message : err));\n        node.send(dspError(502, 'data_source_unavailable', [String(err && err.message ? err.message : err)]));\n    }\n})();\nreturn null;\n",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [
+      {
+        "var": "http",
+        "module": "http"
+      },
+      {
+        "var": "https",
+        "module": "https"
+      },
+      {
+        "var": "urlmod",
+        "module": "url"
+      }
+    ],
+    "x": 800,
+    "y": 40,
+    "wires": [
+      [
+        "dsp-data-response"
+      ]
+    ]
+  }
+]

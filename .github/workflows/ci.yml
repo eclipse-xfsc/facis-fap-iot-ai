@@ -58,68 +58,12 @@ jobs:
         run: pytest tests/integration
       
       - name: Run BDD tests
-        run: |
-          pytest tests/bdd || status=$?
-          if [ "${status:-0}" -ne 0 ] && [ "${status:-0}" -ne 5 ]; then
-            exit "${status}"
-          fi
+        run: pytest tests/bdd
       
       - name: Upload coverage
         uses: codecov/codecov-action@v6
         with:
           file: ./services/simulation/coverage.xml
-
-  lint-ai-insight:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: services/ai-insight-service
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
-
-      - name: Install dependencies
-        run: |
-          pip install -e ".[dev]"
-
-      - name: Run ruff
-        run: ruff check src tests
-
-      - name: Run black
-        run: black --check src tests
-
-      - name: Run mypy
-        run: mypy src
-
-  test-ai-insight:
-    runs-on: ubuntu-latest
-    needs: lint-ai-insight
-    defaults:
-      run:
-        working-directory: services/ai-insight-service
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
-
-      - name: Install dependencies
-        run: |
-          pip install -e ".[dev]"
-
-      - name: Run tests
-        run: pytest tests --cov=src --cov-report=xml
-
-      - name: Upload coverage
-        uses: codecov/codecov-action@v6
-        with:
-          file: ./services/ai-insight-service/coverage.xml
 
   lint-sftp-ingestion:
     runs-on: ubuntu-latest
@@ -170,55 +114,6 @@ jobs:
         with:
           file: ./services/sftp-ingestion-service/coverage.xml
 
-  lint-dsp-connector:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: services/dsp-connector
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
-
-      - name: Install dependencies
-        run: |
-          pip install -e ".[dev]"
-
-      - name: Run ruff
-        run: ruff check src tests
-
-      - name: Run black
-        run: black --check src tests
-
-  test-dsp-connector:
-    runs-on: ubuntu-latest
-    needs: lint-dsp-connector
-    defaults:
-      run:
-        working-directory: services/dsp-connector
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
-
-      - name: Install dependencies
-        run: |
-          pip install -e ".[dev]"
-
-      - name: Run tests
-        run: pytest tests --cov=src --cov-report=xml
-
-      - name: Upload coverage
-        uses: codecov/codecov-action@v6
-        with:
-          file: ./services/dsp-connector/coverage.xml
-
   test-orce-flows:
     runs-on: ubuntu-latest
     steps:
@@ -229,8 +124,24 @@ jobs:
         with:
           node-version: "20"
 
+      - name: DSP Connector — install dev deps (jose, jsonld)
+        working-directory: services/dsp-connector/orce/tests
+        run: npm install --include=dev
+
       - name: DSP Connector — flow specs
         working-directory: services/dsp-connector/orce/tests
+        run: node --test flows/*.spec.js
+
+      - name: Simulation — install dev deps (seedrandom, pinned)
+        working-directory: services/simulation/orce/tests
+        run: npm ci
+
+      - name: Simulation — flow specs
+        working-directory: services/simulation/orce/tests
+        run: node --test flows/*.spec.js
+
+      - name: Industrial Ingestion — flow specs
+        working-directory: services/industrial-ingestion-service/orce/tests
         run: node --test flows/*.spec.js
 
       - name: SFTP Ingestion — install dev deps (csv-parse)
@@ -241,9 +152,12 @@ jobs:
         working-directory: services/sftp-ingestion-service/orce/tests
         run: node --test flows/*.spec.js
 
+      - name: AI Insight UI — flow specs
+        working-directory: services/ai-insight-ui/orce/tests
+        run: node --test flows/*.spec.js
+
   test-ai-insight-orce:
     runs-on: ubuntu-latest
-    needs: lint-ai-insight
     defaults:
       run:
         working-directory: services/ai-insight-service/orce
@@ -265,7 +179,7 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
-    needs: [test-simulation, test-ai-insight, test-sftp-ingestion, test-dsp-connector, test-orce-flows, test-ai-insight-orce]
+    needs: [test-simulation, test-sftp-ingestion, test-orce-flows, test-ai-insight-orce]
     if: github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v6
@@ -276,11 +190,5 @@ jobs:
       - name: Build simulation image
         run: docker build -t facis-simulation:${{ github.sha }} -f services/simulation/Dockerfile services/simulation
 
-      - name: Build AI insight service image
-        run: docker build -t facis-ai-insight-service:${{ github.sha }} -f services/ai-insight-service/Dockerfile services/ai-insight-service
-
       - name: Build SFTP ingestion service image
         run: docker build -t facis-sftp-ingestion:${{ github.sha }} -f services/sftp-ingestion-service/Dockerfile services/sftp-ingestion-service
-
-      - name: Build DSP connector image
-        run: docker build -t facis-dsp-connector:${{ github.sha }} -f services/dsp-connector/Dockerfile services/dsp-connector

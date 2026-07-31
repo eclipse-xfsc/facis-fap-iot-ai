@@ -4,37 +4,69 @@
 # All values are documented inline. Override any value with --set or -f.
 
 # ---------------------------------------------------------------------------
-# Runtime Mode
+# Dedicated ORCE runtime (FAP role separation)
 # ---------------------------------------------------------------------------
-# Selects which runtime owns the DSP control plane.
-#
-#   orce   (default) — ORCE-native flows on the existing ORCE pod own the
-#                       runtime. The Python deployment in this chart is
-#                       scaled to 0 and acts as a rollback fallback. Helm
-#                       post-install hook deploys the flow ConfigMap to the
-#                       ORCE Admin API (see orceFlowDeploy below).
-#                       Endpoints exposed by ORCE pod, NOT this chart's Service.
-#   legacy           — Python FastAPI service owns the runtime. ORCE flow
-#                       ConfigMap + Job are NOT rendered.
-compatibilityMode: orce
+# When enabled, this chart deploys its own single-replica ORCE (Node-RED)
+# instance and the flow-deploy Job targets it instead of the shared ORCE
+# pod. Keeps the DSP Provider/Consumer connector runtime separate from the
+# simulation/Data-Sink runtime (see docs/architecture/fap-role-mapping.md).
+dedicatedOrce:
+  enabled: true
+  image:
+    repository: ecofacis/xfsc-orce
+    tag: "2.0.12"
+    pullPolicy: IfNotPresent
+  # -- Admin API bearer token for THIS instance (REQUIRED when enabled).
+  #    Generate with: openssl rand -hex 32
+  adminToken: ""
+  dataPvcSize: 2Gi
+  storageClassName: ""
+  # -- Secret (in the release namespace) holding the Kafka mTLS client cert
+  #    (keys ca.crt/tls.crt/tls.key) used by the kafka-streaming AdminClient.
+  kafkaCertsSecret: facis-kafka-certs
+  # -- ConfigMap holding rdkafka-patch.js (SSL support overlay for
+  #    node-red-contrib-rdkafka; same ConfigMap the shared instance uses).
+  rdkafkaPatchConfigMap: facis-orce-rdkafka-patch
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { cpu: "1", memory: 1Gi }
 
 # ---------------------------------------------------------------------------
-# ORCE Flow Deployment (active when compatibilityMode = "orce")
+# ORCE Flow Deployment
 # ---------------------------------------------------------------------------
+# ORCE-native flows own the DSP control plane. Helm post-install hook deploys
+# the flow ConfigMap to the ORCE Admin API. When dedicatedOrce.enabled the Job
+# targets this chart's own ORCE instance and its rendered admin Secret; the
+# orceAdminUrl/adminTokenSecret values below are used only when it is false
+# (flows deploy onto the shared ORCE pod instead).
 orceFlowDeploy:
   # -- Whether to render the ConfigMap + post-install Job that deploy flows
   enabled: true
-  # -- ORCE Admin API base URL (in-cluster)
+  # -- Shared-ORCE Admin API base URL (used only when dedicatedOrce.enabled=false)
   orceAdminUrl: http://facis-orce.orce.svc.cluster.local:1880
-  # -- Secret holding the ORCE admin bearer token under key "token"
+  # -- Shared-ORCE admin bearer token Secret, key "token" (used only when
+  #    dedicatedOrce.enabled=false)
   adminTokenSecret: facis-orce-admin
   # -- Sub-path under the chart's `files/` directory containing flow JSON.
   #    Populate via `services/dsp-connector/helm/facis-dsp-connector/sync-flows.sh`.
   flowsDir: orce-flows
-  # -- Container image used by the deployment Job (must include curl + jq)
+  # -- Container image used by the deployment Job (must include curl + jq).
+  #    alpine/curl has NO jq (verified: `docker run --rm alpine/curl:8.10.0
+  #    sh -c "which jq"` -> MISSING). Considered installing jq at container
+  #    start instead (this repo's own convention — see
+  #    infrastructure/orce/init-deps-patch.yaml), using the real
+  #    `alpine/curl:8.11.1` tag + `apk add --no-cache jq`, but this Job's
+  #    container sets `readOnlyRootFilesystem: true`; verified directly
+  #    (`docker run --rm --read-only alpine/curl:latest sh -c "apk add
+  #    --no-cache jq"`) that apk fails with "Unable to open log: Read-only
+  #    file system" (apk needs to write /etc/apk + /lib/apk/db). Not worth
+  #    loosening readOnlyRootFilesystem for this, so staying on
+  #    badouralix/curl-jq:alpine, which has both tools pre-built and works
+  #    fine read-only. Pinned by digest since the repo publishes no semver
+  #    tags.
   jobImage:
-    repository: alpine/curl
-    tag: "8.10.1"
+    repository: badouralix/curl-jq
+    tag: "alpine@sha256:e1f1e84c4c23c24d665cd9243dcf7fa531965a0b37b89a64cabca847d834dd62"
     pullPolicy: IfNotPresent
   # -- Optional initial wait for the ORCE pod readiness probe (seconds)
   preDeploySleepSeconds: 5
@@ -46,19 +78,142 @@ orceFlowDeploy:
 # (see templates/orce-secret.yaml). The ORCE chart must include
 # `envFrom: [secretRef: <fullname>-dsp-secrets]` in its Deployment.
 dsp:
-  # -- HMAC secret for signed-URL generation (REQUIRED in orce mode).
+  # -- HMAC secret for signed-URL generation (REQUIRED).
   #    Generate with: openssl rand -hex 32
   hmacSecret: ""
-  # -- Base URL for the data API (HTTP-pull endpoint of ai-insight-service)
-  dataApiBaseUrl: https://ai-insight.facis.cloud
+  # -- Base URL for the data API (HTTP-pull endpoint). Must be the live
+  # Ingress host — ai-insight.facis.cloud was never wired to any backend
+  # (no Ingress rule, no DNS record for that host), which meant every
+  # signed pull URL pointed nowhere reachable until this fix (NF-2).
+  dataApiBaseUrl: https://fap-iotai.facis.cloud
   # -- Default TTL for signed URLs and Kafka access tokens (seconds)
   defaultTtlSeconds: 3600
-  # -- Kafka bootstrap servers used in Kafka-streaming access objects.
-  #    Connection params only — DSP does not produce data to this Kafka.
-  kafkaBootstrap: kafka.provider.example:9092
+  # -- Kafka bootstrap for kafka-streaming transfers (NF-3): dsp-tx-kafka-admin
+  #    creates/deletes per-transfer topics here via mTLS AdminClient, and the
+  #    value is echoed in access objects. This is the Stackable cluster's
+  #    STABLE bootstrap address — broker NodePorts drift on restart, the
+  #    bootstrap does not (same reason facis-simulation-kafka.json leads its
+  #    broker list with it). Was kafka.provider.example:9092, a fictitious
+  #    host from the pre-NF-3 stub — same category of fix as dataApiBaseUrl
+  #    above (daa5f98).
+  kafkaBootstrap: 212.132.83.222:9093
+  # -- NF-1 Identity & Trust (IAM verifier)
+  iam:
+    # -- off | warn | enforce. Start new environments at "warn" to observe
+    #    real traffic before blocking it; "off" is full pre-NF-1 parity.
+    enforce: "warn"
+    # -- This connector's own did:web identity (the VP's expected `aud`).
+    vpAudience: "did:web:fap-iotai.facis.cloud"
+    # -- Comma-separated allowlist of trusted VC-issuer DIDs.
+    #    ENFORCE-MODE NF-2 REQUIREMENT: to run the consumer ingest E2E
+    #    (POST /dsp/ingest, flow #3) under enforce=enforce, this MUST include
+    #    connectorDid below — the consumer attaches a self-issued VP to its
+    #    own internal provider hops, and the provider's iam.verify rejects it
+    #    as untrusted_issuer unless the connector's own DID is trusted here.
+    #    e.g. trustedIssuers: "did:web:fap-iotai.facis.cloud"
+    trustedIssuers: ""
+    jtiTtlSeconds: 300
+    didCacheTtlSeconds: 300
+    # -- open (default) | verified. Catalogues are commonly public; set to
+    #    "verified" only if this deployment's catalogue must be gated too.
+    catalogueMode: "verified"  # M-1 (audit 2026-07-23): catalogue requires a valid VP; anonymous browsing disabled
+    # -- This connector's own did:web identity (issued Participant VC subject).
+    connectorDid: "did:web:fap-iotai.facis.cloud"
+    # -- off | warn | enforce. Gates BitstringStatusList revocation
+    #    checking on VCs that carry a credentialStatus claim (VCs without
+    #    one always skip the check regardless of this setting). "off"
+    #    skips the check entirely; "warn" logs a revoked credential but
+    #    still nulls identity/does not block, matching every other
+    #    warn-mode failure in this verifier; "enforce" rejects with 401
+    #    credential_revoked. See dsp-iam-verify-status-list-fn in
+    #    facis-dsp-iam-verify.json.
+    #    NOTE even in "enforce": any problem actually fetching/verifying
+    #    the status list itself (unreachable, malformed, bad signature)
+    #    (mode "warn") fails OPEN, not closed. The acceptance profile sets
+    #    "enforce" (M-3, audit 2026-07-23): a revoked credential is REJECTED,
+    #    and a status-list outage fails CLOSED (verification is refused rather
+    #    than admitting a possibly-revoked credential). This is a deliberate
+    #    strictness-over-availability tradeoff; it does not change VP/VC
+    #    signature verification, which is enforced in both modes. Set back to
+    #    "warn" only with a signed risk acceptance of unchecked revocation.
+    statusListMode: "enforce"
+    # -- RESERVED (not yet implemented): local (jose in-flow, default) |
+    #    remote (external walt.id verifier). No flow reads this value
+    #    today; setting it to "remote" does NOT enable a remote verifier.
+    verifierMode: "local"
+    # -- RESERVED (not yet implemented): companion URL for verifierMode
+    #    "remote". No flow reads this value today.
+    verifierUrl: ""
+    # -- Shared-secret bearer token gating POST /iam/oid4vci/credential
+    #    (see dsp-iam-issuance-vc-guard in facis-dsp-iam-issuance.json).
+    #    Empty = unauthenticated (any Bearer token accepted, logged via
+    #    node.warn). Generate with: openssl rand -hex 32
+    oid4vciSharedSecret: ""
+    gxdch:
+      notaryUrl: ""
+      complianceUrl: ""
+    mongo:
+      enabled: true
+      image:
+        repository: mongo
+        tag: "7.0"
+      storageSize: 1Gi
+      # -- Secret name + key holding the Mongo connection URI (defaults to
+      #    the in-cluster StatefulSet's DNS name if left blank).
+      uriSecret: ""
+    # -- Name of a pre-created Secret holding this connector's private JWK
+    #    under key `privateJwk` (the prod path — never generated on the pod).
+    keySecret: "facis-dsp-connector-identity-key"
+    # -- Inline private JWK (NF-10, audit 2026-07-23). When set, the chart
+    #    renders the identity-key Secret itself (`<fullname>-identity-key`) and
+    #    the deployment uses it, so a clean `helm install` is self-contained and
+    #    does not require pre-creating `keySecret` out of band (which otherwise
+    #    fails a fresh install with CreateContainerConfigError). Leave empty to
+    #    use the pre-created `keySecret` above (prod). Provide as a single-line
+    #    JWK JSON string, e.g. --set-file dsp.iam.privateJwk=identity.jwk.
+    privateJwk: ""
+  # -- Trino connection used by facis-dsp-data.json's data-serving query.
+  #    Same physical Trino coordinator + demo credentials already used by
+  #    infrastructure/lakehouse/setup_nifi.py (same trino-users Secret).
+  trino:
+    # -- The Trino coordinator runs on a separate Stackable cluster; its
+    #    internal DNS name (trino-coordinator.stackable.svc.cluster.local)
+    #    resolves only inside that cluster, so cross-cluster clients — the
+    #    ORCE pod on the IONOS cluster — must reach it at the external
+    #    coordinator address.
+    url: https://212.132.83.150:8443
+    catalog: fap-iotai-stackable
+    user: admin
+    # -- Must match the live cluster's trino-users Secret password (see
+    #    infrastructure/lakehouse/setup_nifi.py's TRINO_PASSWORD).
+    #    Left blank by default — set via --set or a values override file,
+    #    never commit the real value here.
+    password: ""
+  # -- Kafka topic this connector's consumer-side ingest flow (NF-2,
+  #    facis-dsp-consumer.json) publishes Bronze envelopes to.
+  ingestTopic: dsp.ingest.raw
+  # -- Full broker list for the consumer-side ingest flow's
+  #    ${SFTP_KAFKA_BROKERS} substitution (bootstrap first; NodePort entries
+  #    drift on Stackable restarts and are maintained live by the
+  #    kafka-broker-watcher CronJob).
+  kafkaBrokers: 212.132.83.222:9093
+  # -- PostgreSQL backing store for DSP transfer/negotiation state (SRS §6.1).
+  #    Deployed by this chart as a single-replica StatefulSet; the state flow
+  #    reads DSP_PG_URI from the rendered secret.
+  pg:
+    enabled: true
+    image:
+      repository: postgres
+      tag: "16.4"
+    database: dsp_state
+    user: dsp
+    # -- REQUIRED. Generate with: openssl rand -hex 16
+    password: ""
+    storageSize: 1Gi
+    storageClassName: ""
 
 # ---------------------------------------------------------------------------
-# State Persistence (orce mode)
+# State Persistence
 # ---------------------------------------------------------------------------
 # The ORCE pod's flows write transfer + negotiation state to a PVC at
 # /data/dsp-state/. The PVC is created by this chart but mounted by the
@@ -66,82 +221,47 @@ dsp:
 dspStatePvc:
   enabled: true
   name: facis-dsp-state
-  size: 256Mi
+  # 1Gi minimum: the IONOS CSI provisioner (cloud.ionos.com) rejects volumes
+  # below 1073741824 bytes ("OutOfRange … must be between 1GiB and 4TiB"), so a
+  # clean helm install fails on the target cluster with a smaller request
+  # (NF-10, audit 2026-07-23). The DSP state footprint is tiny either way.
+  size: 1Gi
   storageClassName: ""
   accessModes:
     - ReadWriteOnce
 
 # ---------------------------------------------------------------------------
-# Container Image (legacy mode only — Python runtime)
+# NetworkPolicies (NF-8)
 # ---------------------------------------------------------------------------
-image:
-  repository: ghcr.io/eclipse-xfsc/facis-fap-iot-ai/dsp-connector
-  tag: ""
-  pullPolicy: IfNotPresent
+# Default-deny ingress on this chart's datastores, enforced by Calico. Two
+# INGRESS-ONLY policies (templates/networkpolicy.yaml):
+#   - Postgres (component dsp-state-postgres): allow 5432 ONLY from the
+#     dedicated ORCE pod (component dsp-orce). Denies every other pod.
+#   - Mongo    (component identity-hub-mongo): allow 27017 ONLY from the
+#     dedicated ORCE pod. Denies every other pod.
+# The dsp-orce pod is the sole legitimate client of both, so this is a pure
+# security win with no effect on the working NF-5 state path. Egress is left
+# untouched (no rules), so ORCE's outbound Kafka/Trino/DID-fetch traffic is
+# unaffected.
+#
+# Only rendered when dedicatedOrce.enabled=true: in shared-pod mode the client
+# is the shared ORCE pod, whose labels are outside this chart and cannot be
+# selected, so enabling these would sever the state path — they self-skip.
+#
+# No ORCE-pod ingress policy is shipped: the dedicated ORCE pod serves the
+# admin API + DSP HTTP endpoints and takes traffic from ingress-nginx and
+# possibly other in-namespace flows on the shared `orce` namespace, whose
+# labels this chart does not own. A too-tight podSelector there would drop
+# live NF-1..NF-6 traffic under Calico, so it is deliberately omitted; the
+# datastore policies are the committed, zero-blast-radius deliverable.
+#
+# Enforced by Calico — a wrong selector cuts a live connection. Disable with
+# --set networkPolicies.enabled=false.
+networkPolicies:
+  enabled: true
 
-imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
-
-# -- Number of Python pod replicas. Ignored when compatibilityMode==orce
-#    (Deployment scales to 0 in orce mode).
-replicaCount: 1
-
-# ---------------------------------------------------------------------------
-# HTTP / REST API (legacy mode only)
-# ---------------------------------------------------------------------------
-http:
-  port: 8090
-
-# ---------------------------------------------------------------------------
-# Service (legacy mode only — ORCE pod has its own Service)
-# ---------------------------------------------------------------------------
-service:
-  type: ClusterIP
-  httpPort: 8090
-
-# ---------------------------------------------------------------------------
-# Pod Security
-# ---------------------------------------------------------------------------
-podSecurityContext:
-  runAsNonRoot: true
-  runAsUser: 1000
-  runAsGroup: 1000
-  fsGroup: 1000
-
-securityContext:
-  allowPrivilegeEscalation: false
-  readOnlyRootFilesystem: true
-  capabilities:
-    drop: [ALL]
-
-# ---------------------------------------------------------------------------
-# Resources
-# ---------------------------------------------------------------------------
-resources:
-  requests:
-    cpu: 50m
-    memory: 128Mi
-  limits:
-    cpu: 250m
-    memory: 256Mi
-
-# ---------------------------------------------------------------------------
-# Probes (legacy mode only)
-# ---------------------------------------------------------------------------
-livenessProbe:
-  httpGet:
-    path: /api/v1/health
-    port: http
-  initialDelaySeconds: 10
-  periodSeconds: 30
-
-readinessProbe:
-  httpGet:
-    path: /api/v1/health
-    port: http
-  initialDelaySeconds: 5
-  periodSeconds: 10
 
 # ---------------------------------------------------------------------------
 # ServiceAccount
@@ -151,21 +271,3 @@ serviceAccount:
   name: ""
   annotations: {}
   automountServiceAccountToken: false
-
-# ---------------------------------------------------------------------------
-# Metrics (legacy mode only — ORCE serves /dsp/metrics from its own pod)
-# ---------------------------------------------------------------------------
-metrics:
-  path: /metrics
-  serviceMonitor:
-    enabled: false
-    interval: 30s
-    scrapeTimeout: 10s
-    additionalLabels: {}
-
-# ---------------------------------------------------------------------------
-# Scheduling
-# ---------------------------------------------------------------------------
-nodeSelector: {}
-tolerations: []
-affinity: {}

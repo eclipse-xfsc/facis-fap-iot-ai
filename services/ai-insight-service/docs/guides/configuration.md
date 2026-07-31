@@ -21,7 +21,7 @@ Important defaults from `config/default.yaml`:
 |---|---|
 | `http.host` | `0.0.0.0` |
 | `http.port` | `8080` |
-| `llm.model` | `gpt-4.1-mini` |
+| `llm.model` | `meta-llama/Llama-3.3-70B-Instruct` |
 | `trino.catalog` | `hive` |
 | `trino.target_schema` | `gold` |
 | `policy.enabled` | `true` |
@@ -95,6 +95,16 @@ Important defaults from `config/default.yaml`:
 - `AI_INSIGHT_POLICY__ALLOWED_ASSET_IDS`
 - `AI_INSIGHT_RATE_LIMIT__ENABLED`
 - `AI_INSIGHT_RATE_LIMIT__REQUESTS_PER_MINUTE`
+
+> **`GET /api/data/{asset_id}` derives its access context from the signed URL, not
+> headers.** This route (mounted at the literal `/api/data` prefix -- it's what
+> dsp-connector signs for, replacing the old un-matching `/api/v1/dsp/pull` stub)
+> verifies the HMAC `token` query parameter, then enforces `PolicyEnforcer` using
+> the `agreementId`/`roles` query params bound into that same signature -- never
+> from `x-agreement-id`/`x-asset-id`/`x-user-roles` headers. Those three headers
+> (`AI_INSIGHT_POLICY__AGREEMENT_HEADER`/`ASSET_HEADER`/`ROLE_HEADER`) remain in
+> effect only for `POST /api/v1/dsp/create-pull-url`'s own admission check, which
+> is a separate, unchanged signing path.
 
 ### Cache and Audit
 

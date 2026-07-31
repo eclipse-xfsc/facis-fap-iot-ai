@@ -1,0 +1,327 @@
+[
+  {
+    "id": "tab-dsp-consumer",
+    "type": "tab",
+    "label": "FACIS DSP — Consumer Ingest",
+    "disabled": false,
+    "info": "POST /dsp/ingest (NF-2 / FR-DL-001 consumer side). Given a\nprovider base URL, an already-negotiated agreementId, and an assetId,\ndrives that provider's own /dsp/transfers endpoint, follows the returned\naccess object, pulls the data, and lands it in this instance's OWN Bronze\nlayer via Kafka (dsp.ingest.raw → bronze.dsp_ingest, see Task 3).\n\nDoes NOT drive contract negotiation itself — negotiation\n(POST /dsp/negotiations) is a separate, already-implemented phase; call\nit first to obtain agreementId. Attaches a short-lived self-issued VP\n(minted via the iam.issue link-call into facis-dsp-iam-issuance.json) as a\nBearer token on both internal provider hops (POST /dsp/transfers,\nGET /dsp/transfers/:id) so the provider's own iam.verify accepts them under\nDSP_IAM_ENFORCE=enforce. The connector's own DID must be in\nDSP_TRUSTED_ISSUERS for that self-issued VP to verify (see orce/README.md's\nNF-2 section). Mint failure is non-fatal: the hops fall back to no auth,\nwhich still succeeds under DSP_IAM_ENFORCE=warn."
+  },
+  {
+    "id": "dsp-consumer-prep-transfer-fn",
+    "type": "function",
+    "z": "tab-dsp-consumer",
+    "name": "validate request, prep POST /dsp/transfers",
+    "func": "function dspError(statusCode, code, reasons) {\n    msg.statusCode = statusCode;\n    msg.headers = { 'Content-Type': 'application/json' };\n    msg.payload = { '@context': 'https://w3id.org/dspace/2025/1/context.jsonld', '@type': 'dspace:Error', 'dspace:code': code, 'dspace:reason': reasons };\n    return msg;\n}\n\nconst body = (msg.payload && typeof msg.payload === 'object') ? msg.payload : {};\nif (!body.providerBaseUrl || !body.assetId || !body.agreementId) {\n    return [dspError(422, 'invalid_request', ['providerBaseUrl, assetId, and agreementId are required']), null];\n}\n\nconst providerBaseUrl = body.providerBaseUrl.replace(/\\/$/, '');\nconst vp = msg.vpToken;\nmsg._dspConsumer = {\n    providerBaseUrl: providerBaseUrl,\n    assetId: body.assetId,\n    agreementId: body.agreementId,\n    windowFrom: body.windowFrom || '',\n    windowTo: body.windowTo || '',\n    vp: vp || ''\n};\nmsg.url = providerBaseUrl + '/dsp/transfers';\nmsg.method = 'POST';\nmsg.headers = { 'Content-Type': 'application/json' };\nif (vp) { msg.headers['Authorization'] = 'Bearer ' + vp; }\nmsg.payload = {\n    agreementId: body.agreementId,\n    assetId: body.assetId,\n    format: 'http-pull',\n    parameters: { windowFrom: msg._dspConsumer.windowFrom, windowTo: msg._dspConsumer.windowTo }\n};\nreturn [null, msg];\n",
+    "outputs": 2,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 250,
+    "y": 80,
+    "wires": [
+      [
+        "dsp-consumer-response"
+      ],
+      [
+        "dsp-consumer-http-transfer-create"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-consumer-prep-get-transfer-fn",
+    "type": "function",
+    "z": "tab-dsp-consumer",
+    "name": "validate transfer-create response, prep GET",
+    "func": "function dspError(statusCode, code, reasons) {\n    msg.statusCode = statusCode;\n    msg.headers = { 'Content-Type': 'application/json' };\n    msg.payload = { '@context': 'https://w3id.org/dspace/2025/1/context.jsonld', '@type': 'dspace:Error', 'dspace:code': code, 'dspace:reason': reasons };\n    return msg;\n}\n\nconst ok = msg.statusCode === 202 && msg.payload && typeof msg.payload === 'object' && typeof msg.payload.transferId === 'string';\nif (!ok) {\n    return [dspError(502, 'provider_transfer_create_failed', ['provider did not return a valid transferId', 'statusCode=' + msg.statusCode, 'payload=' + JSON.stringify(msg.payload)]), null];\n}\n\nmsg._dspConsumer.transferId = msg.payload.transferId;\nmsg.url = msg._dspConsumer.providerBaseUrl + '/dsp/transfers/' + encodeURIComponent(msg.payload.transferId);\nmsg.method = 'GET';\nmsg.payload = '';\nmsg.headers = { 'Content-Type': 'application/json' };\n// Belt-and-suspenders: reuse the SAME VP minted for the POST hop here on the\n// GET /dsp/transfers/:id hop, which is currently iam-ungated (its handler is\n// not iam.verify-wired), so the reused jti is never recorded and cannot trip\n// replay_detected. IF that provider GET route is ever iam-gated, this hop must\n// mint a FRESH VP (unique jti) instead of reusing msg._dspConsumer.vp — else\n// the second presentation of the same jti is rejected as a replay.\nconst vp = msg._dspConsumer.vp;\nif (vp) { msg.headers['Authorization'] = 'Bearer ' + vp; }\nreturn [null, msg];\n",
+    "outputs": 2,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 250,
+    "y": 160,
+    "wires": [
+      [
+        "dsp-consumer-response"
+      ],
+      [
+        "dsp-consumer-http-transfer-get"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-consumer-extract-access-fn",
+    "type": "function",
+    "z": "tab-dsp-consumer",
+    "name": "validate transfer state, extract access.url",
+    "func": "function dspError(statusCode, code, reasons) {\n    msg.statusCode = statusCode;\n    msg.headers = { 'Content-Type': 'application/json' };\n    msg.payload = { '@context': 'https://w3id.org/dspace/2025/1/context.jsonld', '@type': 'dspace:Error', 'dspace:code': code, 'dspace:reason': reasons };\n    return msg;\n}\n\nconst transfer = msg.payload;\nif (!transfer || typeof transfer !== 'object' || transfer.state !== 'COMPLETED') {\n    return [dspError(502, 'provider_transfer_not_completed', ['transfer did not reach COMPLETED', 'state=' + (transfer && transfer.state)]), null];\n}\nif (transfer.format !== 'http-pull' || !transfer.access || !transfer.access.url) {\n    return [dspError(502, 'provider_access_object_missing', ['transfer has no http-pull access.url', 'format=' + transfer.format]), null];\n}\n\nmsg.url = transfer.access.url;\nmsg.method = 'GET';\nmsg.payload = '';\nreturn [null, msg];\n",
+    "outputs": 2,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 250,
+    "y": 240,
+    "wires": [
+      [
+        "dsp-consumer-response"
+      ],
+      [
+        "dsp-consumer-http-data-pull"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-consumer-prep-envelope-meta-fn",
+    "type": "function",
+    "z": "tab-dsp-consumer",
+    "name": "validate data-pull response, split into rows",
+    "func": "function dspError(statusCode, code, reasons) {\n    msg.statusCode = statusCode;\n    msg.headers = { 'Content-Type': 'application/json' };\n    msg.payload = { '@context': 'https://w3id.org/dspace/2025/1/context.jsonld', '@type': 'dspace:Error', 'dspace:code': code, 'dspace:reason': reasons };\n    return msg;\n}\n\nconst data = msg.payload;\nif (!data || typeof data !== 'object' || !Array.isArray(data.rows)) {\n    return [dspError(502, 'provider_data_pull_failed', ['data endpoint did not return {rows: [...]}', 'statusCode=' + msg.statusCode]), null, null];\n}\n\nconst rows = data.rows;\nconst transferId = msg._dspConsumer.transferId;\nconst assetId = msg._dspConsumer.assetId;\nconst providerBaseUrl = msg._dspConsumer.providerBaseUrl;\nif (rows.length === 0) {\n    msg.statusCode = 202;\n    msg.headers = { 'Content-Type': 'application/json' };\n    msg.payload = { status: 'accepted', transferId: transferId, assetId: assetId, rowCount: rows.length };\n    return [null, msg, null];\n}\nconst fanoutMsg = {\n    payload: rows,\n    ingest_timestamp: new Date().toISOString(),\n    source_topic: providerBaseUrl + '/api/data/' + assetId,\n    _dsp_assetId: assetId\n};\nmsg.statusCode = 202;\nmsg.headers = { 'Content-Type': 'application/json' };\nmsg.payload = { status: 'accepted', transferId: transferId, assetId: assetId, rowCount: rows.length };\nreturn [null, msg, fanoutMsg];\n",
+    "outputs": 3,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 250,
+    "y": 320,
+    "wires": [
+      [
+        "dsp-consumer-response"
+      ],
+      [
+        "dsp-consumer-response"
+      ],
+      [
+        "dsp-consumer-split"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-consumer-build-envelope-fn",
+    "type": "function",
+    "z": "tab-dsp-consumer",
+    "name": "build Bronze envelope + kafka msg + metric",
+    "func": "const row = msg.payload;\nconst envelope = {\n    ingest_timestamp: msg.ingest_timestamp,\n    source_topic: msg.source_topic,\n    kafka_partition: 0,\n    kafka_offset: 0,\n    kafka_key: msg._dsp_assetId,\n    raw_payload: JSON.stringify(row)\n};\n\nconst m = global.get('metrics') || {};\nm.facis_dsp_ingest_records_published_total = (m.facis_dsp_ingest_records_published_total || 0) + 1;\nglobal.set('metrics', m);\n\nreturn {\n    topic: env.get('DSP_INGEST_TOPIC') || 'dsp.ingest.raw',\n    key: msg._dsp_assetId,\n    payload: JSON.stringify(envelope)\n};\n",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 250,
+    "y": 400,
+    "wires": [
+      [
+        "dsp-consumer-kafka-out"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-consumer-in",
+    "type": "http in",
+    "z": "tab-dsp-consumer",
+    "name": "POST /dsp/ingest",
+    "url": "/dsp/ingest",
+    "method": "post",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 130,
+    "y": 80,
+    "wires": [
+      [
+        "dsp-consumer-iam-call"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-consumer-iam-call",
+    "type": "link call",
+    "z": "tab-dsp-consumer",
+    "name": "iam.verify",
+    "links": [
+      "dsp-iam-verify-in"
+    ],
+    "timeout": "5",
+    "x": 170,
+    "y": 80,
+    "wires": [
+      [
+        "dsp-consumer-iam-branch"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-consumer-iam-branch",
+    "type": "switch",
+    "z": "tab-dsp-consumer",
+    "name": "iamRejected?",
+    "property": "iamRejected",
+    "propertyType": "msg",
+    "rules": [
+      { "t": "true" },
+      { "t": "false" }
+    ],
+    "checkall": "true",
+    "repair": false,
+    "outputs": 2,
+    "x": 210,
+    "y": 80,
+    "wires": [
+      [
+        "dsp-consumer-response"
+      ],
+      [
+        "dsp-consumer-issue-call"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-consumer-issue-call",
+    "type": "link call",
+    "z": "tab-dsp-consumer",
+    "name": "iam.issue",
+    "links": [
+      "dsp-iam-issue-in"
+    ],
+    "timeout": "10",
+    "x": 240,
+    "y": 40,
+    "wires": [
+      [
+        "dsp-consumer-prep-transfer-fn"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-consumer-http-transfer-create",
+    "type": "http request",
+    "z": "tab-dsp-consumer",
+    "name": "POST provider /dsp/transfers",
+    "method": "use",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "x": 620,
+    "y": 80,
+    "wires": [
+      [
+        "dsp-consumer-prep-get-transfer-fn"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-consumer-http-transfer-get",
+    "type": "http request",
+    "z": "tab-dsp-consumer",
+    "name": "GET provider /dsp/transfers/:id",
+    "method": "use",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "x": 620,
+    "y": 160,
+    "wires": [
+      [
+        "dsp-consumer-extract-access-fn"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-consumer-http-data-pull",
+    "type": "http request",
+    "z": "tab-dsp-consumer",
+    "name": "GET access.url (the data pull)",
+    "method": "use",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "x": 620,
+    "y": 240,
+    "wires": [
+      [
+        "dsp-consumer-prep-envelope-meta-fn"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-consumer-split",
+    "type": "split",
+    "z": "tab-dsp-consumer",
+    "name": "",
+    "splt": "\\n",
+    "spltType": "str",
+    "arraySplt": 1,
+    "arraySpltType": "len",
+    "stringSplt": "\\n",
+    "addname": "",
+    "x": 620,
+    "y": 400,
+    "wires": [
+      [
+        "dsp-consumer-build-envelope-fn"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-consumer-kafka-broker-config",
+    "type": "kafka-broker",
+    "z": "",
+    "name": "FACIS Stackable Kafka Cluster (DSP ingest)",
+    "broker": "${SFTP_KAFKA_BROKERS}",
+    "clientid": "facis-orce-dsp-consumer",
+    "securityProtocol": "ssl",
+    "sslCaLocation": "/etc/kafka-certs/ca.crt",
+    "sslCertLocation": "/etc/kafka-certs/tls.crt",
+    "sslKeyLocation": "/etc/kafka-certs/tls.key"
+  },
+  {
+    "id": "dsp-consumer-kafka-out",
+    "type": "rdkafka out",
+    "z": "tab-dsp-consumer",
+    "name": "${DSP_INGEST_TOPIC}",
+    "broker": "dsp-consumer-kafka-broker-config",
+    "topic": "${DSP_INGEST_TOPIC}",
+    "x": 1000,
+    "y": 400,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "dsp-consumer-response",
+    "type": "http response",
+    "z": "tab-dsp-consumer",
+    "name": "ingest response",
+    "statusCode": "",
+    "headers": {},
+    "x": 900,
+    "y": 320,
+    "wires": []
+  }
+]

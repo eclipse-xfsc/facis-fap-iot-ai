@@ -5,12 +5,11 @@
 **Version:** 1.0.0
 **Date:** 07 March 2026
 
-> **TDR §9.1.1 — Docker Compose is not a FACIS deliverable.** §3 below
-> documents the historical local Docker Compose dev/demo stack and is
-> retained for background only. The simulation service no longer ships
-> any `docker-compose*.yml`. For the current deployment model see §4
-> (Kubernetes / Helm) and the
-> [`orce-runtime migration guide`](../orce-runtime/migration-guide.md).
+> **TDR §9.1.1 — Docker Compose is not a FACIS deliverable.** The simulation
+> service does not ship any `docker-compose*.yml`. Deployment uses §4
+> (Kubernetes / Helm) — see the
+> [`orce-runtime migration guide`](../orce-runtime/migration-guide.md) for
+> migration context.
 
 ---
 
@@ -159,94 +158,6 @@ helm install facis-sim ./facis-simulation -n facis -f values-cluster.yaml
 
 ---
 
-## 3. Docker Compose for Dev/Demo
-
-### 3.1 Local Development Stack
-
-The `docker-compose.yml` runs the full local stack with 5 services:
-
-| Service | Image | Ports | Purpose |
-|---------|-------|-------|---------|
-| simulation | Built from Dockerfile | 8080, 502 | Simulation service |
-| mqtt | eclipse-mosquitto:2 | 1883, 9001 | MQTT broker |
-| kafka | confluentinc/cp-kafka:7.6.0 | 9092 | Kafka broker (KRaft mode) |
-| orce | ecofacis/xfsc-orce:2.0.3 | 1880 | ORCE orchestration engine |
-| kafka-ui | provectuslabs/kafka-ui:latest | 8090 | Kafka topic browser |
-
-```bash
-# Start the full stack
-docker compose up -d
-
-# Start with rebuild
-docker compose up -d --build
-
-# View logs (all services)
-docker compose logs -f
-
-# View logs (simulation only)
-docker compose logs -f simulation
-
-# Stop the stack
-docker compose down
-
-# Stop and remove volumes
-docker compose down -v
-```
-
-### 3.2 Cluster Publishing Mode
-
-The `docker-compose.cluster.yml` override routes data through ORCE to a remote Kafka cluster with mTLS. This disables direct Kafka publishing from the simulator:
-
-```bash
-# Prerequisites: TLS certificates in ./certs/
-cp /path/to/{ca.crt,client.crt,client.key} certs/
-
-# Start with cluster override
-docker compose -f docker-compose.yml -f docker-compose.cluster.yml up -d --build
-```
-
-Key differences from local mode: speed factor is 60x (1 simulated hour per real minute), direct Kafka is disabled, all data flows through ORCE with rdkafka+mTLS.
-
-### 3.2.1 MQTT Flow Mode (No Plugins)
-
-If `node-red-contrib-rdkafka` cannot be installed (e.g., ARM, minimal images), use the MQTT flow variant instead. This uses only built-in Node-RED MQTT nodes and relies on the NiFi ConsumeMQTT pipeline to bridge messages into Kafka:
-
-```bash
-# Use base ORCE image (no rdkafka build needed)
-# Mount the MQTT flow as the active flow:
-docker compose up -d \
-  -e ORCE_FLOW_FILE=facis-simulation-mqtt.json
-
-# Or mount manually:
-# volumes:
-#   - ./orce/flows/facis-simulation-mqtt.json:/data/flows.json:ro
-```
-
-Data path: Simulation → ORCE → MQTT Broker → NiFi ConsumeMQTT → Kafka Bronze topics.
-
-The MQTT flow includes a health endpoint at `GET /api/orce/health` that reports MQTT connection status and publish statistics. Trade-off: one additional hop (MQTT → NiFi) adds slight latency but removes the rdkafka native dependency entirely.
-
-### 3.3 Useful Docker Compose Commands
-
-```bash
-# Check service health
-docker compose ps
-
-# Restart a single service
-docker compose restart simulation
-
-# Scale (not recommended — simulation is stateful)
-# docker compose up -d --scale simulation=1
-
-# Execute command inside running container
-docker compose exec simulation python -c "import src; print('OK')"
-
-# View Kafka topics via Kafka UI
-open http://localhost:8090
-```
-
----
-
 ## 4. Helm Values Reference
 
 ### 4.1 Image Configuration
@@ -312,10 +223,10 @@ open http://localhost:8090
 |-----------|------|---------|-------------|
 | `http.port` | int | `8080` | HTTP container port |
 | `modbus.enabled` | bool | `true` | Enable Modbus TCP server |
-| `modbus.port` | int | `502` | Modbus container port |
+| `modbus.port` | int | `5020` | Modbus container port |
 | `service.type` | string | `ClusterIP` | K8s Service type |
 | `service.httpPort` | int | `8080` | Service HTTP port |
-| `service.modbusPort` | int | `502` | Service Modbus port |
+| `service.modbusPort` | int | `5020` | Service Modbus port |
 
 ### 4.8 Resource Requests and Limits
 
@@ -458,7 +369,7 @@ curl -X POST http://localhost:8080/api/v1/simulation/reset \
 | Simulation running | `curl /api/v1/simulation/status` | `"state": "running"` |
 | MQTT connected | Service logs | `Connected to MQTT broker` |
 | Kafka delivery | Kafka UI or `kafka-consumer-groups.sh` | Messages in all 5 topics |
-| Modbus registers | `pymodbus.console tcp --host <ip> --port 502` | Register 19000+ readable |
+| Modbus registers | `pymodbus.console tcp --host <ip> --port 5020` | Register 19000+ readable |
 
 ---
 
@@ -499,13 +410,6 @@ Configuration is applied with this priority (highest first):
 ### 6.4 Viewing Logs
 
 ```bash
-# Docker Compose
-docker compose logs -f simulation         # Simulation only
-docker compose logs -f simulation mqtt     # Simulation + MQTT broker
-docker compose logs --since 5m simulation  # Last 5 minutes
-docker compose logs -f --tail 100         # Last 100 lines, follow
-
-# Kubernetes
 kubectl logs -n facis -l app.kubernetes.io/name=facis-simulation -f
 kubectl logs -n facis -l app.kubernetes.io/name=facis-simulation --since=5m
 kubectl logs -n facis -l app.kubernetes.io/name=facis-simulation --previous  # Crashed pod
@@ -513,12 +417,12 @@ kubectl logs -n facis -l app.kubernetes.io/name=facis-simulation --previous  # C
 
 ### 6.5 Mosquitto Broker Logs
 
-Mosquitto logs to stderr (captured by Docker/K8s). Configured in `config/mosquitto.conf`:
+Mosquitto logs to stderr (captured by K8s). Configured in `config/mosquitto.conf`.
+The broker is reached at `mqtt.host` (`facis-mqtt` by default, see Helm
+values) — use `kubectl logs` against whichever pod/deployment backs that
+service in your cluster.
 
 ```bash
-# View MQTT broker logs
-docker compose logs -f mqtt
-
 # Example output
 2026-03-07T14:30:00 mosquitto[1]: New connection from 172.18.0.5:54321 on port 1883.
 2026-03-07T14:30:00 mosquitto[1]: New client connected from 172.18.0.5:54321 as facis-simulator (p5, c1, k60).
@@ -530,13 +434,11 @@ docker compose logs -f mqtt
 
 ### 7.1 Service Fails to Start
 
-**Symptom:** Pod in `CrashLoopBackOff` or Docker container exits immediately.
+**Symptom:** Pod in `CrashLoopBackOff`.
 
 **Check logs:**
 ```bash
 kubectl logs -n facis <pod-name> --previous
-# or
-docker compose logs simulation
 ```
 
 **Common causes:**
@@ -579,16 +481,18 @@ curl -X POST http://localhost:8080/api/v1/simulation/start
 
 **Diagnosis:**
 ```bash
-# List topics
-docker compose exec kafka kafka-topics --bootstrap-server localhost:9092 --list
+# List topics (from inside the Stackable cluster)
+kubectl exec -n stackable <kafka-pod> -- \
+  /stackable/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list
 
 # Check consumer group lag
-docker compose exec kafka kafka-consumer-groups \
+kubectl exec -n stackable <kafka-pod> -- \
+  /stackable/kafka/bin/kafka-consumer-groups.sh \
   --bootstrap-server localhost:9092 \
   --describe --all-groups
 
 # Check for delivery errors in logs
-docker compose logs simulation 2>&1 | grep -i "kafka\|delivery\|error"
+kubectl logs -n facis -l app.kubernetes.io/name=facis-simulation | grep -i "kafka\|delivery\|error"
 ```
 
 **Common causes:**
@@ -624,7 +528,7 @@ kubectl describe pod -n facis <pod-name> | grep -A5 "Conditions\|Events"
 
 ### 7.5 Modbus TCP Connection Refused
 
-**Symptom:** Modbus client gets "connection refused" on port 502.
+**Symptom:** Modbus client gets "connection refused" on port 5020.
 
 **Diagnosis:**
 ```bash
@@ -633,7 +537,7 @@ curl http://localhost:8080/api/v1/config | python3 -m json.tool
 
 # Test with pymodbus console
 pip install pymodbus
-pymodbus.console tcp --host localhost --port 502
+pymodbus.console tcp --host localhost --port 5020
 # Then: client.read_holding_registers 19000 2
 ```
 
@@ -681,14 +585,14 @@ curl -X POST http://facis-orce:1880/api/sim/tick \
   -d '{"test": true}'
 
 # Check ORCE logs
-docker compose logs orce
+kubectl logs -n orce deploy/orce
 ```
 
 **Common causes:**
 
 | Cause | Fix |
 |-------|-----|
-| ORCE not running | `docker compose restart orce` or check K8s deployment. |
+| ORCE not running | `kubectl rollout restart deployment/orce -n orce` or check pod status. |
 | Wrong URL | Verify `orce.url` includes correct hostname and port. |
 | Flow not loaded | Check ORCE has the correct flow mounted at `/data/flows.json`. Variants: `facis-simulation.json` (validate only), `facis-simulation-mqtt.json` (MQTT, no plugins), `facis-simulation-cluster.json` (rdkafka). |
 | Timeout too short | Increase `orce.timeoutSeconds` for large batches. |
@@ -752,11 +656,11 @@ The `scripts/` directory contains automation for the full pipeline:
 
 | Script | Purpose | Usage |
 |--------|---------|-------|
-| `provision_nifi_jdbc.sh` | Provision Trino JDBC driver for NiFi pods | `scripts/provision_nifi_jdbc.sh` (PVC) or `--direct` |
-| `setup_nifi.py` | Deploy NiFi Kafka→Trino ingestion (9 topics, 36 processors) | `python scripts/setup_nifi.py --env-file .env.cluster` |
-| `setup_nifi_mqtt_to_kafka.py` | Deploy NiFi MQTT→Kafka pipeline (9 routes: 5 energy + 4 city) | `python scripts/setup_nifi_mqtt_to_kafka.py --env-file .env.cluster` |
-| `setup_lakehouse.py` | Create Trino Bronze/Silver/Gold schemas (30 objects) | `python scripts/setup_lakehouse.py --env-file .env.cluster` |
-| `validate_lakehouse.py` | WP3 validation: 39 checks across all layers | `python scripts/validate_lakehouse.py --env-file .env.cluster` |
+| `provision_nifi_jdbc.sh` | Provision Trino JDBC driver for NiFi pods | `infrastructure/lakehouse/provision_nifi_jdbc.sh` (PVC) or `--direct` |
+| `setup_nifi.py` | Deploy NiFi Kafka→Trino ingestion (9 topics, 36 processors) | `python infrastructure/lakehouse/setup_nifi.py --env-file .env.cluster` |
+| `setup_nifi_mqtt_to_kafka.py` | Deploy NiFi MQTT→Kafka pipeline (9 routes: 5 energy + 4 city) | `python infrastructure/lakehouse/setup_nifi_mqtt_to_kafka.py --env-file .env.cluster` |
+| `setup_lakehouse.py` | Create Trino Bronze/Silver/Gold schemas (30 objects) | `python infrastructure/lakehouse/setup_lakehouse.py --env-file .env.cluster` |
+| `validate_lakehouse.py` | WP3 validation: 39 checks across all layers | `python infrastructure/lakehouse/validate_lakehouse.py --env-file .env.cluster` |
 | `demo_e2e.py` | Validate end-to-end pipeline (Kafka, JSON schema, correlation) | `python scripts/demo_e2e.py --env-file .env.cluster` |
 | `demo_lakehouse.py` | Validate lakehouse (auth, Bronze rows, Silver/Gold views) | `python scripts/demo_lakehouse.py --env-file .env.cluster` |
 | `generate_seed_datasets.py` | Generate 9 reproducible test scenarios | `python scripts/generate_seed_datasets.py` |
@@ -793,11 +697,6 @@ ENVIRONMENT VARIABLES (SIMULATOR_ prefix, __ nesting)
 
 HELM INSTALL
   helm install facis-sim ./helm/facis-simulation -n facis --create-namespace
-
-DOCKER COMPOSE
-  docker compose up -d                    # Start local stack
-  docker compose logs -f simulation       # Follow logs
-  docker compose down -v                  # Stop and clean
 
 TROUBLESHOOTING
   kubectl logs -n facis -l app.kubernetes.io/name=facis-simulation -f

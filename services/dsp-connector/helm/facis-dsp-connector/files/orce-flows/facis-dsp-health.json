@@ -28,7 +28,7 @@
     "type": "function",
     "z": "tab-dsp-health",
     "name": "build health body",
-    "func": "const transfers = flow.get('transfers') || {};\nmsg.payload = {\n    status: 'ok',\n    service: 'dsp-connector',\n    transfers_count: Object.keys(transfers).length\n};\nmsg.headers = { 'Content-Type': 'application/json' };\nmsg.statusCode = 200;\nreturn msg;\n",
+    "func": "const transfers = global.get('transfers') || {};\nmsg.payload = {\n    status: 'ok',\n    service: 'dsp-connector',\n    transfers_count: Object.keys(transfers).length\n};\nmsg.headers = { 'Content-Type': 'application/json' };\nmsg.statusCode = 200;\nreturn msg;\n",
     "outputs": 1,
     "timeout": "",
     "noerr": 0,
@@ -134,6 +134,54 @@
     "libs": [],
     "x": 410,
     "y": 280,
+    "wires": []
+  },
+  {
+    "id": "dsp-in-dspace-version",
+    "type": "http in",
+    "z": "tab-dsp-health",
+    "name": "GET /.well-known/dspace-version",
+    "url": "/.well-known/dspace-version",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 200,
+    "y": 320,
+    "wires": [
+      [
+        "dsp-fn-dspace-version"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-fn-dspace-version",
+    "type": "function",
+    "z": "tab-dsp-health",
+    "name": "protocol version metadata",
+    "func": "msg.statusCode = 200;\nmsg.headers = { 'Content-Type': 'application/json' };\nmsg.payload = {\n    '@context': ['https://w3id.org/dspace/2025/1/context.jsonld'],\n    protocolVersions: [\n        { version: '2025-1', path: '/dsp', binding: 'HTTPS' }\n    ]\n};\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 460,
+    "y": 320,
+    "wires": [
+      [
+        "dsp-resp-dspace-version"
+      ]
+    ]
+  },
+  {
+    "id": "dsp-resp-dspace-version",
+    "type": "http response",
+    "z": "tab-dsp-health",
+    "name": "200 JSON",
+    "statusCode": "",
+    "headers": {},
+    "x": 680,
+    "y": 320,
     "wires": []
   }
 ]

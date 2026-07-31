@@ -11,10 +11,11 @@ Part of the [FACIS](https://github.com/eclipse-xfsc/facis) project under [IPCEI-
 | Service | Path | Description | Status |
 |---------|------|-------------|--------|
 | Simulation | `services/simulation/` | Deterministic IoT simulation (9 correlated feeds) | v1.0.0 |
-| AI Insight Service | `services/ai-insight-service/` | FastAPI backend for governed AI insights | v0.1.0 |
+| AI Insight Service | `services/ai-insight-service/` | Governed AI insights — ORCE-native (Node-RED flows) | v0.1.0 |
 | AI Insight UI | `services/ai-insight-ui/` | Vue.js + UIBUILDER dashboard | v0.1.0 |
 | SFTP Ingestion | `services/sftp-ingestion-service/` | Polls SFTP directories, publishes to Kafka Bronze layer | v1.0.0 |
-| DSP Connector | `services/dsp-connector/` | Eclipse Dataspace Protocol connector (catalogue, transfers) | v1.0.0 |
+| DSP Connector | `services/dsp-connector/` | Eclipse Dataspace Protocol connector (catalogue, transfers, identity) — ORCE-native | v1.0.0 |
+| Industrial Ingestion | `services/industrial-ingestion-service/` | OPC UA + Modbus TCP ingestion reference flows (ORCE-only) | v0.1.0 |
 
 ## Quick Start
 
@@ -26,31 +27,25 @@ cd services/simulation
 pip install -e ".[dev]"
 python -m src.main
 
-# AI Insight Service
-cd services/ai-insight-service
-pip install -e ".[dev]"
-python -m src.main
-
 # SFTP Ingestion Service
 cd services/sftp-ingestion-service
 pip install -e ".[dev]"
 python -m src.main
-
-# DSP Connector
-cd services/dsp-connector
-pip install -e ".[dev]"
-export DSP_HMAC_SECRET=$(openssl rand -hex 32)
-python -m src.main
 ```
+
+DSP Connector and AI Insight Service are ORCE-native (Node-RED flows) — see
+[services/dsp-connector/orce/README.md](services/dsp-connector/orce/README.md)
+and [services/ai-insight-service/orce/README.md](services/ai-insight-service/orce/README.md)
+for local flow testing.
 
 ### Kubernetes (Production)
 
 ```bash
 # Deploy all services via Helm
 helm install facis-simulation services/simulation/helm/facis-simulation/ -n facis --create-namespace
-helm install facis-ai-insight services/ai-insight-service/helm/facis-ai-insight/ -n facis
 helm install facis-ai-insight-ui services/ai-insight-ui/helm/facis-ai-insight-ui/ -n facis
 helm install facis-sftp-ingestion services/sftp-ingestion-service/helm/facis-sftp-ingestion/ -n facis
+# AI Insight Service runs as ORCE flows (services/ai-insight-service/orce/) — no standalone chart
 ```
 
 See [docs/deployment.md](docs/deployment.md) for full deployment instructions.
