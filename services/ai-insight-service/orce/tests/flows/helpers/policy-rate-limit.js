@@ -31,7 +31,6 @@ function evaluatePolicyAndRateLimit(options = {}) {
     const {
         headers = {},
         identity = null,
-        authMode = "enforce",
         authRejected = false,
         env = {},
         buckets = {},
@@ -48,29 +47,24 @@ function evaluatePolicyAndRateLimit(options = {}) {
     const policyEnabled = toBool(getEnv("AI_INSIGHT_POLICY__ENABLED"), true);
     const agreementHeader = getEnv("AI_INSIGHT_POLICY__AGREEMENT_HEADER") || "x-agreement-id";
     const assetHeader = getEnv("AI_INSIGHT_POLICY__ASSET_HEADER") || "x-asset-id";
-    const requiredRoles = parseList(getEnv("AI_INSIGHT_POLICY__REQUIRED_ROLES"), ["ai_insight_consumer"]);
+    // At least one of these roles is required (default: the schema roles).
+    const requiredRoles = parseList(getEnv("AI_INSIGHT_POLICY__REQUIRED_ROLES"), ["administrator", "data_scientist", "data_analyst"]);
     const allowedAgreements = parseList(getEnv("AI_INSIGHT_POLICY__ALLOWED_AGREEMENT_IDS"), []);
     const allowedAssets = parseList(getEnv("AI_INSIGHT_POLICY__ALLOWED_ASSET_IDS"), []);
 
     const agreementId = String(pickHeader(agreementHeader) || "").trim();
     const assetId = String(pickHeader(assetHeader) || "").trim();
 
-    let roles;
-    if (String(authMode).toLowerCase() === "off") {
-        const roleHeader = getEnv("AI_INSIGHT_POLICY__ROLE_HEADER") || "x-user-roles";
-        const rawRoles = String(pickHeader(roleHeader) || "").trim();
-        roles = rawRoles ? rawRoles.split(",").map((item) => item.trim()).filter(Boolean) : [];
-    } else {
-        roles = (identity && Array.isArray(identity.roles)) ? identity.roles : [];
-    }
+    // Identity only ever comes from the verified token.
+    const roles = (identity && Array.isArray(identity.roles)) ? identity.roles : [];
 
     if (policyEnabled) {
         if (!agreementId || !assetId) {
             return forbidden("Missing required governance headers");
         }
-        const missingRole = requiredRoles.find((role) => !roles.includes(role));
-        if (missingRole) {
-            return forbidden("Policy denied: missing required role " + missingRole);
+        const hasRequiredRole = requiredRoles.length === 0 || requiredRoles.some((role) => roles.includes(role));
+        if (!hasRequiredRole) {
+            return forbidden("Policy denied: none of the required roles (" + requiredRoles.join(", ") + ")");
         }
         if (allowedAgreements.length > 0 && !allowedAgreements.includes(agreementId)) {
             return forbidden("Policy denied for agreement_id");

@@ -276,14 +276,15 @@ trino> SELECT hour, avg_consumption_kw FROM net_grid_hourly ORDER BY hour DESC L
 
 **Step 4: Test AI Insight Service Endpoints**
 
-Call the energy-summary endpoint directly with governance headers:
+Call the energy-summary endpoint directly with a bearer token and the governance headers
+(roles come from the token's claims, never from a header):
 
 ```bash
 curl -X POST http://ai-insight-service:8080/api/v1/insights/energy-summary \
   -H 'Content-Type: application/json' \
   -H 'x-agreement-id: agreement-ui' \
   -H 'x-asset-id: asset-ui' \
-  -H 'x-user-roles: ai_insight_consumer' \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
     "start_ts": "2026-04-01T00:00:00Z",
     "end_ts": "2026-04-05T23:59:59Z",

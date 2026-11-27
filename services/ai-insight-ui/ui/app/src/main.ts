@@ -20,8 +20,10 @@ import { reduceResult, reduceEvent } from './services/reducers'
 
 // Authenticate BEFORE mounting the app.
 // The index.html splash screen stays visible during this time.
-// If user has no KC session, KC redirects to login (page unloads — mount never happens).
-// If user has KC session, initAuth() resolves and we mount the app with sidebar + user data.
+// Without a session, initAuth() sends the browser to the guard's login (the
+// page unloads, mount never happens); coming back with a code, or with an
+// unexpired session, it resolves and the app mounts with the user's data.
+// A refused or failed login is shown in the splash area (catch below).
 initAuth().then(async () => {
   const app = createApp(App)
 
@@ -66,7 +68,9 @@ initAuth().then(async () => {
 
   app.mount('#app')
 }).catch((err) => {
-  // If KC init fails completely, show error in the splash area
+  // A refused or failed login: show it in the splash area. The message can
+  // come from the login response in the URL, so it is set as text, never as
+  // markup.
   const el = document.getElementById('app')
   if (el) {
     const base = import.meta.env.BASE_URL
@@ -74,9 +78,11 @@ initAuth().then(async () => {
       <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#f8fafc;font-family:Inter,system-ui,sans-serif;">
         <img src="${base}facis-logo.svg" alt="FACIS" style="width:120px;opacity:0.8;" />
         <p style="margin-top:1.5rem;color:#dc2626;font-size:0.9rem;font-weight:600;">Authentication Failed</p>
-        <p style="margin-top:0.5rem;color:#64748b;font-size:0.8rem;max-width:400px;text-align:center;">${err?.message || 'Could not connect to Keycloak. Please refresh the page.'}</p>
-        <button onclick="location.reload()" style="margin-top:1rem;padding:0.5rem 1.5rem;background:#005fff;color:white;border:none;border-radius:6px;cursor:pointer;font-size:0.85rem;">Retry</button>
+        <p id="auth-error" style="margin-top:0.5rem;color:#64748b;font-size:0.8rem;max-width:400px;text-align:center;"></p>
+        <a href="${base}" style="margin-top:1rem;padding:0.5rem 1.5rem;background:#005fff;color:white;border-radius:6px;font-size:0.85rem;text-decoration:none;">Log in again</a>
       </div>
     `
+    const msg = el.querySelector('#auth-error')
+    if (msg) msg.textContent = (err instanceof Error && err.message) || 'Could not reach the login service. Please try again.'
   }
 })

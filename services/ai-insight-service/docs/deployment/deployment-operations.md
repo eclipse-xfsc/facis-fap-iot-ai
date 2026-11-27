@@ -244,7 +244,7 @@ curl -X POST http://localhost:8080/api/v1/insights/energy-summary \
   -H "Content-Type: application/json" \
   -H "x-agreement-id: local-test" \
   -H "x-asset-id: asset-001" \
-  -H "x-user-roles: ai_insight_consumer" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
     "start_ts": "2026-04-01T00:00:00Z",
     "end_ts": "2026-04-05T00:00:00Z",
@@ -311,7 +311,6 @@ policy:
   enabled: true
   agreementHeader: x-agreement-id
   assetHeader: x-asset-id
-  roleHeader: x-user-roles
 
 rateLimit:
   enabled: true
@@ -419,7 +418,7 @@ In ORCE's Node-RED flow, create an HTTP request node that forwards requests to t
     "Content-Type": "application/json",
     "x-agreement-id": "{{agreementId}}",
     "x-asset-id": "{{assetId}}",
-    "x-user-roles": "ai_insight_consumer"
+    "Authorization": "Bearer {{accessToken}}"
   },
   "timeout": 30000
 }
@@ -482,7 +481,7 @@ curl -X POST http://localhost:8080/api/v1/insights/energy-summary \
   -H "Content-Type: application/json" \
   -H "x-agreement-id: agreement-001" \
   -H "x-asset-id: asset-001" \
-  -H "x-user-roles: ai_insight_consumer" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
     "start_ts": "2026-04-01T00:00:00Z",
     "end_ts": "2026-04-05T00:00:00Z",
@@ -520,7 +519,7 @@ curl -X POST http://localhost:8080/api/v1/insights/anomaly-report \
   -H "Content-Type: application/json" \
   -H "x-agreement-id: agreement-001" \
   -H "x-asset-id: asset-001" \
-  -H "x-user-roles: ai_insight_consumer" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
     "start_ts": "2026-04-01T00:00:00Z",
     "end_ts": "2026-04-05T00:00:00Z",
@@ -541,7 +540,7 @@ curl -X POST http://localhost:8080/api/v1/insights/city-status \
   -H "Content-Type: application/json" \
   -H "x-agreement-id: agreement-001" \
   -H "x-asset-id: asset-001" \
-  -H "x-user-roles: ai_insight_consumer" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
     "start_ts": "2026-04-01T00:00:00Z",
     "end_ts": "2026-04-05T00:00:00Z",
@@ -588,11 +587,11 @@ curl -X POST http://localhost:8080/api/v1/insights/energy-summary \
 
 # Expected: 403 Forbidden with "Access denied by policy"
 
-# Request with wrong role (should return 403)
+# Request with a valid token that lacks the required role (should return 403)
 curl -X POST http://localhost:8080/api/v1/insights/energy-summary \
+  -H "Authorization: Bearer $TOKEN_NO_ROLE" \
   -H "x-agreement-id: agreement-001" \
   -H "x-asset-id: asset-001" \
-  -H "x-user-roles: wrong-role" \
   -d '{...}'
 
 # Expected: 403 Forbidden
@@ -601,7 +600,7 @@ curl -X POST http://localhost:8080/api/v1/insights/energy-summary \
 curl -X POST http://localhost:8080/api/v1/insights/energy-summary \
   -H "x-agreement-id: agreement-001" \
   -H "x-asset-id: asset-001" \
-  -H "x-user-roles: ai_insight_consumer" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{...}'
 
 # Expected: 200 OK with insight JSON
@@ -619,7 +618,7 @@ for i in {1..15}; do
     -H "Content-Type: application/json" \
     -H "x-agreement-id: agreement-001" \
     -H "x-asset-id: asset-001" \
-    -H "x-user-roles: ai_insight_consumer" \
+    -H "Authorization: Bearer $TOKEN" \
     -d '{"start_ts": "2026-04-01T00:00:00Z", "end_ts": "2026-04-05T00:00:00Z"}' \
     -w "\nStatus: %{http_code}\n" -s
   sleep 0.1
@@ -671,7 +670,7 @@ kubectl logs -n facis <pod-name> --previous
 |---|---|---|
 | Health check returns 500 | Trino or LLM unreachable | Verify endpoints in .env or Helm values. Test connectivity manually. |
 | Insight requests timeout | LLM response too slow | Increase `llm.timeoutSeconds` in Helm values or .env. Check LLM endpoint load. |
-| 403 errors on insight requests | Policy enforcement denying request | Verify required headers are present: `x-agreement-id`, `x-asset-id`, `x-user-roles`. |
+| 403 errors on insight requests | Policy enforcement denying request | Verify a valid `Authorization: Bearer` token is present (roles come from its claims) and the `x-agreement-id` / `x-asset-id` scope headers are set. |
 | 429 rate limit errors | Request rate exceeded per agreement | Increase `rateLimit.requestsPerMinute` or use different agreement-id. |
 | Trino SSL certificate error | Invalid or expired CA certificate | Re-extract Trino CA from Kubernetes secret or obtain fresh certificate. |
 | Redis connection failures | Redis not running or URL wrong | Check Redis pod/container is running. Verify `cache.redisUrl` format. |

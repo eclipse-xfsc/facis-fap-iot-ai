@@ -1,6 +1,6 @@
 // QA test #21: data retrieval via REST interface < 1 s (p95).
 // Target: AI Insight REST read path (Trino-backed). Requires a Bearer token
-// with realm role ai_insight_consumer (NF-6).
+// with one of the required roles (e.g. data_analyst).
 import http from 'k6/http';
 import { check } from 'k6';
 

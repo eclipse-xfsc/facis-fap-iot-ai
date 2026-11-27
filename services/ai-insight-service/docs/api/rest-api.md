@@ -31,13 +31,17 @@ Runtime documentation endpoints:
 
 ## Governance and Access
 
-Insight endpoints are governed by header-based policy and rate limiting.
+Insight endpoints require a verified bearer token and are then governed by
+policy and rate limiting. Roles come from the token's roles claim
+(`AI_INSIGHT_AUTH__ROLES_CLAIM`: `roles` by default, where the guard's tokens
+carry them; `realm_access.roles` for a Keycloak issuer), never from a header. At least one of the
+required roles is needed.
 
 Required headers (default names):
 
-- `x-agreement-id`
-- `x-asset-id`
-- `x-user-roles`
+- `Authorization: Bearer <access token>` (verified JWT)
+- `x-agreement-id` (request scope)
+- `x-asset-id` (request scope)
 
 Typical responses:
 
@@ -54,7 +58,7 @@ Typical responses:
 curl -X POST http://localhost:8080/api/v1/insights/energy-summary \
   -H "x-agreement-id: agreement-1" \
   -H "x-asset-id: asset-7" \
-  -H "x-user-roles: ai_insight_consumer" \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "start_ts": "2026-03-01T00:00:00Z",

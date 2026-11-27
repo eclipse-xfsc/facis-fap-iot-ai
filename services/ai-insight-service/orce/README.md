@@ -150,6 +150,28 @@ node --test tests/flows/anomaly.spec.js
 
 Coverage policy uses `c8` with thresholds `>=90%` for lines, branches, functions, and statements.
 
+## Check the authorization with guard tokens
+
+The service verifies access tokens of the guard (`services/guard`). To check that with real tokens,
+run the local guard first (`services/guard/local/up.sh`, see `services/guard/local/README.md`),
+then, from the repository root:
+
+```bash
+services/ai-insight-service/orce/local/guard-roles-check.sh
+```
+
+It builds this runtime's image, starts it on port 1881 against the local guard, and checks: no
+token or a forged `x-user-roles` header gives 401; a token without a required role gives 403; a
+`data_analyst` token passes; the roles claim (`AI_INSIGHT_AUTH__ROLES_CLAIM`) and the required
+roles (`AI_INSIGHT_POLICY__REQUIRED_ROLES`) are honoured. Expect `7 passed, 0 failed`.
+
+With the guard pointed at a real W-Stack (Part B of `services/guard/local/README.md`), the tokens
+come from the test wallet instead of the stub. Source the level-2 settings, then:
+
+```bash
+PRESENT_CMD="$PWD/services/guard/local/wstack/wallet-present.sh" services/ai-insight-service/orce/local/guard-roles-check.sh
+```
+
 ## Troubleshooting
 
 - **Port already in use (`1880`)**: change mapping in `docker run` (for example `-p 1881:1880`).

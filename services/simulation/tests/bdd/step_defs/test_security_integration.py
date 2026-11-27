@@ -65,12 +65,12 @@ KEYCLOAK_CLIENT_SECRET = os.environ.get("KEYCLOAK_CLIENT_SECRET", "")
 KEYCLOAK_USERNAME = os.environ.get("KEYCLOAK_USERNAME", "")
 KEYCLOAK_PASSWORD = os.environ.get("KEYCLOAK_PASSWORD", "")
 AGREEMENT_ID = os.environ.get("AI_INSIGHT_AGREEMENT_ID", "test-agreement-001")
-ROLE_VALUE = os.environ.get("AI_INSIGHT_ROLE", "ai_insight_consumer")
 RATE_LIMIT_RPM = int(os.environ.get("RATE_LIMIT_RPM", "5"))
 
-# Known policy header names (must match default.yaml policy section)
+# Known policy scope header names (roles come from the verified JWT claims;
+# there is no role header anymore)
 AGREEMENT_HEADER = "x-agreement-id"
-ROLE_HEADER = "x-user-roles"
+ASSET_HEADER = "x-asset-id"
 
 # Simulation release label used to locate pods
 SIM_RELEASE = os.environ.get("FACIS_RELEASE", "facis-simulation")
@@ -561,8 +561,8 @@ def step_policy_enabled() -> None:
     pass
 
 
-@when("I make a request without required policy headers")
-def step_request_without_headers(sec_state: _SecurityScenarioState) -> None:
+@when("I make a request without a bearer token")
+def step_request_without_token(sec_state: _SecurityScenarioState) -> None:
     resp = httpx.get(
         urljoin(AI_BASE_URL, "/api/v1/insights"),
         timeout=10,
@@ -570,18 +570,21 @@ def step_request_without_headers(sec_state: _SecurityScenarioState) -> None:
     sec_state.responses = [resp]
 
 
-@then("the response should be 403 Forbidden")
-def step_response_403(sec_state: _SecurityScenarioState) -> None:
+@then("the response should be 401 Unauthorized")
+def step_response_401(sec_state: _SecurityScenarioState) -> None:
     assert sec_state.responses, "No response captured"
     actual = sec_state.responses[-1].status_code
-    assert actual == 403, f"Expected 403 Forbidden (policy enforcement), got {actual}"
+    assert actual == 401, f"Expected 401 (verified mode, no token), got {actual}"
 
 
-@when("I make a request with valid agreement_id and role headers")
-def step_request_with_policy_headers(sec_state: _SecurityScenarioState) -> None:
+@when("I make a request with a valid token and scope headers")
+def step_request_with_token(sec_state: _SecurityScenarioState) -> None:
+    if not sec_state.access_token:
+        pytest.skip("no access token in scenario state — add the token step first")
     headers = {
+        "Authorization": f"Bearer {sec_state.access_token}",
         AGREEMENT_HEADER: AGREEMENT_ID,
-        ROLE_HEADER: ROLE_VALUE,
+        ASSET_HEADER: "test-asset-001",
     }
     resp = httpx.get(
         urljoin(AI_BASE_URL, "/api/v1/insights"),
@@ -616,9 +619,12 @@ def step_rate_limit_set(rpm: int, sec_state: _SecurityScenarioState) -> None:
 )
 def step_send_multiple_requests(total: int, sec_state: _SecurityScenarioState) -> None:
     _require_ai_service()
+    if not sec_state.access_token:
+        step_request_access_token(sec_state)
     headers = {
+        "Authorization": f"Bearer {sec_state.access_token}",
         AGREEMENT_HEADER: AGREEMENT_ID,
-        ROLE_HEADER: ROLE_VALUE,
+        ASSET_HEADER: "test-asset-001",
     }
     sec_state.responses = []
     for _ in range(total):

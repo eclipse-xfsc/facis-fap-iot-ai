@@ -157,9 +157,9 @@ Tests agreement-based sliding-window enforcement:
 - Tracks per-agreement state independently
 
 ### Policy Enforcement (`test_policy_enforcement.py`)
-Tests access control from headers:
+Tests access control from the scope headers and the verified token:
 - Denies missing X-Agreement-Id header
-- Denies when X-User-Roles doesn't include `ai_insight_consumer`
+- Denies when the token carries none of the required roles (`administrator`, `data_scientist`, `data_analyst` by default)
 - Allows matching agreement and role
 
 ### Output Store (`test_output_store.py`)
@@ -234,7 +234,7 @@ Integration tests in `tests/integration/test_ai_pipeline_integration.py` exercis
 | `test_pipeline_falls_back_when_llm_output_schema_is_invalid` | JSON with wrong schema triggers fallback |
 | `test_pipeline_skips_llm_when_rows_analyzed_is_zero` | No data rows → deterministic fallback only, `rows_analyzed=0` in metadata |
 | `test_policy_requires_headers_when_enabled` | Missing X-Agreement-Id → 403 |
-| `test_policy_requires_role_when_enabled` | Missing ai_insight_consumer role → 403 |
+| `test_policy_requires_role_when_enabled` | None of the required roles → 403 |
 | `test_rate_limit_returns_429_when_enabled` | Two requests in 60s → 200 then 429 with retry-after |
 | `test_dev_mode_hides_llm_error_for_successful_llm_response` | `llm_error` null when LLM succeeds |
 | `test_latest_endpoint_empty_before_any_insight` | Latest returns empty before first request |

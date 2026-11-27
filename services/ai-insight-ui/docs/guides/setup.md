@@ -112,7 +112,7 @@ Open your browser to the UIBUILDER path:
 http://localhost:1880/uibuilder/ai-insight/
 ```
 
-The Keycloak login overlay will appear. Authenticate with your FACIS Identity credentials.
+The guard's login page will appear. Present your role credential from a wallet.
 
 ---
 
@@ -132,9 +132,10 @@ npm run dev
 
 The app will be available at `http://localhost:3000` with automatic proxy to `http://localhost:8080/api/` (configured in `vite.config.ts`).
 
-Note: Keycloak authentication is configured to `https://identity.facis.cloud`. For local development, either:
-- Mock the Keycloak responses in the browser console, or
-- Update `ui/app/src/auth.ts` to point to a local Keycloak instance
+Note: the UI logs in through the guard named by `VITE_OIDC_ISSUER`. For local development, run the
+local guard (`services/guard/local/up.sh`) and set `VITE_OIDC_ISSUER=http://localhost:8444/` in
+`ui/app/.env.local`; `services/guard/local/present.sh` presents a test credential for the login
+opened in the browser.
 
 ---
 
@@ -221,7 +222,7 @@ ai-insight-ui/
 │   └── app/
 │       ├── src/                  (TypeScript source, components, stores, composables)
 │       ├── public/               (Static assets)
-│       ├── package.json          Dependencies: Vue 3, Chart.js, Keycloak, PrimeVue
+│       ├── package.json          Dependencies: Vue 3, Chart.js, PrimeVue
 │       ├── vite.config.ts        Vite build config + dev proxy
 │       └── tsconfig.json         TypeScript configuration
 ├── flows/
@@ -262,7 +263,7 @@ ai-insight-ui/
 
 **ORCE flows show errors** — Ensure all environment variables are set in ORCE's container. Check ORCE debug output: Node-RED editor → Debug messages panel.
 
-**Keycloak login hangs** — Verify Keycloak is reachable at `https://identity.facis.cloud`. If using local Keycloak, update the URL in `ui/app/src/auth.ts`.
+**Login fails or hangs** — Verify the guard answers at `<VITE_OIDC_ISSUER>.well-known/openid-configuration`, that the UI's URL is a redirect URI of the `facis-ai-insight-ui` client, and that the UI's origin is in its `allowedCorsOrigins`.
 
 **Nginx container won't start** — Check that port 8080 is not in use. The Dockerfile configures Nginx to run as unprivileged user; ensure `/tmp` is writable in the container.
 

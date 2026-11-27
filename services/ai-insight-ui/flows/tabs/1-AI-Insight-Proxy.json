@@ -1,80 +1,100 @@
 [
-    {
-        "id": "tab-insight-proxy",
-        "type": "tab",
-        "label": "AI Insight Proxy",
-        "disabled": false,
-        "info": "Proxies requests to the AI Insight Service (FastAPI)"
-    },
-    {
-        "id": "link-from-ui-insight",
-        "type": "link in",
-        "z": "tab-insight-proxy",
-        "name": "← From UI (Insight)",
-        "links": ["link-to-insight-proxy"],
-        "x": 115,
-        "y": 160,
-        "wires": [["build-insight-request"]]
-    },
-    {
-        "id": "build-insight-request",
-        "type": "function",
-        "z": "tab-insight-proxy",
-        "name": "Build HTTP Request",
-        "func": "const baseUrl = env.get('AI_INSIGHT_BASE_URL') || 'http://127.0.0.1:1880';\n\n// Adapter: accept either FAP §9 (msg._req.payload) or legacy (msg.data.recordDetails).\n// The dispatcher routes both shapes here; we normalise to a single internal\n// reading of action/params so the middle of the flow stays unchanged.\nlet action, params;\nif (msg._req && msg._req.payload) {\n    action = msg._req.payload.action;\n    params = msg._req.payload.params || {};\n    msg._fap = true;\n} else {\n    action = msg.data && msg.data.recordDetails && msg.data.recordDetails.action;\n    params = (msg.data && msg.data.recordDetails && msg.data.recordDetails.params) || {};\n    msg._fap = false;\n}\n\n// Store original data for response routing\nmsg.originalData = msg.data;\nmsg.originalAction = action;\n\nif (action === 'load-latest') {\n    msg.url = baseUrl + '/api/v1/insights/latest';\n    msg.method = 'GET';\n    msg.payload = '';\n} else if (action === 'energy-summary') {\n    msg.url = baseUrl + '/api/v1/insights/energy-summary';\n    msg.method = 'POST';\n    msg.payload = {\n        start_ts: params.start_ts,\n        end_ts: params.end_ts,\n        timezone: params.timezone || 'UTC',\n        forecast_alpha: 0.6,\n        trend_epsilon: 0.02,\n        daily_overview_strategy: 'fallback_hourly',\n        include_data: true\n    };\n} else if (action === 'anomaly-report') {\n    msg.url = baseUrl + '/api/v1/insights/anomaly-report';\n    msg.method = 'POST';\n    msg.payload = {\n        start_ts: params.start_ts,\n        end_ts: params.end_ts,\n        timezone: params.timezone || 'UTC',\n        robust_z_threshold: 3.5,\n        include_data: true\n    };\n} else if (action === 'city-status') {\n    msg.url = baseUrl + '/api/v1/insights/city-status';\n    msg.method = 'POST';\n    msg.payload = {\n        start_ts: params.start_ts,\n        end_ts: params.end_ts,\n        timezone: params.timezone || 'UTC',\n        include_data: true\n    };\n} else {\n    node.warn('Unknown action: ' + action);\n    return null;\n}\n\nmsg.headers = {\n    'Content-Type': 'application/json',\n    'x-agreement-id': 'agreement-ui',\n    'x-asset-id': 'asset-ui',\n    'x-user-roles': 'ai_insight_consumer'\n};\n\nreturn msg;\n",
-        "outputs": 1,
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 370,
-        "y": 160,
-        "wires": [["http-insight-request"]]
-    },
-    {
-        "id": "http-insight-request",
-        "type": "http request",
-        "z": "tab-insight-proxy",
-        "name": "AI Insight Service",
-        "method": "use",
-        "ret": "obj",
-        "paytoqs": "ignore",
-        "url": "",
-        "tls": "",
-        "persist": false,
-        "proxy": "",
-        "insecureHTTPParser": false,
-        "authType": "",
-        "senderr": true,
-        "headers": [],
-        "x": 610,
-        "y": 160,
-        "wires": [["format-insight-response"]]
-    },
-    {
-        "id": "format-insight-response",
-        "type": "function",
-        "z": "tab-insight-proxy",
-        "name": "Format Response for UI",
-        "func": "const statusCode = msg.statusCode;\nconst originalAction = msg.originalAction || (msg.originalData && msg.originalData.recordDetails && msg.originalData.recordDetails.action);\n\n// Build the response payload once; both legacy msg.data.recordDetails and\n// FAP msg._result.data point at it so either Vue caller sees the same shape.\nlet body;\nif (statusCode >= 400 || !msg.payload) {\n    body = {\n        error: msg.payload?.detail || 'AI Insight Service returned error ' + statusCode,\n        action: originalAction\n    };\n    msg._isError = true;\n} else if (originalAction === 'load-latest') {\n    body = { latest: msg.payload.latest || msg.payload };\n} else {\n    const response = msg.payload;\n    body = {\n        action: originalAction,\n        insight: {\n            type: response.insight_type,\n            summary: response.summary,\n            keyFindings: response.key_findings,\n            recommendations: response.recommendations,\n            metadata: response.metadata,\n            data: response.data || null\n        }\n    };\n}\n\n// Legacy shape — preserved so existing useUiBuilderStore.requestInsight callers continue to resolve.\nmsg.data = {\n    topic: msg._isError ? 'error' : (originalAction === 'load-latest' ? 'latest.response' : 'insight.response'),\n    recordDetails: msg._isError ? { message: body.error, action: originalAction } : body\n};\nmsg._socketId = msg.originalData?.session?._socketId;\n\n// FAP §9 shape — set msg._result so the dispatcher's fn_build_response wraps it.\nif (msg._fap) {\n    msg._result = {\n        ok: !msg._isError,\n        data: body,\n        errors: msg._isError ? { integration: { service: 'ai-insight-service', message: body.error } } : null\n    };\n}\nreturn msg;\n",
-        "outputs": 1,
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 840,
-        "y": 160,
-        "wires": [["link-response-insight"]]
-    },
-    {
-        "id": "link-response-insight",
-        "type": "link out",
-        "z": "tab-insight-proxy",
-        "name": "→ Response to UI",
-        "mode": "link",
-        "links": ["link-from-response"],
-        "x": 1055,
-        "y": 160,
-        "wires": []
-    }
+  {
+    "id": "tab-insight-proxy",
+    "type": "tab",
+    "label": "AI Insight Proxy",
+    "disabled": false,
+    "info": "Proxies requests to the AI Insight Service (FastAPI)"
+  },
+  {
+    "id": "link-from-ui-insight",
+    "type": "link in",
+    "z": "tab-insight-proxy",
+    "name": "← From UI (Insight)",
+    "links": [
+      "link-to-insight-proxy"
+    ],
+    "x": 115,
+    "y": 160,
+    "wires": [
+      [
+        "build-insight-request"
+      ]
+    ]
+  },
+  {
+    "id": "build-insight-request",
+    "type": "function",
+    "z": "tab-insight-proxy",
+    "name": "Build HTTP Request",
+    "func": "const baseUrl = env.get('AI_INSIGHT_BASE_URL') || 'http://127.0.0.1:1880';\n\n// Adapter: accept either FAP §9 (msg._req.payload) or legacy (msg.data.recordDetails).\n// The dispatcher routes both shapes here; we normalise to a single internal\n// reading of action/params so the middle of the flow stays unchanged.\nlet action, params;\nif (msg._req && msg._req.payload) {\n    action = msg._req.payload.action;\n    params = msg._req.payload.params || {};\n    msg._fap = true;\n} else {\n    action = msg.data && msg.data.recordDetails && msg.data.recordDetails.action;\n    params = (msg.data && msg.data.recordDetails && msg.data.recordDetails.params) || {};\n    msg._fap = false;\n}\n\n// Store original data for response routing\nmsg.originalData = msg.data;\nmsg.originalAction = action;\n\nif (action === 'load-latest') {\n    msg.url = baseUrl + '/api/v1/insights/latest';\n    msg.method = 'GET';\n    msg.payload = '';\n} else if (action === 'energy-summary') {\n    msg.url = baseUrl + '/api/v1/insights/energy-summary';\n    msg.method = 'POST';\n    msg.payload = {\n        start_ts: params.start_ts,\n        end_ts: params.end_ts,\n        timezone: params.timezone || 'UTC',\n        forecast_alpha: 0.6,\n        trend_epsilon: 0.02,\n        daily_overview_strategy: 'fallback_hourly',\n        include_data: true\n    };\n} else if (action === 'anomaly-report') {\n    msg.url = baseUrl + '/api/v1/insights/anomaly-report';\n    msg.method = 'POST';\n    msg.payload = {\n        start_ts: params.start_ts,\n        end_ts: params.end_ts,\n        timezone: params.timezone || 'UTC',\n        robust_z_threshold: 3.5,\n        include_data: true\n    };\n} else if (action === 'city-status') {\n    msg.url = baseUrl + '/api/v1/insights/city-status';\n    msg.method = 'POST';\n    msg.payload = {\n        start_ts: params.start_ts,\n        end_ts: params.end_ts,\n        timezone: params.timezone || 'UTC',\n        include_data: true\n    };\n} else {\n    node.warn('Unknown action: ' + action);\n    return null;\n}\n\n// Verified mode: forward the caller's bearer token.\n// The roles-header injection is removed; the backend derives\n// identity exclusively from the cryptographically verified JWT.\nconst callerAuth = (msg.req && msg.req.headers && msg.req.headers.authorization)\n    || (msg._req && msg._req.token ? 'Bearer ' + msg._req.token : '');\nmsg.headers = {\n    'Content-Type': 'application/json',\n    'Authorization': callerAuth,\n    'x-agreement-id': 'agreement-ui',\n    'x-asset-id': 'asset-ui'\n};\n\nreturn msg;\n",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 370,
+    "y": 160,
+    "wires": [
+      [
+        "http-insight-request"
+      ]
+    ]
+  },
+  {
+    "id": "http-insight-request",
+    "type": "http request",
+    "z": "tab-insight-proxy",
+    "name": "AI Insight Service",
+    "method": "use",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": true,
+    "headers": [],
+    "x": 610,
+    "y": 160,
+    "wires": [
+      [
+        "format-insight-response"
+      ]
+    ]
+  },
+  {
+    "id": "format-insight-response",
+    "type": "function",
+    "z": "tab-insight-proxy",
+    "name": "Format Response for UI",
+    "func": "const statusCode = msg.statusCode;\nconst originalAction = msg.originalAction || (msg.originalData && msg.originalData.recordDetails && msg.originalData.recordDetails.action);\n\n// Build the response payload once; both legacy msg.data.recordDetails and\n// FAP msg._result.data point at it so either Vue caller sees the same shape.\nlet body;\nif (statusCode >= 400 || !msg.payload) {\n    body = {\n        error: msg.payload?.detail || 'AI Insight Service returned error ' + statusCode,\n        action: originalAction\n    };\n    msg._isError = true;\n} else if (originalAction === 'load-latest') {\n    body = { latest: msg.payload.latest || msg.payload };\n} else {\n    const response = msg.payload;\n    body = {\n        action: originalAction,\n        insight: {\n            type: response.insight_type,\n            summary: response.summary,\n            keyFindings: response.key_findings,\n            recommendations: response.recommendations,\n            metadata: response.metadata,\n            data: response.data || null\n        }\n    };\n}\n\n// Legacy shape — preserved so existing useUiBuilderStore.requestInsight callers continue to resolve.\nmsg.data = {\n    topic: msg._isError ? 'error' : (originalAction === 'load-latest' ? 'latest.response' : 'insight.response'),\n    recordDetails: msg._isError ? { message: body.error, action: originalAction } : body\n};\nmsg._socketId = msg.originalData?.session?._socketId;\n\n// FAP §9 shape — set msg._result so the dispatcher's fn_build_response wraps it.\nif (msg._fap) {\n    msg._result = {\n        ok: !msg._isError,\n        data: body,\n        errors: msg._isError ? { integration: { service: 'ai-insight-service', message: body.error } } : null\n    };\n}\nreturn msg;\n",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 840,
+    "y": 160,
+    "wires": [
+      [
+        "link-response-insight"
+      ]
+    ]
+  },
+  {
+    "id": "link-response-insight",
+    "type": "link out",
+    "z": "tab-insight-proxy",
+    "name": "→ Response to UI",
+    "mode": "link",
+    "links": [
+      "link-from-response"
+    ],
+    "x": 1055,
+    "y": 160,
+    "wires": []
+  }
 ]

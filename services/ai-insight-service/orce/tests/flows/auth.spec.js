@@ -31,7 +31,7 @@ test.before(async () => {
 
 async function sign(claims = {}, { key = null, expiresIn = "5m", kid = KID } = {}) {
     return new jose.SignJWT({
-        realm_access: { roles: ["ai_insight_consumer"] },
+        realm_access: { roles: ["data_analyst"] },
         preferred_username: "svc-facis-orce",
         azp: "facis-orce",
         ...claims,
@@ -44,12 +44,25 @@ async function sign(claims = {}, { key = null, expiresIn = "5m", kid = KID } = {
         .sign(key || signingKey);
 }
 
-test("valid token yields identity with realm_access roles", async () => {
+test("valid token yields identity with realm_access roles (Keycloak issuer: rolesClaim set)", async () => {
     const token = await sign();
-    const result = await verifyBearer({ authorization: `Bearer ${token}`, jwks, issuer: ISSUER });
+    const result = await verifyBearer({ authorization: `Bearer ${token}`, jwks, issuer: ISSUER, rolesClaim: "realm_access.roles" });
     assert.equal(result.authRejected, false);
     assert.equal(result.identity.sub, "svc-account-1");
-    assert.deepEqual(result.identity.roles, ["ai_insight_consumer"]);
+    assert.deepEqual(result.identity.roles, ["data_analyst"]);
+});
+
+test("default roles claim: top-level roles (guard tokens), strings only", async () => {
+    const token = await sign({ realm_access: undefined, roles: ["data_scientist", 42] });
+    const result = await verifyBearer({ authorization: `Bearer ${token}`, jwks, issuer: ISSUER });
+    assert.equal(result.authRejected, false);
+    assert.deepEqual(result.identity.roles, ["data_scientist"]);
+});
+
+test("default roles claim ignores Keycloak realm roles", async () => {
+    const token = await sign({ realm_access: { roles: ["administrator"] } });
+    const result = await verifyBearer({ authorization: `Bearer ${token}`, jwks, issuer: ISSUER });
+    assert.deepEqual(result.identity.roles, []);
 });
 
 test("missing Authorization header -> 401 missing_authorization", async () => {
@@ -94,12 +107,6 @@ test("unknown kid -> 401 invalid_token", async () => {
     assert.equal(result.code, "invalid_token");
 });
 
-test("mode off returns null identity without rejecting (dev only)", async () => {
-    const result = await verifyBearer({ authorization: "", jwks, issuer: ISSUER, mode: "off" });
-    assert.equal(result.authRejected, false);
-    assert.equal(result.identity, null);
-});
-
 // ---- flow-JSON guards ----
 
 function readFlow(name) {
@@ -120,8 +127,23 @@ test("auth flow: verifier uses jose via libs and returns via link out", () => {
     const ret = flow.find((n) => n.id === "aiinsight_auth_return");
     assert.equal(ret.mode, "return");
     const prep = flow.find((n) => n.id === "fn_auth_prep");
-    assert.match(prep.func, /AI_INSIGHT_AUTH__MODE.*\|\|\s*'enforce'/);
+    assert.match(prep.func, /AI_INSIGHT_AUTH__MODE.*\|\|\s*'verified'/);
+    assert.match(prep.func, /mode === 'off'/); // fail-closed guard, not a trust branch
     assert.match(prep.func, /WWW-Authenticate/);
+});
+
+test("correlation id propagated + decision event is credential-free", () => {
+    const flow = readFlow("ai-insight-auth.json");
+    const prep = flow.find((n) => n.id === "fn_auth_prep");
+    const verify = flow.find((n) => n.id === "fn_auth_verify");
+    assert.match(prep.func, /x-correlation-id/);
+    assert.match(prep.func, /X-Correlation-Id/);
+    assert.match(prep.func, /emitAuthEvent/);
+    assert.match(verify.func, /event: 'ai_insight\.auth'/);
+    const evStart = verify.func.indexOf("event: 'ai_insight.auth'");
+    const evBlock = verify.func.slice(evStart, verify.func.indexOf("}));", evStart));
+    assert.ok(!evBlock.includes("_authToken"), "decision event must not carry the token");
+    assert.ok(!evBlock.includes("credentialSubject"), "decision event must not carry VC content");
 });
 
 test("every insight POST flow calls the shared verifier before policy", () => {
@@ -133,17 +155,15 @@ test("every insight POST flow calls the shared verifier before policy", () => {
     }
 });
 
-test("policy nodes never read roles from headers outside the dev-off branch", () => {
+test("policy nodes never read roles from headers (the header-trust mode is removed)", () => {
     for (const name of INSIGHT_FLOWS) {
         const flow = readFlow(name);
         const policy = flow.find((n) => n.type === "function" && (n.name || "") === "PolicyAndRateLimit");
         assert.ok(policy, `${name}: policy node missing`);
         assert.match(policy.func, /if \(msg\.authRejected\)/);
         assert.match(policy.func, /msg\.identity && Array\.isArray\(msg\.identity\.roles\)/);
-        const offBranch = policy.func.indexOf("authMode === 'off'");
-        const roleHeaderRead = policy.func.indexOf("AI_INSIGHT_POLICY__ROLE_HEADER");
-        assert.ok(offBranch !== -1 && roleHeaderRead > offBranch,
-            `${name}: role header may only be read inside the off branch`);
+        assert.ok(!policy.func.includes("authMode") && !policy.func.includes("ROLE_HEADER"),
+            `${name}: header-trust path removed — identity comes from msg.identity only`);
         assert.match(policy.func, /subject \+ '\|' \+ \(agreementId/);
     }
 });

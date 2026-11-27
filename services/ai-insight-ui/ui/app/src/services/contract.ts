@@ -25,6 +25,12 @@ export interface CommandRequest<P = unknown> {
   step?: string
   /** Browser-generated UUID. Echoed back in the matching Result for correlation. */
   requestId: string
+  /**
+   * Caller's access token, from the token issuer (verified mode). Proxy flows
+   * forward it as `Authorization: Bearer`; downstream, identity derives only
+   * from the cryptographically verified JWT — never from client headers.
+   */
+  token?: string
   payload: P
   meta?: { clientTs: number; source: 'dashboard' }
 }

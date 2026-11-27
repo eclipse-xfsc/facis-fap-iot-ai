@@ -21,7 +21,7 @@ aggregator turns the collected outputs into the QA evidence report.
 - Python 3.11 + `pip install -r perf/requirements.txt` (confluent-kafka, trino).
 - Copy `env.example`, fill it in, `source` it. Notes:
   - AI Insight endpoints require a Bearer token since NF-6 (`FACIS_TOKEN`,
-    realm role `ai_insight_consumer`).
+    one of the required roles, e.g. `data_analyst`).
   - For the DSP scripts either set `DSP_IAM_ENFORCE=off` for the session or
     provide `DSP_AUTH_HEADER` with a valid VP; record the choice in the run
     log.

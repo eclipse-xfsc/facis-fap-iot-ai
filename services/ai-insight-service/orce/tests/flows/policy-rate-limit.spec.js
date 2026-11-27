@@ -15,20 +15,20 @@ const GOVERNANCE_HEADERS = {
 
 const CONSUMER_IDENTITY = {
     sub: "svc-account-facis-orce",
-    roles: ["ai_insight_consumer"],
+    roles: ["data_analyst"],
 };
 
 test("header injection is rejected: forged x-user-roles cannot grant a role", () => {
     const result = evaluatePolicyAndRateLimit({
         headers: {
             ...GOVERNANCE_HEADERS,
-            "x-user-roles": "ai_insight_consumer,admin",
+            "x-user-roles": "administrator",
         },
         identity: { sub: "attacker", roles: [] },
     });
     assert.equal(result.decision, "forbidden");
     assert.equal(result.statusCode, 403);
-    assert.match(result.payload.detail, /missing required role ai_insight_consumer/);
+    assert.match(result.payload.detail, /none of the required roles/);
 });
 
 test("verified identity with the required role passes without any role header", () => {
@@ -37,7 +37,7 @@ test("verified identity with the required role passes without any role header", 
         identity: CONSUMER_IDENTITY,
     });
     assert.equal(result.decision, "ok");
-    assert.deepEqual(result.accessContext.roles, ["ai_insight_consumer"]);
+    assert.deepEqual(result.accessContext.roles, ["data_analyst"]);
     assert.equal(result.accessContext.subject, "svc-account-facis-orce");
 });
 
@@ -101,7 +101,7 @@ test("rate limit is keyed by verified subject, not by spoofable headers", () => 
     // exhaust (or pollute) another caller's bucket by reusing the agreement.
     const otherCaller = evaluatePolicyAndRateLimit({
         headers: GOVERNANCE_HEADERS,
-        identity: { sub: "another-subject", roles: ["ai_insight_consumer"] },
+        identity: { sub: "another-subject", roles: ["data_analyst"] },
         env, buckets, nowMs: now + 20,
     });
     assert.equal(otherCaller.decision, "ok");
@@ -126,12 +126,29 @@ test("policy disabled still resolves an access context", () => {
     assert.equal(result.accessContext.agreement_id, "unknown-agreement");
 });
 
-test("dev-only AI_INSIGHT_AUTH__MODE=off restores legacy header roles", () => {
+test("fail closed: authMode=off no longer exists — a forged role header still grants nothing", () => {
     const result = evaluatePolicyAndRateLimit({
-        headers: { ...GOVERNANCE_HEADERS, "x-user-roles": "ai_insight_consumer" },
+        headers: { ...GOVERNANCE_HEADERS, "x-user-roles": "data_analyst" },
         identity: null,
-        authMode: "off",
+        authMode: "off", // ignored: the header-trust mode was removed from the code
     });
-    assert.equal(result.decision, "ok");
-    assert.deepEqual(result.accessContext.roles, ["ai_insight_consumer"]);
+    assert.equal(result.decision, "forbidden");
+    assert.equal(result.statusCode, 403);
+    assert.match(result.payload.detail, /none of the required roles/);
+});
+
+test("required roles: any one of them is enough, others are refused", () => {
+    for (const role of ["administrator", "data_scientist", "data_analyst"]) {
+        const ok = evaluatePolicyAndRateLimit({ headers: GOVERNANCE_HEADERS, identity: { sub: "s-" + role, roles: [role] } });
+        assert.equal(ok.decision, "ok", role);
+    }
+    const operator = evaluatePolicyAndRateLimit({ headers: GOVERNANCE_HEADERS, identity: { sub: "op", roles: ["operator", "data_engineer"] } });
+    assert.equal(operator.decision, "forbidden");
+    assert.match(operator.payload.detail, /none of the required roles \(administrator, data_scientist, data_analyst\)/);
+});
+
+test("required roles: configured list replaces the default", () => {
+    const env = { AI_INSIGHT_POLICY__REQUIRED_ROLES: '["ai_insight_consumer"]' };
+    assert.equal(evaluatePolicyAndRateLimit({ headers: GOVERNANCE_HEADERS, identity: { sub: "a", roles: ["ai_insight_consumer"] }, env }).decision, "ok");
+    assert.equal(evaluatePolicyAndRateLimit({ headers: GOVERNANCE_HEADERS, identity: { sub: "b", roles: ["data_analyst"] }, env }).decision, "forbidden");
 });

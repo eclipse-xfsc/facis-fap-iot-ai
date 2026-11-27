@@ -21,12 +21,8 @@ async function verifyBearer(options = {}) {
         jwks = { keys: [] },
         issuer,
         audience = null,
-        mode = "enforce",
+        rolesClaim = "roles",
     } = options;
-
-    if (String(mode).toLowerCase() === "off") {
-        return { authRejected: false, identity: null, mode: "off" };
-    }
 
     const m = /^Bearer\s+(.+)$/i.exec(String(authorization).trim());
     if (!m) {
@@ -60,9 +56,10 @@ async function verifyBearer(options = {}) {
         if (audience) opts.audience = audience;
         const verified = await jose.jwtVerify(token, key, opts);
         const claims = verified.payload;
-        const roles = (claims.realm_access && Array.isArray(claims.realm_access.roles))
-            ? claims.realm_access.roles
-            : [];
+        // Same as the flow: a dot path into the claims (AI_INSIGHT_AUTH__ROLES_CLAIM).
+        const rolesValue = String(rolesClaim || "roles").split(".")
+            .reduce((o, k) => (o && typeof o === "object" ? o[k] : undefined), claims);
+        const roles = Array.isArray(rolesValue) ? rolesValue.filter((r) => typeof r === "string") : [];
         return {
             authRejected: false,
             identity: {

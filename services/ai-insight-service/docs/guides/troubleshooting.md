@@ -165,7 +165,7 @@
    ```bash
    curl -H "X-Agreement-Id: agreement-001" \
         -H "X-Asset-Id: asset-123" \
-        -H "X-User-Roles: ai_insight_consumer" \
+        -H "Authorization: Bearer $TOKEN" \
         http://localhost:8080/api/v1/insights/anomaly-report
    ```
 2. If you don't have an agreement ID, contact your administrator
@@ -177,19 +177,19 @@
 
 ### Problem: Missing Required Role
 
-**The symptom:** Request returns 403 Forbidden with `detail: "Missing required role"`.
+**The symptom:** Request returns 403 Forbidden with `detail: "Policy denied: none of the required roles (...)"`.
 
-**The cause:** The client did not include the `X-User-Roles` header, or the header doesn't include the required role. By default, `ai_insight_consumer` is required.
+**The cause:** The verified token carries none of the required roles. Roles are read from the token's claims only, never from a header. By default, one of `administrator`, `data_scientist` or `data_analyst` is required. The roles are read from the claim named by `AI_INSIGHT_AUTH__ROLES_CLAIM` (`roles` by default, as the guard issues them; `realm_access.roles` for a Keycloak issuer).
 
 **The fix:**
-1. Add the role header with the consumer role:
+1. Give the user or client the required role at the token issuer, then get a new token:
    ```bash
-   curl -H "X-User-Roles: ai_insight_consumer" ...
+   curl -H "Authorization: Bearer $TOKEN" ...
    ```
 2. If you have a different role (e.g., `ai_admin`), check the allowed roles:
    - `echo $AI_INSIGHT_POLICY__REQUIRED_ROLES`
-   - If empty, default is `["ai_insight_consumer"]`
-3. Add your role to the allowed list: `export AI_INSIGHT_POLICY__REQUIRED_ROLES="ai_insight_consumer,ai_admin"`
+   - If unset, the default is `["administrator","data_scientist","data_analyst"]`
+3. Add your role to the allowed list: `export AI_INSIGHT_POLICY__REQUIRED_ROLES='["data_analyst","ai_admin"]'`
 
 **Expected result:** Request includes the required role. Policy check passes.
 
@@ -197,9 +197,9 @@
 
 ### Problem: Role Not in Allow-List
 
-**The symptom:** Request returns 403 Forbidden with `detail: "Missing required role"`, even with `X-User-Roles` set.
+**The symptom:** Request returns 403 Forbidden with `detail: "Policy denied: none of the required roles (...)"`, even with a valid token.
 
-**The cause:** The header includes a role (e.g., `user`), but it's not in the configured `required_roles` list. The policy checks: is there any intersection between `required_roles` and the roles in the header? If not, access is denied.
+**The cause:** The token carries a role (e.g., `user`), but it's not in the configured `required_roles` list. The policy checks: is there any intersection between `required_roles` and the roles in the token? If not, access is denied.
 
 **The fix:**
 1. Check the configured required roles:
@@ -207,7 +207,7 @@
    grep -r "required_roles" config/
    ```
 2. Ensure your role is in that list
-3. Or add it: `export AI_INSIGHT_POLICY__REQUIRED_ROLES="ai_insight_consumer"`
+3. Or add it: `export AI_INSIGHT_POLICY__REQUIRED_ROLES='["data_analyst","user"]'`
 
 **Expected result:** Your role is in the allow-list. Request proceeds.
 
@@ -623,7 +623,7 @@ curl -X POST \
   -H "Content-Type: application/json" \
   -H "X-Agreement-Id: test-agreement" \
   -H "X-Asset-Id: test-asset" \
-  -H "X-User-Roles: ai_insight_consumer" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
     "window": {
       "start": "2026-01-01T00:00:00Z",

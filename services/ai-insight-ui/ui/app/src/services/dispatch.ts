@@ -163,7 +163,7 @@ async function uib<T>(action: string, payload: unknown = {}): Promise<T | null> 
   }
 }
 
-// FAP §9 with the user's Keycloak access token attached to the payload —
+// FAP §9 with the user's access token attached to the payload —
 // the way to carry credentials over a UIBUILDER WebSocket frame.
 async function uibAuthed<T>(action: string, payload: Record<string, unknown> = {}): Promise<T | null> {
   try {

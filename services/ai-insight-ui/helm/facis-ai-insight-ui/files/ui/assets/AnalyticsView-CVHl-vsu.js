@@ -1,0 +1,1 @@
+import{d as s,b as t,c as o,g as a,e as c,v as n,_}from"./index-C6QltkNz.js";const r={class:"use-case-layout"},i={class:"use-case-content"},d=s({__name:"AnalyticsView",setup(p){return(l,u)=>{const e=n("RouterView");return t(),o("div",r,[a("div",i,[c(e)])])}}}),f=_(d,[["__scopeId","data-v-6af40e3e"]]);export{f as default};

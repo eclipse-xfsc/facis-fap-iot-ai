@@ -240,7 +240,7 @@ curl -sS -o /dev/null -w 'GET /api/v1/admin/users (no auth)        %{http_code}\
 T=$(date -u +%Y-%m-%d)
 curl -sS -X POST -H 'Content-Type: application/json' \
   -H 'x-agreement-id: facis-ui' -H 'x-asset-id: facis-platform' \
-  -H 'x-user-roles: ai_insight_consumer' \
+  -H "Authorization: Bearer $TOKEN" \
   -d "{\"start_ts\":\"${T}T00:00:00Z\",\"end_ts\":\"${T}T23:59:59Z\",\"timezone\":\"UTC\"}" \
   https://fap-iotai.facis.cloud/api/v1/insights/energy-summary | jq '.summary'
 ```

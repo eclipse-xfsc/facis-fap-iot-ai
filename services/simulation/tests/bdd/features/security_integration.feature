@@ -34,12 +34,13 @@ Feature: Security and Integration
     Then a valid JWT token should be returned
     And the token should contain the expected claims
 
-  Scenario: Policy-based access control
+  Scenario: Policy-based access control (verified token, no role header)
     Given the AI insight service is running
     And policy enforcement is enabled
-    When I make a request without required policy headers
-    Then the response should be 403 Forbidden
-    When I make a request with valid agreement_id and role headers
+    When I make a request without a bearer token
+    Then the response should be 401 Unauthorized
+    When I request an access token with valid credentials
+    And I make a request with a valid token and scope headers
     Then the response should be 200 OK
 
   Scenario: Rate limiting enforcement

@@ -22,7 +22,7 @@ const routes: RouteRecordRaw[] = [
     path: '/',
     redirect: '/dashboard'
   },
-  // Login is handled by Keycloak (onLoad: 'login-required') — no custom login route needed
+  // Login is handled by the guard (src/auth.ts, before the app mounts) — no login route needed
 
   // Legacy / sensible-guess deep links — keep shared URLs and bookmarks working
   { path: '/overview', redirect: '/dashboard' },

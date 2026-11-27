@@ -110,7 +110,8 @@ async function runNode(flowPath, nodeId, opts) {
         warn: (m) => { warnings.push(m); },
         error: (m, m2) => { errors.push(m); },
         status: () => {},
-        log: () => {}
+        log: () => {},
+        done: () => {}
     };
     const envApi = { get: (k) => (Object.prototype.hasOwnProperty.call(env, k) ? env[k] : undefined) };
     const globalApi = {

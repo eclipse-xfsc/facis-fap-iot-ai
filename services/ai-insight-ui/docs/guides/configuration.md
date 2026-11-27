@@ -36,9 +36,10 @@ These variables are embedded in the compiled SPA (`dist/index.html` and `dist/as
 
 | Variable | Default | Example | Description |
 |---|---|---|---|
-| `VITE_KEYCLOAK_URL` | `http://localhost:8180` | `https://identity.facis.cloud` | Keycloak server base URL |
-| `VITE_KEYCLOAK_REALM` | `facis` | `facis` | Keycloak realm name |
-| `VITE_KEYCLOAK_CLIENT_ID` | `facis-ui` | `facis-ai-insight` | OIDC client ID registered in Keycloak |
+| `VITE_OIDC_ISSUER` | — (required) | `https://login.fap-iotai.facis.cloud/` | Issuer URL of the guard, the authorization server the UI logs in through |
+| `VITE_OIDC_CLIENT_ID` | `facis-ai-insight-ui` | `facis-ai-insight-ui` | OAuth2 client of the UI, registered at the guard |
+| `VITE_OIDC_AUDIENCE` | `facis-ai-insight` | `facis-ai-insight` | API audience requested for the access token (`AI_INSIGHT_AUTH__AUDIENCE` of the service) |
+| `VITE_OIDC_SCOPE` | `openid` | `openid` | Scopes requested |
 | `VITE_API_BASE_URL` | `/api` | `/api` | API base path (relative or absolute) |
 
 ### 2.2 Configuration File
@@ -47,9 +48,9 @@ Create `ui/app/.env.production` or `ui/app/.env.development`:
 
 ```env
 # .env.production
-VITE_KEYCLOAK_URL=https://identity.facis.cloud
-VITE_KEYCLOAK_REALM=facis
-VITE_KEYCLOAK_CLIENT_ID=facis-ai-insight
+VITE_OIDC_ISSUER=https://login.fap-iotai.facis.cloud/
+VITE_OIDC_CLIENT_ID=facis-ai-insight-ui
+VITE_OIDC_AUDIENCE=facis-ai-insight
 VITE_API_BASE_URL=/api
 ```
 
@@ -57,15 +58,9 @@ These are injected into `index.js` at build time by Vite. Check `ui/app/vite.con
 
 ### 2.3 Build-Time Loading
 
-In the browser, Keycloak is initialized with these variables (see `ui/app/src/auth.ts`):
-
-```javascript
-const keycloak = new Keycloak({
-    url: 'https://identity.facis.cloud',
-    realm: 'facis',
-    clientId: 'facis-ai-insight'
-});
-```
+In the browser, `ui/app/src/auth.ts` reads them to log in through the guard (authorization code
+with PKCE): it fetches `<VITE_OIDC_ISSUER>.well-known/openid-configuration`, sends the browser to the
+authorization endpoint, and exchanges the code at the token endpoint.
 
 ---
 
@@ -274,26 +269,28 @@ The frontend displays this as an error toast.
 
 ---
 
-## 6. Keycloak Integration
+## 6. Login and Keycloak
 
-### 6.1 Browser Authentication (PKCE)
+### 6.1 Browser Authentication (through the guard)
 
-The Vue SPA uses Keycloak's JavaScript adapter with PKCE (Proof Key for Code Exchange):
+The UI logs in through the guard (`services/guard`): the user presents a role credential from a
+wallet on the guard's login page, and the guard issues the tokens.
 
-1. **On load:** `keycloak.init({ onLoad: 'login-required', pkceMethod: 'S256' })`
-2. **User redirected** to Keycloak login form
-3. **PKCE exchange:** Authorization code is traded for access token using a cryptographic proof
-4. **Token stored** in browser memory (not localStorage for security)
-5. **Token refreshed:** Every 60 seconds, if <70 seconds until expiry
-6. **Vue app mounted** only after successful authentication
+1. **Before the app mounts:** without an unexpired session, the browser goes to the guard's
+   authorization endpoint (code + PKCE `S256`, `state`, `nonce`, `audience=VITE_OIDC_AUDIENCE`)
+2. **Login page of the guard:** QR code for a mobile wallet, link or button for a wallet in the browser
+3. **Back with a code:** the UI checks `state`, exchanges the code with the PKCE verifier, and checks
+   the ID token's `nonce` and audience
+4. **Tokens** live 5 minutes and there is no refresh token: the access token is kept in
+   sessionStorage until it expires, then the UI logs in again, back to the same view
+5. **Roles:** the UI's own roles come from the credential roles: `administrator` → admin,
+   `operator` → operator, `data_engineer`/`data_scientist`/`data_analyst` → analyst, otherwise viewer
+6. **Logout** ends the guard session (`end_session_endpoint`)
 
-**Keycloak client configuration (must be set in Keycloak admin console):**
-- Client ID: `facis-ai-insight` (or `VITE_KEYCLOAK_CLIENT_ID`)
-- Client Authentication: **OFF** (public client)
-- Valid Redirect URIs: `http://localhost:1880/uibuilder/ai-insight/`, `https://facis.cloud/ai-insight/`, etc.
-- Web Origins: Same as above
-- Standard Flow: ENABLED
-- PKCE Code Challenge Method: `S256`
+**Client at the guard** (`clients` of the guard chart): client id `facis-ai-insight-ui`, public,
+redirect URI and post-logout redirect URI = the UI's URL (for example
+`https://fap-iotai.facis.cloud/orce/aiInsight/`), audience `facis-ai-insight`, and the UI's origin in
+`allowedCorsOrigins`: the token endpoint is called from the browser.
 
 ### 6.2 Backend OIDC (Password Grant)
 

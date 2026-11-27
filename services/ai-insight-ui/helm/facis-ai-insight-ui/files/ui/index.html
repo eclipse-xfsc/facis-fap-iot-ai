@@ -3,19 +3,67 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!--
+    Anchor document.baseURI to the SPA root regardless of the deep-link path
+    being served by the SPA-fallback flow. Without this, refreshing on
+    /orce/aiInsight/use-cases/smart-city/overview makes document.baseURI end
+    in /smart-city/, and any code that resolves a relative asset against
+    document.baseURI (notably the UIBUILDER iife loader below) requests the
+    asset from the wrong directory and 404s. Vite substitutes /orce/aiInsight/ at
+    build time with the configured base path (vite.config.ts).
+  -->
+  <base href="/orce/aiInsight/">
   <title>FACIS IoT &amp; AI Platform</title>
-  <link rel="icon" type="image/svg+xml" href="/aiInsight/facis-logo.svg">
+  <link rel="icon" type="image/svg+xml" href="/orce/aiInsight/facis-logo.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <script type="module" crossorigin src="/aiInsight/assets/index-BuosndfI.js"></script>
-  <link rel="stylesheet" crossorigin href="/aiInsight/assets/index-CyPaB3Dj.css">
+  <!--
+    UIBUILDER client library — injected at runtime. UIBUILDER serves the
+    instance-scoped client lib at <spa-url>/uibuilder.iife.js (NOT under
+    /uibuilder/vendor/, despite older docs). Loading via document.baseURI
+    (anchored above) keeps the URL consistent regardless of the current
+    SPA route.
+
+    If the script 404s the SPA still mounts (the Pinia store falls back to
+    mock mode). The console.error makes that failure mode visible.
+  -->
+  <script>
+    (function () {
+      // Pin Socket.IO namespace + UIBUILDER httpNodeRoot via cookies BEFORE
+      // the iife loads. The Uib constructor reads `uibuilder-namespace` and
+      // `uibuilder-webRoot` from document.cookie; without them it auto-derives
+      // from window.location.pathname, which is wrong on any deep SPA URL —
+      // e.g. /orce/aiInsight/use-cases/smart-city/zones makes the lib pick
+      // 'zones' as the Socket.IO namespace, so engine.io rejects the
+      // handshake with "server error" and msgsReceived stays at 0.
+      // Cookies are read at constructor time, so they MUST be set before
+      // the iife script tag is appended below.
+      document.cookie = 'uibuilder-namespace=aiInsight; path=/; SameSite=Lax';
+      document.cookie = 'uibuilder-webRoot=; path=/; SameSite=Lax';
+
+      var s = document.createElement('script');
+      s.type = 'text/javascript';
+      s.src = new URL('uibuilder.iife.js', document.baseURI).href;
+      s.onerror = function () {
+        console.error(
+          '[FACIS] Failed to load UIBUILDER client library at ' + s.src + '. ' +
+          'window.uibuilder will be undefined and the SPA will run in mock mode. ' +
+          'Verify ORCE serves <spa-url>/uibuilder.iife.js — that file is ' +
+          'shipped by node-red-contrib-uibuilder out of the per-instance front-end folder.'
+        );
+      };
+      document.head.appendChild(s);
+    })();
+  </script>
+  <script type="module" crossorigin src="/orce/aiInsight/assets/index-C6QltkNz.js"></script>
+  <link rel="stylesheet" crossorigin href="/orce/aiInsight/assets/index-C1FvuYIl.css">
 </head>
 <body>
   <div id="app">
     <!-- Static loading screen — visible instantly while JS loads. Vue replaces this on mount. -->
     <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#f8fafc;font-family:Inter,system-ui,sans-serif;">
-      <img src="/aiInsight/facis-logo.svg" alt="FACIS" style="width:120px;opacity:0.8;" />
+      <img src="/orce/aiInsight/facis-logo.svg" alt="FACIS" style="width:120px;opacity:0.8;" />
       <p style="margin-top:1rem;color:#64748b;font-size:0.85rem;">Loading platform...</p>
       <div style="width:28px;height:28px;border:3px solid #e2e8f0;border-top-color:#005fff;border-radius:50%;animation:facis-spin .8s linear infinite;margin-top:0.75rem;"></div>
     </div>

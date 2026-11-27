@@ -13,7 +13,7 @@ The AI Insight UI is a two-tier system: a **Vue.js Single-Page Application (SPA)
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │  Browser (Vue 3 SPA)                                             │
-│  ├─ Keycloak PKCE Authentication                                │
+│  ├─ Wallet login through the guard (OIDC code + PKCE)           │
 │  ├─ KPI Cards (energy, cost, PV, anomalies)                     │
 │  ├─ Conversation Interface (messages, charts)                    │
 │  └─ Time Range Selector (24h, 7d, 30d, custom)                  │
@@ -111,13 +111,13 @@ For detailed flow diagrams and cross-tab wiring, see `docs/flow-architecture.md`
 
 The Vue 3 SPA (`ui/app/src/`) comprises:
 
-### 4.1 Keycloak Authentication
+### 4.1 Authentication
 
-- **Adapter:** Keycloak 25+ JavaScript library (CDN-hosted)
-- **Flow:** PKCE (Proof Key for Code Exchange) for public clients
-- **Login:** `onLoad: 'login-required'` — redirect to Keycloak immediately
-- **Token refresh:** Every 60 seconds, refresh if <70 seconds remaining
-- **User info:** Extracted from `keycloak.tokenParsed` (username, name, roles)
+- **Client:** `src/auth.ts`, a standard OpenID Connect client (no adapter library)
+- **Flow:** authorization code with PKCE (`S256`), public client, against the guard
+- **Login:** before the app mounts, redirect to the guard, where the user presents a role credential from a wallet
+- **Tokens:** 5 minutes, no refresh token; once expired, the UI logs in again
+- **User info:** from the ID token (`name`, `email`, `roles`); the UI role is derived from the credential roles
 
 ### 4.2 KPI Cards Section
 

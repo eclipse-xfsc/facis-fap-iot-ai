@@ -13,6 +13,7 @@
 //            FAP_UI_General_Guideline_Reference_Aligned.md  §11
 
 import { useUiBuilderStore } from '@/stores/uibuilder'
+import { auth, getAccessToken, login } from '../auth'
 import { useAppStore } from './state'
 import type {
   CommandRequest,
@@ -110,6 +111,15 @@ export function submit<P, D = unknown>(
     app.state.ui.pendingAction = null
     return Promise.reject({ system: 'UIBUILDER not connected' } as ContractErrors)
   }
+  // Guard tokens live 5 minutes, with no refresh token: once it has expired,
+  // log in again (back to the same view) rather than send an anonymous request.
+  const token = getAccessToken()
+  if (!token && auth.isAuthenticated) {
+    app.state.ui.loading = false
+    app.state.ui.pendingAction = null
+    void login()
+    return Promise.reject({ system: 'session expired: logging in again' } as ContractErrors)
+  }
   const requestId = newRequestId()
   const req: CommandRequest<P> = {
     type: 'command',
@@ -117,6 +127,9 @@ export function submit<P, D = unknown>(
     sessionId: opts.sessionId ?? app.state.sessionId ?? undefined,
     step: opts.step ?? app.state.step,
     requestId,
+    // Propagate the caller's access token so proxy flows can forward it
+    // as a Bearer header (verified mode; the header-trust mode is removed).
+    token: token ?? undefined,
     payload,
     meta: { clientTs: Date.now(), source: 'dashboard' },
   }
