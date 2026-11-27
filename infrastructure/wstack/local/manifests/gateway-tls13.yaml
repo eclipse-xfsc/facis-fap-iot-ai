@@ -1,0 +1,15 @@
+# TLS 1.3 minimum on the tenant's gateway listener. Envoy Gateway takes the
+# minimum version from a ClientTrafficPolicy attached to the Gateway (the
+# listener's tls.options do not carry it).
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: ClientTrafficPolicy
+metadata:
+  name: tls13-min
+  namespace: infrastructure
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: envoy-gateway
+  tls:
+    minVersion: "1.3"

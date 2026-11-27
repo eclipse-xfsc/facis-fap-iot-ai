@@ -73,6 +73,12 @@ Not covered by the lock:
 - The DIDComm connector, which the ApplicationSet excludes. The Easy Stack
   Builder OCM-WStack node deploys it, on a `latest` tag.
 
+## Local W-Stack
+
+[`local/`](local/README.md) installs this baseline on a one-node kind cluster, from the
+`deployment` commit of the lock, with a tenant and what wallets need locally (a local CA, the
+tenant's `did:web` document on 443). It also brings it back after a reboot. Local tests only.
+
 ## Checks
 
 ```bash

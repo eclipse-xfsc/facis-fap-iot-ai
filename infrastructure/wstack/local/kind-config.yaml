@@ -1,0 +1,10 @@
+# One-node kind cluster for the local W-Stack. kindnet does not enforce
+# NetworkPolicies, so the cluster comes up without a CNI and up.sh installs
+# Calico. up.sh adds port mappings for 80/443 when WSTACK_HOST_PORTS=1.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+networking:
+  disableDefaultCNI: true
+  kubeProxyMode: iptables
+nodes:
+  - role: control-plane
