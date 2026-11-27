@@ -44,33 +44,4 @@ spec:
         - protocol: TCP
           port: 5432
 {{- end }}
-{{- if .Values.dsp.iam.mongo.enabled }}
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: {{ include "facis-dsp-connector.fullname" . }}-mongo
-  namespace: {{ .Release.Namespace }}
-  labels:
-    {{- include "facis-dsp-connector.labels" . | nindent 4 }}
-    app.kubernetes.io/component: identity-hub-mongo
-spec:
-  # Selects the Identity Hub Mongo pod (mongo-statefulset.yaml pod labels).
-  podSelector:
-    matchLabels:
-      {{- include "facis-dsp-connector.selectorLabels" . | nindent 6 }}
-      app.kubernetes.io/component: identity-hub-mongo
-  policyTypes:
-    - Ingress
-  ingress:
-    # Only the dedicated ORCE pod (DSP_MONGO_URI client) may reach 27017.
-    - from:
-        - podSelector:
-            matchLabels:
-              {{- include "facis-dsp-connector.selectorLabels" . | nindent 14 }}
-              app.kubernetes.io/component: dsp-orce
-      ports:
-        - protocol: TCP
-          port: 27017
-{{- end }}
 {{- end }}

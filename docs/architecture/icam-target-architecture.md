@@ -13,7 +13,7 @@ In scope:
 
 - **People** log in to the FAP web applications by presenting a role credential from their wallet
   (OpenID4VP). No password.
-- **Organisations**: each FAP deployment's DSP connector holds its participant credential in an OCM
+- **Organisations**: each IoT & AI deployment's DSP connector holds its participant credential in an OCM
   W-Stack tenant and proves its identity to counterparties with it.
 - **Authorization** follows the claims of the verified credentials (organisation, roles, purpose),
   evaluated as policy.
@@ -27,7 +27,7 @@ Out of scope: changes to the OCM W-Stack, PCM Cloud or TSA components themselves
 flowchart LR
   actor["User with a wallet<br/>(PCM Cloud, mobile or any<br/>conformant wallet)"]
   issuer["Credential issuer<br/>(FAP PCI, an OCM W-Stack issuer,<br/>or another OID4VCI issuer)"]
-  subgraph fap["FAP deployment"]
+  subgraph fap["IoT & AI deployment (participant)"]
     app["Web applications<br/>(AI Insight UI, dashboard, NiFi)"]
     api["APIs and services<br/>(AI Insight service, data APIs)"]
     subgraph guard["Guard"]
@@ -37,9 +37,12 @@ flowchart LR
     dsp["DSP connector<br/>(ORCE)"]
   end
   pol["Policy engine<br/>(Rego bundle)"]
-  subgraph ws["OCM W-Stack"]
+  subgraph ws["Participant wallet: its OCM W-Stack tenant"]
     cvs["Verifier<br/>(OID4VP, DCQL)"]
-    ten["Connector tenant<br/>(storage, crypto provider)"]
+    ten["Retrieval, storage,<br/>crypto provider"]
+  end
+  subgraph fed["Federation trust services"]
+    fiss["Issuer of participant<br/>credentials"]
     sl["Status list"]
   end
   issuer -- "OID4VCI" --> actor
@@ -51,13 +54,14 @@ flowchart LR
   app -- "access token" --> api
   api -- "JWKS, decisions" --> pol
   api -. "token signature" .-> az
-  dsp -- "credential, signed presentations" --> ten
+  fiss -- "OID4VCI offer, accepted by the connector" --> ten
+  dsp -- "credential, key bindings" --> ten
   dsp -- "revocation check" --> sl
 ```
 
 The guard replaces the identity provider role for the web applications: it issues their tokens
 after a verified presentation. The OCM W-Stack verifies presentations; it does not issue
-application tokens. Where the policy engine runs, in the FAP deployment or as a shared policy
+application tokens. Where the policy engine runs, in the IoT & AI deployment or as a shared policy
 service, is open.
 
 The detailed picture, with the zones and trust boundaries, and the sequence of every flow (deployment,
@@ -127,10 +131,10 @@ Login rules:
 - Tokens from a wallet login live 5 minutes, with no offline refresh, so a revoked credential stops
   working at the next login.
 
-### The guard in a FAP deployment
+### The guard in a IoT & AI deployment
 
 - **What is deployed:** the authorization server (Ory Hydra) with its own PostgreSQL database, and
-  the login and consent provider. Both run in the FAP deployment, next to the web applications.
+  the login and consent provider. Both run in the IoT & AI deployment, next to the web applications.
 - **Clients:** each web application (AI Insight UI, dashboard, NiFi) is registered as an OAuth2
   client: authorization code with PKCE, fixed redirect URIs. Consent is skipped for these
   first-party clients; the login policy is the gate.
@@ -167,12 +171,18 @@ role headers.
 
 ## 6. Organisation identity and DSP
 
-- The DSP connector receives its participant credential over OpenID4VCI into its W-Stack tenant.
-- On each DSP request it presents that credential as a signed presentation (VP-JWT), signed by the
-  W-Stack crypto provider. Keys never leave the W-Stack.
-- The provider side verifies the presentation (signature, DID resolution, expiry, replay, status,
-  trusted issuer), fails closed, logs the result, and asks the policy engine before any agreement
-  or transfer.
+- The DSP connector is its participant's holder. The federation issuer offers the participant
+  credential; the connector accepts it, after checking the issuer and the credential type, into
+  its W-Stack tenant over OpenID4VCI (F1). The federation never acts inside the participant's
+  wallet.
+- On each DSP request it presents that credential, an SD-JWT VC, with a key binding for the
+  counterparty (audience, fresh nonce), signed by its tenant's crypto provider. Keys never leave
+  the W-Stack.
+- The provider side checks the key binding against the key the credential binds, which must be a
+  key of the participant's `did:web`, has its crypto provider check the issuer's signature, checks
+  freshness, replay, the status list and the trusted issuer, fails closed, logs the result, and
+  asks the policy engine before any agreement or transfer. The profile is in
+  [`../icam/dsp-identity-profile.md`](../icam/dsp-identity-profile.md).
 
 This keeps the DSP wire contract simple. The Zero Trust Demonstrator exchanges a presentation for a
 DPoP-bound access token between connectors (§9); the FAP can adopt that exchange later by replacing
@@ -184,8 +194,9 @@ its verification step, with the same claims.
   a mobile wallet scans the QR code, a web wallet receives the request through a redirect (§4).
 - PCM Cloud is supported as soon as a release that speaks DCQL is available. Until then, a
   conformant alternative wallet is used, and the same flows and tests apply.
-- Credential format today: `jwt_vc_json`, the format that works end to end on the W-Stack. SD-JWT VC
-  is designed in the schemas and can be added without changing the flows.
+- Credential format: SD-JWT VC (`dc+sd-jwt`) with key binding, for the participant and the role
+  credentials: the format the W-Stack's crypto provider and verifier check. The schemas generate
+  it next to `jwt_vc_json` (`schemas/credentials`).
 
 ## 8. Revocation
 
@@ -211,7 +222,7 @@ The FAP follows the demonstrator's patterns where they apply, and does not wait 
 
 ## 10. Open points
 
-- Whether Keycloak stays in a FAP deployment, for example for administrator access or as a
+- Whether Keycloak stays in a IoT & AI deployment, for example for administrator access or as a
   fallback, or is removed once the guard is in place.
 - Where the login provider runs: as an ORCE flow next to the DSP connector, or as a small service
   reused from the demonstrator's guard.

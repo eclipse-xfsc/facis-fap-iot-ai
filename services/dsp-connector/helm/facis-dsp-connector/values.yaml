@@ -27,6 +27,10 @@ dedicatedOrce:
   # -- ConfigMap holding rdkafka-patch.js (SSL support overlay for
   #    node-red-contrib-rdkafka; same ConfigMap the shared instance uses).
   rdkafkaPatchConfigMap: facis-orce-rdkafka-patch
+  # -- Extra environment variables for the ORCE container, in the Kubernetes
+  #    `env` format (name/value or name/valueFrom), for settings the flows read
+  #    with env.get() that have no value of their own in this chart.
+  extraEnv: []
   resources:
     requests: { cpu: 250m, memory: 512Mi }
     limits: { cpu: "1", memory: 1Gi }
@@ -78,7 +82,12 @@ orceFlowDeploy:
 # (see templates/orce-secret.yaml). The ORCE chart must include
 # `envFrom: [secretRef: <fullname>-dsp-secrets]` in its Deployment.
 dsp:
-  # -- HMAC secret for signed-URL generation (REQUIRED).
+  # -- Render <fullname>-dsp-secrets from these values (default). Set to false
+  #    when the Secret comes from elsewhere, e.g. an ExternalSecret
+  #    (externalSecrets below); hmacSecret and the other secret values are
+  #    then not read.
+  renderSecret: true
+  # -- HMAC secret for signed-URL generation (REQUIRED when renderSecret).
   #    Generate with: openssl rand -hex 32
   hmacSecret: ""
   # -- Base URL for the data API (HTTP-pull endpoint). Must be the live
@@ -97,81 +106,64 @@ dsp:
   #    host from the pre-NF-3 stub — same category of fix as dataApiBaseUrl
   #    above (daa5f98).
   kafkaBootstrap: 212.132.83.222:9093
-  # -- NF-1 Identity & Trust (IAM verifier)
+  # -- Identity: the connector is its participant's holder. Its credential (an
+  #    SD-JWT VC issued by the federation) is in its W-Stack tenant, which also
+  #    signs its presentations; it verifies counterparties' presentations and
+  #    asks the policy engine before agreeing. See
+  #    services/dsp-connector/local/README.md for a local check.
   iam:
-    # -- off | warn | enforce. Start new environments at "warn" to observe
-    #    real traffic before blocking it; "off" is full pre-NF-1 parity.
-    enforce: "warn"
-    # -- This connector's own did:web identity (the VP's expected `aud`).
-    vpAudience: "did:web:fap-iotai.facis.cloud"
-    # -- Comma-separated allowlist of trusted VC-issuer DIDs.
-    #    ENFORCE-MODE NF-2 REQUIREMENT: to run the consumer ingest E2E
-    #    (POST /dsp/ingest, flow #3) under enforce=enforce, this MUST include
-    #    connectorDid below — the consumer attaches a self-issued VP to its
-    #    own internal provider hops, and the provider's iam.verify rejects it
-    #    as untrusted_issuer unless the connector's own DID is trusted here.
-    #    e.g. trustedIssuers: "did:web:fap-iotai.facis.cloud"
+    # -- enforce (default) | off. Verification is mandatory: anything but "off"
+    #    enforces, a failed or unreachable check refuses (401). "off" skips
+    #    verification entirely: local evidence runs only.
+    enforce: "enforce"
+    # -- Comma-separated audiences this connector accepts in presentations:
+    #    its public base URL as counterparties call it (the consumer flow
+    #    addresses its presentations to the provider's base URL).
+    audience: "https://fap-iotai.facis.cloud"
+    # -- Comma-separated trusted issuer DIDs: the federation issuer(s) of
+    #    participant credentials. Empty refuses every presentation and every
+    #    credential offer.
     trustedIssuers: ""
-    jtiTtlSeconds: 300
+    # -- The participant credential type (the SD-JWT VC's vct), as the
+    #    federation issuer publishes it: configuration facis_participant_sd_jwt
+    #    in schemas/credentials/generated/. Required.
+    participantVct: ""
+    # -- Lifetime of a presentation's key binding, and of the nonce replay
+    #    cache (seconds).
+    vpTtlSeconds: 300
+    # -- Cache of resolved did:web documents (seconds).
     didCacheTtlSeconds: 300
-    # -- open (default) | verified. Catalogues are commonly public; set to
-    #    "verified" only if this deployment's catalogue must be gated too.
+    # -- Claims presented when the credential holds them as disclosures.
+    disclose: "legalName,participantRoles"
+    # -- open | verified (default). Catalogues are commonly public; "verified"
+    #    gates the catalogue on a valid presentation too.
     catalogueMode: "verified"  # M-1 (audit 2026-07-23): catalogue requires a valid VP; anonymous browsing disabled
-    # -- This connector's own did:web identity (issued Participant VC subject).
-    connectorDid: "did:web:fap-iotai.facis.cloud"
-    # -- off | warn | enforce. Gates BitstringStatusList revocation
-    #    checking on VCs that carry a credentialStatus claim (VCs without
-    #    one always skip the check regardless of this setting). "off"
-    #    skips the check entirely; "warn" logs a revoked credential but
-    #    still nulls identity/does not block, matching every other
-    #    warn-mode failure in this verifier; "enforce" rejects with 401
-    #    credential_revoked. See dsp-iam-verify-status-list-fn in
-    #    facis-dsp-iam-verify.json.
-    #    NOTE even in "enforce": any problem actually fetching/verifying
-    #    the status list itself (unreachable, malformed, bad signature)
-    #    (mode "warn") fails OPEN, not closed. The acceptance profile sets
-    #    "enforce" (M-3, audit 2026-07-23): a revoked credential is REJECTED,
-    #    and a status-list outage fails CLOSED (verification is refused rather
-    #    than admitting a possibly-revoked credential). This is a deliberate
-    #    strictness-over-availability tradeoff; it does not change VP/VC
-    #    signature verification, which is enforced in both modes. Set back to
-    #    "warn" only with a signed risk acceptance of unchecked revocation.
-    statusListMode: "enforce"
-    # -- RESERVED (not yet implemented): local (jose in-flow, default) |
-    #    remote (external walt.id verifier). No flow reads this value
-    #    today; setting it to "remote" does NOT enable a remote verifier.
-    verifierMode: "local"
-    # -- RESERVED (not yet implemented): companion URL for verifierMode
-    #    "remote". No flow reads this value today.
-    verifierUrl: ""
-    # -- Shared-secret bearer token gating POST /iam/oid4vci/credential
-    #    (see dsp-iam-issuance-vc-guard in facis-dsp-iam-issuance.json).
-    #    Empty = unauthenticated (any Bearer token accepted, logged via
-    #    node.warn). Generate with: openssl rand -hex 32
-    oid4vciSharedSecret: ""
-    gxdch:
-      notaryUrl: ""
-      complianceUrl: ""
-    mongo:
-      enabled: true
-      image:
-        repository: mongo
-        tag: "7.0"
-      storageSize: 1Gi
-      # -- Secret name + key holding the Mongo connection URI (defaults to
-      #    the in-cluster StatefulSet's DNS name if left blank).
-      uriSecret: ""
-    # -- Name of a pre-created Secret holding this connector's private JWK
-    #    under key `privateJwk` (the prod path — never generated on the pod).
-    keySecret: "facis-dsp-connector-identity-key"
-    # -- Inline private JWK (NF-10, audit 2026-07-23). When set, the chart
-    #    renders the identity-key Secret itself (`<fullname>-identity-key`) and
-    #    the deployment uses it, so a clean `helm install` is self-contained and
-    #    does not require pre-creating `keySecret` out of band (which otherwise
-    #    fails a fresh install with CreateContainerConfigError). Leave empty to
-    #    use the pre-created `keySecret` above (prod). Provide as a single-line
-    #    JWK JSON string, e.g. --set-file dsp.iam.privateJwk=identity.jwk.
-    privateJwk: ""
+    # -- Admin token of POST /iam/credentials/offers, where the participant's
+    #    administrator accepts the credential offered by the federation issuer.
+    #    Empty refuses every call. Generate with: openssl rand -hex 32
+    adminToken: ""
+    # -- Policy engine (OPA) serving infrastructure/opa/bundle, asked
+    #    facis/negotiation/permit before a negotiation is agreed.
+    policyUrl: ""
+    # -- The connector's wallet: its W-Stack tenant. The connector holds no
+    #    private key; the tenant's crypto provider signs with the tenant key.
+    wallet:
+      # -- Crypto provider (signer), credential storage and retrieval service
+      #    of the tenant, e.g. http://signer.<ns>.svc.cluster.local:8080
+      cryptoUrl: ""
+      storageUrl: ""
+      retrievalUrl: ""
+      # -- The tenant id, and the account (group) its credentials are filed
+      #    under, with the region and country of the retrieval service.
+      tenant: ""
+      account: "default"
+      region: "EU"
+      country: "DE"
+      # -- The tenant key (namespace, group, key name) that signs the key
+      #    bindings; the participant credential binds it.
+      keyNamespace: ""
+      keyGroup: "default"
+      key: ""
   # -- Trino connection used by facis-dsp-data.json's data-serving query.
   #    Same physical Trino coordinator + demo credentials already used by
   #    infrastructure/lakehouse/setup_nifi.py (same trino-users Secret).
@@ -237,7 +229,6 @@ dspStatePvc:
 # INGRESS-ONLY policies (templates/networkpolicy.yaml):
 #   - Postgres (component dsp-state-postgres): allow 5432 ONLY from the
 #     dedicated ORCE pod (component dsp-orce). Denies every other pod.
-#   - Mongo    (component identity-hub-mongo): allow 27017 ONLY from the
 #     dedicated ORCE pod. Denies every other pod.
 # The dsp-orce pod is the sole legitimate client of both, so this is a pure
 # security win with no effect on the working NF-5 state path. Egress is left
@@ -259,6 +250,23 @@ dspStatePvc:
 # --set networkPolicies.enabled=false.
 networkPolicies:
   enabled: true
+
+# ---------------------------------------------------------------------------
+# External secrets
+# ---------------------------------------------------------------------------
+# -- ExternalSecrets (External Secrets Operator) for the Secrets this chart
+#    does not render. Off by default.
+externalSecrets:
+  enabled: false
+  # -- The SecretStore or ClusterSecretStore to read from.
+  secretStoreRef:
+    kind: SecretStore
+    name: ""
+  refreshInterval: 1h
+  # -- Store key holding every key of <fullname>-dsp-secrets (the keys
+  #    templates/orce-secret.yaml renders). Needs dsp.renderSecret=false.
+  dspSecrets:
+    remoteKey: ""
 
 nameOverride: ""
 fullnameOverride: ""

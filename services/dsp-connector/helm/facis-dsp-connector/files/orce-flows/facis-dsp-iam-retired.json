@@ -1,0 +1,227 @@
+[
+    {
+        "id": "tab-dsp-iam-retired",
+        "type": "tab",
+        "label": "FACIS DSP — IAM retired routes (410)",
+        "disabled": false,
+        "info": "Compatibility stubs for the connector's former built-in identity tooling (self-issuer, identity hub, its own status list). Every former route answers 410 Gone with a JSON body. The connector is now a holder: its participant credential is issued by the federation issuer and kept in the connector's W-Stack tenant (storage), its presentations are signed by the tenant's crypto provider, and its did:web document is the tenant's."
+    },
+    {
+        "id": "dsp-iam-retired-fn",
+        "type": "function",
+        "z": "tab-dsp-iam-retired",
+        "name": "410 Gone",
+        "func": "// 410 for every former identity route of the connector. The connector is a\n// holder now: its credential is in its W-Stack tenant's storage, its\n// presentations are signed by the tenant's crypto provider, and its did:web\n// document is served by the tenant.\nmsg.statusCode = 410;\nmsg.headers = { 'Content-Type': 'application/json' };\nmsg.payload = {\n    error: 'retired',\n    reason: \"the connector's identity is held by its W-Stack tenant (credential storage, crypto provider, did:web); credentials are issued by the federation issuer\",\n    retired_route: msg.req && msg.req.url\n};\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 460,
+        "y": 200,
+        "wires": [
+            [
+                "dsp-iam-retired-resp"
+            ]
+        ]
+    },
+    {
+        "id": "dsp-iam-retired-resp",
+        "type": "http response",
+        "z": "tab-dsp-iam-retired",
+        "name": "410",
+        "statusCode": "",
+        "headers": {},
+        "x": 700,
+        "y": 200,
+        "wires": []
+    },
+    {
+        "id": "dsp-iam-retired-in-iam-hub-credentials-get",
+        "type": "http in",
+        "z": "tab-dsp-iam-retired",
+        "name": "GET /iam/hub/credentials -> 410",
+        "url": "/iam/hub/credentials",
+        "method": "get",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 180,
+        "y": 40,
+        "wires": [
+            [
+                "dsp-iam-retired-fn"
+            ]
+        ]
+    },
+    {
+        "id": "dsp-iam-retired-in-iam-hub-credentials-post",
+        "type": "http in",
+        "z": "tab-dsp-iam-retired",
+        "name": "POST /iam/hub/credentials -> 410",
+        "url": "/iam/hub/credentials",
+        "method": "post",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 180,
+        "y": 80,
+        "wires": [
+            [
+                "dsp-iam-retired-fn"
+            ]
+        ]
+    },
+    {
+        "id": "dsp-iam-retired-in-iam-hub-credentials-id-get",
+        "type": "http in",
+        "z": "tab-dsp-iam-retired",
+        "name": "GET /iam/hub/credentials/:id -> 410",
+        "url": "/iam/hub/credentials/:id",
+        "method": "get",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 180,
+        "y": 120,
+        "wires": [
+            [
+                "dsp-iam-retired-fn"
+            ]
+        ]
+    },
+    {
+        "id": "dsp-iam-retired-in-iam-hub-credentials-id-delete",
+        "type": "http in",
+        "z": "tab-dsp-iam-retired",
+        "name": "DELETE /iam/hub/credentials/:id -> 410",
+        "url": "/iam/hub/credentials/:id",
+        "method": "delete",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 180,
+        "y": 160,
+        "wires": [
+            [
+                "dsp-iam-retired-fn"
+            ]
+        ]
+    },
+    {
+        "id": "dsp-iam-retired-in-iam-hub-credentials-id-revoke-post",
+        "type": "http in",
+        "z": "tab-dsp-iam-retired",
+        "name": "POST /iam/hub/credentials/:id/revoke -> 410",
+        "url": "/iam/hub/credentials/:id/revoke",
+        "method": "post",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 180,
+        "y": 200,
+        "wires": [
+            [
+                "dsp-iam-retired-fn"
+            ]
+        ]
+    },
+    {
+        "id": "dsp-iam-retired-in-iam-hub-participant-get",
+        "type": "http in",
+        "z": "tab-dsp-iam-retired",
+        "name": "GET /iam/hub/participant -> 410",
+        "url": "/iam/hub/participant",
+        "method": "get",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 180,
+        "y": 240,
+        "wires": [
+            [
+                "dsp-iam-retired-fn"
+            ]
+        ]
+    },
+    {
+        "id": "dsp-iam-retired-in-iam-hub-participant-post",
+        "type": "http in",
+        "z": "tab-dsp-iam-retired",
+        "name": "POST /iam/hub/participant -> 410",
+        "url": "/iam/hub/participant",
+        "method": "post",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 180,
+        "y": 280,
+        "wires": [
+            [
+                "dsp-iam-retired-fn"
+            ]
+        ]
+    },
+    {
+        "id": "dsp-iam-retired-in-iam-status-list-get",
+        "type": "http in",
+        "z": "tab-dsp-iam-retired",
+        "name": "GET /iam/status-list -> 410",
+        "url": "/iam/status-list",
+        "method": "get",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 180,
+        "y": 320,
+        "wires": [
+            [
+                "dsp-iam-retired-fn"
+            ]
+        ]
+    },
+    {
+        "id": "dsp-iam-retired-in-iam-oid4vci-credential-post",
+        "type": "http in",
+        "z": "tab-dsp-iam-retired",
+        "name": "POST /iam/oid4vci/credential -> 410",
+        "url": "/iam/oid4vci/credential",
+        "method": "post",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 180,
+        "y": 360,
+        "wires": [
+            [
+                "dsp-iam-retired-fn"
+            ]
+        ]
+    },
+    {
+        "id": "dsp-iam-retired-in-.well-known-did.json-get",
+        "type": "http in",
+        "z": "tab-dsp-iam-retired",
+        "name": "GET /.well-known/did.json -> 410",
+        "url": "/.well-known/did.json",
+        "method": "get",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 180,
+        "y": 400,
+        "wires": [
+            [
+                "dsp-iam-retired-fn"
+            ]
+        ]
+    },
+    {
+        "id": "dsp-iam-retired-in-.well-known-openid-credential-issuer-get",
+        "type": "http in",
+        "z": "tab-dsp-iam-retired",
+        "name": "GET /.well-known/openid-credential-issuer -> 410",
+        "url": "/.well-known/openid-credential-issuer",
+        "method": "get",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 180,
+        "y": 440,
+        "wires": [
+            [
+                "dsp-iam-retired-fn"
+            ]
+        ]
+    }
+]

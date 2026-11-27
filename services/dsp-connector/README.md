@@ -33,8 +33,9 @@ Consumer ──> [DSP Connector (ORCE)] ──> Signed URL ──> [AI Insight S
 
 Rendered into the ORCE pod's environment by the Helm chart's Secret
 (`helm/facis-dsp-connector/templates/orce-secret.yaml`) — see that chart's
-`values.yaml` for the full list, including the `dsp.iam.*` identity values
-(`DSP_IAM_ENFORCE`, `DSP_VP_AUDIENCE`, `DSP_TRUSTED_ISSUERS`, etc.).
+`values.yaml` for the full list, including the `dsp.iam.*` identity values.
+The identity settings, and a local check against a W-Stack, are in
+[`local/README.md`](local/README.md).
 
 | Variable | Default | Required | Description |
 |----------|---------|----------|-------------|
@@ -42,11 +43,18 @@ Rendered into the ORCE pod's environment by the Helm chart's Secret
 | `DSP_DATA_API_BASE_URL` | `https://ai-insight.facis.cloud` | No | Base URL for data access endpoints |
 | `DSP_DEFAULT_TTL_SECONDS` | `3600` | No | Default signed URL validity period |
 | `DSP_KAFKA_BOOTSTRAP` | `212.132.83.222:9093` | No | Kafka bootstrap (kafka-streaming topic creation + access objects) |
-| `DSP_IAM_ENFORCE` | `warn` | No | IAM verification mode: `off` (pre-NF-1 parity), `warn` (log violations), `enforce` (reject) |
-| `DSP_VP_AUDIENCE` | `did:web:fap-iotai.facis.cloud` | No | This connector's did:web identity for VP audience claim validation |
-| `DSP_TRUSTED_ISSUERS` | — | No | Comma-separated allowlist of trusted VC-issuer DIDs |
-| `DSP_IAM_JTI_TTL_SECONDS` | `300` | No | Cache TTL for JWT ID (jti) claim validation |
-| `DSP_IAM_DID_CACHE_TTL_SECONDS` | `300` | No | Cache TTL for resolved DIDs and VC documents |
+| `DSP_IAM_ENFORCE` | `enforce` | No | `enforce` (verification mandatory, fail closed) or `off` (local evidence runs only) |
+| `DSP_IAM_AUDIENCE` | `https://fap-iotai.facis.cloud` | **Yes** | Comma-separated audiences accepted in presentations: this connector's public base URL |
+| `DSP_TRUSTED_ISSUERS` | — | **Yes** | Comma-separated DIDs of the federation issuers of participant credentials; empty refuses everything |
+| `DSP_PARTICIPANT_VCT` | — | **Yes** | The participant credential type (SD-JWT VC `vct`) |
+| `DSP_IAM_VP_TTL_SECONDS` | `300` | No | Lifetime of a presentation's key binding and of the nonce replay cache |
+| `DSP_IAM_DID_CACHE_TTL_SECONDS` | `300` | No | Cache TTL for resolved did:web documents |
+| `DSP_IAM_DISCLOSE` | `legalName,participantRoles` | No | Claims presented when the credential holds them as disclosures |
+| `DSP_ADMIN_TOKEN` | — | For offers | Admin token of `POST /iam/credentials/offers`; empty refuses every call |
+| `OCM_POLICY_URL` | — | **Yes** | Policy engine serving `infrastructure/opa/bundle` (negotiation permit) |
+| `OCM_CRYPTO_URL`, `OCM_STORAGE_URL`, `OCM_RETRIEVAL_URL` | — | **Yes** | The connector's W-Stack tenant: crypto provider, credential storage, retrieval service |
+| `OCM_TENANT`, `OCM_ACCOUNT`, `OCM_REGION`, `OCM_COUNTRY` | —, `default`, `EU`, `DE` | **Yes** | The tenant, and where its credentials are filed |
+| `OCM_KEY_NAMESPACE`, `OCM_KEY_GROUP`, `OCM_KEY` | —, `default`, — | **Yes** | The tenant key that signs the key bindings |
 | `DSP_IAM_CATALOGUE` | `open` | No | Catalogue access mode: `open` (public), `verified` (gated to trusted issuers) |
 
 ## API Endpoints

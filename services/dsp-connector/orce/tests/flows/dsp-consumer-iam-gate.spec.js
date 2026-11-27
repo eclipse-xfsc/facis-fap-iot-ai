@@ -62,15 +62,15 @@ test('dsp-consumer-issue-call is a link call to iam.issue, wired into prep-trans
     assert.deepEqual(issueCall.wires, [['dsp-consumer-prep-transfer-fn']]);
 });
 
-test('issuance flow exposes dsp-iam-issue-in linked back from the consumer, and returns via link out', () => {
+test('iam.issue flow exposes dsp-iam-issue-in linked back from the consumer, and returns via link out', () => {
     const issuanceFlow = JSON.parse(fs.readFileSync(
-        path.join(__dirname, '../../flows/facis-dsp-iam-issuance.json'), 'utf8'
+        path.join(__dirname, '../../flows/facis-dsp-iam-issue.json'), 'utf8'
     ));
     const linkIn = byId(issuanceFlow, 'dsp-iam-issue-in');
     assert.ok(linkIn, 'dsp-iam-issue-in node must exist');
     assert.equal(linkIn.type, 'link in');
     assert.ok(linkIn.links.includes('dsp-consumer-issue-call'));
-    assert.deepEqual(linkIn.wires, [['dsp-iam-issue-fn']]);
+    assert.deepEqual(linkIn.wires, [['dsp-iam-issue-prep']]);
 
     const linkOut = byId(issuanceFlow, 'dsp-iam-issue-return');
     assert.ok(linkOut, 'dsp-iam-issue-return node must exist');

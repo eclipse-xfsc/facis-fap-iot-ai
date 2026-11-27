@@ -1,201 +1,245 @@
 [
-  {
-    "id": "tab-dsp-negotiations",
-    "type": "tab",
-    "label": "FACIS DSP — Negotiations",
-    "disabled": false,
-    "info": "FR-DSP-002 — Contract Negotiation. Out of scope per SRS §3.2; this is a\nminimal stub that auto-finalises so transfer requests have a valid\nagreementId to reference.\n\n  POST   /dsp/negotiations              — auto-finalise; 202 + {negotiationId}\n  GET    /dsp/negotiations/:id          — return NegotiationProcess; 404 if missing\n  POST   /dsp/negotiations/:id/terminate — set state TERMINATED; 200\n\nID format mirrors Python: neg-<12 lowercase hex>, agr-<12 lowercase hex>.\nState machine: REQUESTED → FINALIZED (immediate) → TERMINATED.\nAfter every mutation, fires dsp.persist.negotiations to checkpoint the\nglobal.get('negotiations') map to disk."
-  },
-  {
-    "id": "dsp-neg-in-create",
-    "type": "http in",
-    "z": "tab-dsp-negotiations",
-    "name": "POST /dsp/negotiations",
-    "url": "/dsp/negotiations",
-    "method": "post",
-    "upload": false,
-    "swaggerDoc": "",
-    "x": 180,
-    "y": 80,
-    "wires": [
-      [
-        "dsp-neg-iam-call"
-      ]
-    ]
-  },
-  {
-    "id": "dsp-neg-iam-call",
-    "type": "link call",
-    "z": "tab-dsp-negotiations",
-    "name": "iam.verify",
-    "links": [
-      "dsp-iam-verify-in"
-    ],
-    "timeout": "5",
-    "x": 300,
-    "y": 80,
-    "wires": [
-      [
-        "dsp-neg-iam-branch"
-      ]
-    ]
-  },
-  {
-    "id": "dsp-neg-iam-branch",
-    "type": "switch",
-    "z": "tab-dsp-negotiations",
-    "name": "iamRejected?",
-    "property": "iamRejected",
-    "propertyType": "msg",
-    "rules": [
-      {
-        "t": "true"
-      },
-      {
-        "t": "false"
-      }
-    ],
-    "checkall": "true",
-    "repair": false,
-    "outputs": 2,
-    "x": 360,
-    "y": 80,
-    "wires": [
-      [
-        "dsp-neg-response"
-      ],
-      [
-        "dsp-neg-create"
-      ]
-    ]
-  },
-  {
-    "id": "dsp-neg-create",
-    "type": "function",
-    "z": "tab-dsp-negotiations",
-    "name": "auto-finalise",
-    "func": "function dspNegotiationError(statusCode, code, reasons, providerPid, consumerPid) {\n    msg.statusCode = statusCode;\n    msg.headers = { 'Content-Type': 'application/json' };\n    msg.payload = {\n        '@context': ['https://w3id.org/dspace/2025/1/context.jsonld'],\n        '@type': 'ContractNegotiationError',\n        providerPid: providerPid || 'urn:facis:dsp:unknown',\n        consumerPid: consumerPid || 'urn:facis:dsp:unknown',\n        code: code,\n        reason: reasons\n    };\n    return msg;\n}\n\nconst body = (msg.payload && typeof msg.payload === 'object') ? msg.payload : {};\nif (!body.counterparty || !body.offerId) {\n    return [dspNegotiationError(422, 'invalid_request', ['counterparty and offerId are required'], null, body.consumerPid), null];\n}\nconst now = new Date().toISOString();\nconst negId = 'neg-' + crypto.randomBytes(6).toString('hex');\nconst agrId = 'agr-' + crypto.randomBytes(6).toString('hex');\n\nconst counterparty = (msg.identity && msg.identity.did) ? msg.identity.did : body.counterparty;\nconst negotiation = {\n    id: negId,\n    providerPid: negId,\n    consumerPid: body.consumerPid || negId,\n    state: 'FINALIZED',\n    agreementId: agrId,\n    offerId: body.offerId,\n    counterparty: counterparty,\n    createdAt: now,\n    updatedAt: now\n};\n\nconst negs = global.get('negotiations') || {};\nnegs[negId] = negotiation;\nglobal.set('negotiations', negs);\n\nnode.log('Negotiation ' + negId + ' auto-finalised → agreement ' + agrId);\n\nmsg.payload = { negotiationId: negId };\nmsg.headers = { 'Content-Type': 'application/json' };\nmsg.statusCode = 202;\nreturn [msg, { payload: '' }];\n",
-    "outputs": 2,
-    "timeout": "",
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [
-      {
-        "var": "crypto",
-        "module": "crypto"
-      }
-    ],
-    "x": 430,
-    "y": 80,
-    "wires": [
-      [
-        "dsp-neg-response"
-      ],
-      [
-        "dsp-neg-link-out-persist"
-      ]
-    ]
-  },
-  {
-    "id": "dsp-neg-in-get",
-    "type": "http in",
-    "z": "tab-dsp-negotiations",
-    "name": "GET /dsp/negotiations/:id",
-    "url": "/dsp/negotiations/:id",
-    "method": "get",
-    "upload": false,
-    "swaggerDoc": "",
-    "x": 200,
-    "y": 160,
-    "wires": [
-      [
-        "dsp-neg-get"
-      ]
-    ]
-  },
-  {
-    "id": "dsp-neg-get",
-    "type": "function",
-    "z": "tab-dsp-negotiations",
-    "name": "read by id",
-    "func": "function dspNegotiationError(statusCode, code, reasons, providerPid, consumerPid) {\n    msg.statusCode = statusCode;\n    msg.headers = { 'Content-Type': 'application/json' };\n    msg.payload = {\n        '@context': ['https://w3id.org/dspace/2025/1/context.jsonld'],\n        '@type': 'ContractNegotiationError',\n        providerPid: providerPid || 'urn:facis:dsp:unknown',\n        consumerPid: consumerPid || 'urn:facis:dsp:unknown',\n        code: code,\n        reason: reasons\n    };\n    return msg;\n}\n\nconst negs = global.get('negotiations') || {};\nconst id = msg.req.params.id;\nconst found = negs[id];\nif (!found) {\n    dspNegotiationError(404, 'not_found', ['Negotiation ' + id + ' not found'], id, id);\n} else {\n    msg.statusCode = 200;\n    msg.payload = found;\n}\nmsg.headers = { 'Content-Type': 'application/json' };\nreturn msg;\n",
-    "outputs": 1,
-    "timeout": "",
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [],
-    "x": 440,
-    "y": 160,
-    "wires": [
-      [
-        "dsp-neg-response"
-      ]
-    ]
-  },
-  {
-    "id": "dsp-neg-in-terminate",
-    "type": "http in",
-    "z": "tab-dsp-negotiations",
-    "name": "POST /dsp/negotiations/:id/terminate",
-    "url": "/dsp/negotiations/:id/terminate",
-    "method": "post",
-    "upload": false,
-    "swaggerDoc": "",
-    "x": 230,
-    "y": 240,
-    "wires": [
-      [
-        "dsp-neg-terminate"
-      ]
-    ]
-  },
-  {
-    "id": "dsp-neg-terminate",
-    "type": "function",
-    "z": "tab-dsp-negotiations",
-    "name": "terminate",
-    "func": "function dspNegotiationError(statusCode, code, reasons, providerPid, consumerPid) {\n    msg.statusCode = statusCode;\n    msg.headers = { 'Content-Type': 'application/json' };\n    msg.payload = {\n        '@context': ['https://w3id.org/dspace/2025/1/context.jsonld'],\n        '@type': 'ContractNegotiationError',\n        providerPid: providerPid || 'urn:facis:dsp:unknown',\n        consumerPid: consumerPid || 'urn:facis:dsp:unknown',\n        code: code,\n        reason: reasons\n    };\n    return msg;\n}\n\nconst negs = global.get('negotiations') || {};\nconst id = msg.req.params.id;\nconst neg = negs[id];\nif (!neg) {\n    dspNegotiationError(404, 'not_found', ['Negotiation ' + id + ' not found'], id, id);\n    msg.headers = { 'Content-Type': 'application/json' };\n    return [msg, null];\n}\nconst now = new Date().toISOString();\nconst terminated = Object.assign({}, neg, { state: 'TERMINATED', updatedAt: now });\nnegs[id] = terminated;\nglobal.set('negotiations', negs);\n\nmsg.payload = terminated;\nmsg.headers = { 'Content-Type': 'application/json' };\nmsg.statusCode = 200;\nreturn [msg, { payload: '' }];\n",
-    "outputs": 2,
-    "timeout": "",
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [],
-    "x": 460,
-    "y": 240,
-    "wires": [
-      [
-        "dsp-neg-response"
-      ],
-      [
-        "dsp-neg-link-out-persist"
-      ]
-    ]
-  },
-  {
-    "id": "dsp-neg-response",
-    "type": "http response",
-    "z": "tab-dsp-negotiations",
-    "name": "negotiation response",
-    "statusCode": "",
-    "headers": {},
-    "x": 720,
-    "y": 160,
-    "wires": []
-  },
-  {
-    "id": "dsp-neg-link-out-persist",
-    "type": "link out",
-    "z": "tab-dsp-negotiations",
-    "name": "dsp.persist.negotiations →",
-    "mode": "link",
-    "links": [
-      "dsp-link-in-persist-negotiations"
-    ],
-    "x": 730,
-    "y": 240,
-    "wires": []
-  }
+    {
+        "id": "tab-dsp-negotiations",
+        "type": "tab",
+        "label": "DSP negotiations — negotiation.permit gate (no auto-finalize)",
+        "disabled": false,
+        "info": ""
+    },
+    {
+        "id": "dsp-neg-in-create",
+        "type": "http in",
+        "z": "tab-dsp-negotiations",
+        "name": "POST /dsp/negotiations",
+        "method": "post",
+        "url": "/dsp/negotiations",
+        "x": 120,
+        "y": 120,
+        "wires": [
+            [
+                "dsp-neg-iam-call"
+            ]
+        ]
+    },
+    {
+        "id": "dsp-neg-iam-call",
+        "type": "link call",
+        "z": "tab-dsp-negotiations",
+        "name": "iam.verify",
+        "links": [
+            "dsp-iam-verify-in"
+        ],
+        "x": 300,
+        "y": 120,
+        "wires": [
+            [
+                "dsp-neg-iam-branch"
+            ]
+        ]
+    },
+    {
+        "id": "dsp-neg-iam-branch",
+        "type": "switch",
+        "z": "tab-dsp-negotiations",
+        "name": "iamRejected?",
+        "property": "iamRejected",
+        "propertyType": "msg",
+        "rules": [
+            {
+                "t": "true"
+            },
+            {
+                "t": "else"
+            }
+        ],
+        "x": 480,
+        "y": 120,
+        "wires": [
+            [
+                "dsp-neg-response"
+            ],
+            [
+                "dsp-neg-create"
+            ]
+        ]
+    },
+    {
+        "id": "dsp-neg-create",
+        "type": "function",
+        "z": "tab-dsp-negotiations",
+        "name": "create REQUESTED — no auto-finalize",
+        "func": "function dspNegotiationError(statusCode, code, reasons, providerPid, consumerPid) {\n    msg.statusCode = statusCode;\n    msg.headers = { 'Content-Type': 'application/json' };\n    msg.payload = {\n        '@context': ['https://w3id.org/dspace/2025/1/context.jsonld'],\n        '@type': 'ContractNegotiationError',\n        providerPid: providerPid || 'urn:facis:dsp:unknown',\n        consumerPid: consumerPid || 'urn:facis:dsp:unknown',\n        code: code,\n        reason: reasons\n    };\n    return msg;\n}\n\n// NO auto-finalize. The negotiation is created REQUESTED; the\n// negotiation.permit policy gate (dsp-neg-check-permit) is the ONLY place that\n// can move it to FINALIZED or TERMINATED.\nconst body = (msg.payload && typeof msg.payload === 'object') ? msg.payload : {};\nif (!body.counterparty || !body.offerId) {\n    return [null, dspNegotiationError(422, 'invalid_request', ['counterparty and offerId are required'], null, body.consumerPid)];\n}\nconst now = new Date().toISOString();\nconst negId = 'neg-' + crypto.randomBytes(6).toString('hex');\nconst counterparty = (msg.identity && msg.identity.did) ? msg.identity.did : body.counterparty;\nconst negotiation = {\n    id: negId,\n    providerPid: negId,\n    consumerPid: body.consumerPid || negId,\n    state: 'REQUESTED',\n    offerId: body.offerId,\n    dataset: body.dataset || null,\n    purpose: body.purpose || null,\n    constraints: Array.isArray(body.constraints) ? body.constraints : [],\n    counterparty: counterparty,\n    createdAt: now,\n    updatedAt: now\n};\nconst negs = global.get('negotiations') || {};\nnegs[negId] = negotiation;\nglobal.set('negotiations', negs);\n\nmsg._negId = negId;\nmsg.payload = { negotiationId: negId, state: 'REQUESTED' };\nmsg.headers = { 'Content-Type': 'application/json' };\nmsg.statusCode = 202;\nreturn [msg, null];\n",
+        "outputs": 2,
+        "x": 660,
+        "y": 160,
+        "wires": [
+            [
+                "dsp-neg-prep-permit"
+            ],
+            [
+                "dsp-neg-response"
+            ]
+        ],
+        "libs": [
+            {
+                "var": "crypto",
+                "module": "crypto"
+            }
+        ]
+    },
+    {
+        "id": "dsp-neg-prep-permit",
+        "type": "function",
+        "z": "tab-dsp-negotiations",
+        "name": "build negotiation.permit input",
+        "func": "function dspNegotiationError(statusCode, code, reasons, providerPid, consumerPid) {\n    msg.statusCode = statusCode;\n    msg.headers = { 'Content-Type': 'application/json' };\n    msg.payload = {\n        '@context': ['https://w3id.org/dspace/2025/1/context.jsonld'],\n        '@type': 'ContractNegotiationError',\n        providerPid: providerPid || 'urn:facis:dsp:unknown',\n        consumerPid: consumerPid || 'urn:facis:dsp:unknown',\n        code: code,\n        reason: reasons\n    };\n    return msg;\n}\n\n// build the policy-engine input for negotiation.permit\n// (OPA data API shape: POST /v1/data/facis/negotiation/permit, body {input}).\nconst negs = global.get('negotiations') || {};\nconst neg = negs[msg._negId];\nif (!neg) return [null, dspNegotiationError(500, 'internal', ['negotiation ' + msg._negId + ' not in store'], null, null)];\nconst base = (env.get('OCM_POLICY_URL') || '').replace(/\\/+$/, '');\nif (!base) return [null, dspNegotiationError(500, 'config_missing', ['OCM_POLICY_URL not set — fail closed'], null, null)];\nmsg._iamOrigPayload = msg.payload;\nmsg.url = base + '/v1/data/facis/negotiation/permit';\nmsg.method = 'POST';\nmsg.headers = { 'Content-Type': 'application/json' };\nmsg.payload = {\n    input: {\n// the permit subject is the verified participant — did AND participantRoles\n// from msg.identity (set by iam.verify from the VC credentialSubject). The rego\n// checks roles against data.facis.vocabulary.participant_roles.\n        subject: { did: (msg.identity && msg.identity.did) || neg.counterparty, roles: (msg.identity && Array.isArray(msg.identity.roles)) ? msg.identity.roles : [] },\n        action: 'negotiation.permit',\n        resource: { negotiationId: neg.id, offerId: neg.offerId, dataset: neg.dataset },\n        context: { purpose: neg.purpose, constraints: neg.constraints }\n    }\n};\nreturn [msg, null];\n",
+        "outputs": 2,
+        "x": 660,
+        "y": 260,
+        "wires": [
+            [
+                "dsp-neg-permit-policy"
+            ],
+            [
+                "dsp-neg-response"
+            ]
+        ]
+    },
+    {
+        "id": "dsp-neg-permit-policy",
+        "type": "http request",
+        "z": "tab-dsp-negotiations",
+        "name": "POST policy /v1/data/facis/negotiation/permit (OPA/TSA)",
+        "method": "use",
+        "url": "",
+        "headers": [],
+        "x": 880,
+        "y": 260,
+        "wires": [
+            [
+                "dsp-neg-check-permit"
+            ]
+        ],
+        "ret": "obj"
+    },
+    {
+        "id": "dsp-neg-check-permit",
+        "type": "function",
+        "z": "tab-dsp-negotiations",
+        "name": "permit -> FINALIZED / deny -> TERMINATED with reason",
+        "func": "function dspNegotiationError(statusCode, code, reasons, providerPid, consumerPid) {\n    msg.statusCode = statusCode;\n    msg.headers = { 'Content-Type': 'application/json' };\n    msg.payload = {\n        '@context': ['https://w3id.org/dspace/2025/1/context.jsonld'],\n        '@type': 'ContractNegotiationError',\n        providerPid: providerPid || 'urn:facis:dsp:unknown',\n        consumerPid: consumerPid || 'urn:facis:dsp:unknown',\n        code: code,\n        reason: reasons\n    };\n    return msg;\n}\n\n// permit -> FINALIZED, deny -> TERMINATED WITH a reason. The\n// decision is applied to the persisted store (global negotiations -> Postgres\n// via the persist link-out); the HTTP response carries the final state.\nconst decision = msg.payload && msg.payload.result;\nif ('_iamOrigPayload' in msg) { msg.payload = msg._iamOrigPayload; delete msg._iamOrigPayload; }\nconst negs = global.get('negotiations') || {};\nconst neg = negs[msg._negId];\nif (!neg) return [null, null, dspNegotiationError(500, 'internal', ['negotiation missing'], null, null)];\nif (!decision || typeof decision.allow !== 'boolean') {\n    // fail closed: policy unreachable -> 502, state stays REQUESTED\n    return [null, null, dspNegotiationError(502, 'policy_unreachable', ['negotiation.permit engine did not answer a boolean verdict'], neg.providerPid, neg.consumerPid)];\n}\nconst now = new Date().toISOString();\nif (decision.allow === true) {\n    neg.state = 'FINALIZED';\n    neg.agreementId = 'agr-' + crypto.randomBytes(6).toString('hex');\n    neg.updatedAt = now;\n    negs[neg.id] = neg;\n    global.set('negotiations', negs);\n    msg.statusCode = 200;\n    msg.payload = neg;\n    msg.headers = { 'Content-Type': 'application/json' };\n    return [msg, null, null];\n}\nneg.state = 'TERMINATED';\nneg.terminationReason = decision.reason || 'denied by negotiation.permit';\nneg.updatedAt = now;\nnegs[neg.id] = neg;\nglobal.set('negotiations', negs);\nmsg.statusCode = 200;\nmsg.payload = neg;\nmsg.headers = { 'Content-Type': 'application/json' };\nreturn [null, msg, null];\n",
+        "outputs": 3,
+        "x": 1120,
+        "y": 260,
+        "wires": [
+            [
+                "dsp-neg-response",
+                "dsp-neg-link-out-persist"
+            ],
+            [
+                "dsp-neg-response",
+                "dsp-neg-link-out-persist"
+            ],
+            [
+                "dsp-neg-response"
+            ]
+        ],
+        "libs": [
+            {
+                "var": "crypto",
+                "module": "crypto"
+            }
+        ]
+    },
+    {
+        "id": "dsp-neg-in-get",
+        "type": "http in",
+        "z": "tab-dsp-negotiations",
+        "name": "GET /dsp/negotiations/:id",
+        "method": "get",
+        "url": "/dsp/negotiations/:id",
+        "x": 120,
+        "y": 380,
+        "wires": [
+            [
+                "dsp-neg-get"
+            ]
+        ]
+    },
+    {
+        "id": "dsp-neg-get",
+        "type": "function",
+        "z": "tab-dsp-negotiations",
+        "name": "read by id",
+        "func": "function dspNegotiationError(statusCode, code, reasons, providerPid, consumerPid) {\n    msg.statusCode = statusCode;\n    msg.headers = { 'Content-Type': 'application/json' };\n    msg.payload = {\n        '@context': ['https://w3id.org/dspace/2025/1/context.jsonld'],\n        '@type': 'ContractNegotiationError',\n        providerPid: providerPid || 'urn:facis:dsp:unknown',\n        consumerPid: consumerPid || 'urn:facis:dsp:unknown',\n        code: code,\n        reason: reasons\n    };\n    return msg;\n}\n\nconst negs = global.get('negotiations') || {};\nconst id = msg.req.params.id;\nconst found = negs[id];\nif (!found) {\n    dspNegotiationError(404, 'not_found', ['Negotiation ' + id + ' not found'], id, id);\n} else {\n    msg.statusCode = 200;\n    msg.payload = found;\n}\nmsg.headers = { 'Content-Type': 'application/json' };\nreturn msg;\n",
+        "outputs": 1,
+        "x": 320,
+        "y": 380,
+        "wires": [
+            [
+                "dsp-neg-response"
+            ]
+        ]
+    },
+    {
+        "id": "dsp-neg-in-terminate",
+        "type": "http in",
+        "z": "tab-dsp-negotiations",
+        "name": "POST /dsp/negotiations/:id/terminate",
+        "method": "post",
+        "url": "/dsp/negotiations/:id/terminate",
+        "x": 120,
+        "y": 460,
+        "wires": [
+            [
+                "dsp-neg-terminate"
+            ]
+        ]
+    },
+    {
+        "id": "dsp-neg-terminate",
+        "type": "function",
+        "z": "tab-dsp-negotiations",
+        "name": "terminate",
+        "func": "function dspNegotiationError(statusCode, code, reasons, providerPid, consumerPid) {\n    msg.statusCode = statusCode;\n    msg.headers = { 'Content-Type': 'application/json' };\n    msg.payload = {\n        '@context': ['https://w3id.org/dspace/2025/1/context.jsonld'],\n        '@type': 'ContractNegotiationError',\n        providerPid: providerPid || 'urn:facis:dsp:unknown',\n        consumerPid: consumerPid || 'urn:facis:dsp:unknown',\n        code: code,\n        reason: reasons\n    };\n    return msg;\n}\n\nconst negs = global.get('negotiations') || {};\nconst id = msg.req.params.id;\nconst neg = negs[id];\nif (!neg) {\n    dspNegotiationError(404, 'not_found', ['Negotiation ' + id + ' not found'], id, id);\n    msg.headers = { 'Content-Type': 'application/json' };\n    return [msg, null];\n}\nconst now = new Date().toISOString();\nconst terminated = Object.assign({}, neg, { state: 'TERMINATED', updatedAt: now });\nnegs[id] = terminated;\nglobal.set('negotiations', negs);\nmsg.payload = terminated;\nmsg.headers = { 'Content-Type': 'application/json' };\nmsg.statusCode = 200;\n// the termination is persisted (output 1 -> dsp.persist.negotiations)\nreturn [msg, msg];\n",
+        "outputs": 2,
+        "x": 340,
+        "y": 460,
+        "wires": [
+            [
+                "dsp-neg-response"
+            ],
+            [
+                "dsp-neg-link-out-persist"
+            ]
+        ],
+        "libs": [
+            {
+                "var": "crypto",
+                "module": "crypto"
+            }
+        ]
+    },
+    {
+        "id": "dsp-neg-response",
+        "type": "http response",
+        "z": "tab-dsp-negotiations",
+        "name": "negotiation response",
+        "x": 1340,
+        "y": 200,
+        "wires": []
+    },
+    {
+        "id": "dsp-neg-link-out-persist",
+        "type": "link out",
+        "z": "tab-dsp-negotiations",
+        "name": "dsp.persist.negotiations →",
+        "links": [
+            "dsp-link-in-persist-negotiations"
+        ],
+        "x": 1340,
+        "y": 320,
+        "wires": [],
+        "mode": "link"
+    }
 ]

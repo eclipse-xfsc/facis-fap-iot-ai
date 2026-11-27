@@ -1,0 +1,227 @@
+[
+    {
+        "id": "tab-dsp-iam-receive",
+        "type": "tab",
+        "label": "DSP iam.receive — accept the participant credential into the tenant wallet",
+        "disabled": false,
+        "info": "POST /iam/credentials/offers (admin, Bearer DSP_ADMIN_TOKEN): the connector accepts its participant credential, offered by the federation issuer, into its own W-Stack tenant. The offer is resolved by the tenant's retrieval service, checked (trusted issuer, SD-JWT VC of the participant type), then accepted with the tenant's key or refused and deleted. The participant decides what enters its wallet; the federation issuer only offers."
+    },
+    {
+        "id": "dsp-iam-recv-in",
+        "type": "http in",
+        "z": "tab-dsp-iam-receive",
+        "name": "POST /iam/credentials/offers",
+        "url": "/iam/credentials/offers",
+        "method": "post",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 160,
+        "y": 100,
+        "wires": [
+            [
+                "dsp-iam-recv-start"
+            ]
+        ]
+    },
+    {
+        "id": "dsp-iam-recv-start",
+        "type": "function",
+        "z": "tab-dsp-iam-receive",
+        "name": "admin check, hand the offer to the tenant retrieval service",
+        "func": "// POST /iam/credentials/offers — the connector accepts a credential offered\n// to it by the federation issuer, into its own W-Stack tenant (its wallet).\n// Admin only: Authorization: Bearer <DSP_ADMIN_TOKEN>; no token configured\n// refuses every call. Body: {\"offer\": \"openid-credential-offer://...\"} (the\n// link the issuer gave), {\"credential_offer_uri\": \"https://...\"} or\n// {\"credential_offer\": <offer JSON>}.\n// Hands the offer to the tenant's retrieval service, which resolves it (issuer\n// metadata) without accepting it yet.\n// Outputs: 1 = retrieval request, 2 = answer to the caller.\nconst answer = (statusCode, body) => {\n    msg.statusCode = statusCode;\n    msg.headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };\n    msg.payload = body;\n    return [null, msg];\n};\nmsg._recv = { correlationId: crypto.randomUUID() };\n\nconst admin = env.get('DSP_ADMIN_TOKEN') || '';\nconst auth = ((msg.req && msg.req.headers) || {}).authorization || '';\nconst m = /^Bearer\\s+(\\S+)$/i.exec(auth.trim());\nconst given = m ? Buffer.from(m[1]) : Buffer.alloc(0);\nif (!admin || given.length !== Buffer.byteLength(admin) || !crypto.timingSafeEqual(given, Buffer.from(admin))) {\n    msg._recv.result = 'unauthorized';\n    return answer(401, { error: 'unauthorized' });\n}\n\nconst base = (env.get('OCM_RETRIEVAL_URL') || '').replace(/\\/+$/, '');\nconst tenant = env.get('OCM_TENANT') || '';\nconst group = env.get('OCM_ACCOUNT') || '';\nif (!base || !tenant || !group) return answer(500, { error: 'config_missing', reason: 'OCM_RETRIEVAL_URL, OCM_TENANT and OCM_ACCOUNT are required' });\n\nconst b = msg.payload && typeof msg.payload === 'object' ? msg.payload : {};\n// the retrieval service takes the offer as an offer link in either field\nconst LINK = 'openid-credential-offer://?';\nlet offer = null;\nif (typeof b.offer === 'string') {\n    try {\n        const q = new url.URL(b.offer.replace(/^openid-credential-offer:\\/\\//, 'https://offer.invalid/')).searchParams;\n        if (q.get('credential_offer_uri')) offer = { credential_offer_uri: b.offer };\n        else if (q.get('credential_offer')) offer = { credential_offer: b.offer };\n    } catch (e) {\n        offer = null;\n    }\n} else if (typeof b.credential_offer_uri === 'string' && /^https:\\/\\//.test(b.credential_offer_uri)) {\n    offer = { credential_offer_uri: LINK + 'credential_offer_uri=' + encodeURIComponent(b.credential_offer_uri) };\n} else if (b.credential_offer && (typeof b.credential_offer === 'string' || typeof b.credential_offer === 'object')) {\n    const json = typeof b.credential_offer === 'string' ? b.credential_offer : JSON.stringify(b.credential_offer);\n    offer = { credential_offer: LINK + 'credential_offer=' + encodeURIComponent(json) };\n}\nif (!offer) return answer(400, { error: 'invalid_request', reason: 'credential_offer, credential_offer_uri or an openid-credential-offer:// link is required' });\n\nmsg._recv.base = base + '/v1/tenants/' + encodeURIComponent(tenant) + '/offering';\nmsg._recv.group = group;\nmsg.url = msg._recv.base + '/retrieve/' + encodeURIComponent(group);\nmsg.method = 'PUT';\nmsg.headers = { 'Content-Type': 'application/json' };\nmsg.payload = offer;\nreturn [msg, null];\n",
+        "outputs": 2,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [
+            {
+                "var": "crypto",
+                "module": "crypto"
+            },
+            {
+                "var": "url",
+                "module": "url"
+            }
+        ],
+        "x": 400,
+        "y": 100,
+        "wires": [
+            [
+                "dsp-iam-recv-retrieve"
+            ],
+            [
+                "dsp-iam-recv-event"
+            ]
+        ]
+    },
+    {
+        "id": "dsp-iam-recv-retrieve",
+        "type": "http request",
+        "z": "tab-dsp-iam-receive",
+        "name": "PUT retrieval /v1/tenants/{t}/offering/retrieve/{group}",
+        "method": "use",
+        "ret": "obj",
+        "paytoqs": "ignore",
+        "url": "",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": false,
+        "headers": [],
+        "x": 650,
+        "y": 100,
+        "wires": [
+            [
+                "dsp-iam-recv-resolved"
+            ]
+        ]
+    },
+    {
+        "id": "dsp-iam-recv-resolved",
+        "type": "function",
+        "z": "tab-dsp-iam-receive",
+        "name": "offer resolved? read it",
+        "func": "// The retrieval service answers the id of the offer it resolved, or refuses an\n// offer it could not resolve or validate. Then read the resolved offer.\n// Outputs: 1 = list request, 2 = answer to the caller.\nconst answer = (statusCode, body) => {\n    msg.statusCode = statusCode;\n    msg.headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };\n    msg.payload = body;\n    return [null, msg];\n};\nconst code = msg.statusCode;\ndelete msg.statusCode;\nif (code !== 200 || typeof msg.payload !== 'string' || !/^[0-9a-f-]{36}$/i.test(msg.payload)) {\n    msg._recv.result = 'offer_refused_by_wallet';\n    return answer(502, { error: 'offer_not_resolved', reason: 'the tenant retrieval service could not resolve or validate the offer' });\n}\nmsg._recv.requestId = msg.payload;\nmsg.url = msg._recv.base + '/list/' + encodeURIComponent(msg._recv.group);\nmsg.method = 'GET';\nmsg.headers = { accept: 'application/json' };\nmsg.payload = '';\nreturn [msg, null];\n",
+        "outputs": 2,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 880,
+        "y": 100,
+        "wires": [
+            [
+                "dsp-iam-recv-list"
+            ],
+            [
+                "dsp-iam-recv-event"
+            ]
+        ]
+    },
+    {
+        "id": "dsp-iam-recv-list",
+        "type": "http request",
+        "z": "tab-dsp-iam-receive",
+        "name": "GET retrieval /v1/tenants/{t}/offering/list/{group}",
+        "method": "use",
+        "ret": "obj",
+        "paytoqs": "ignore",
+        "url": "",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": false,
+        "headers": [],
+        "x": 650,
+        "y": 180,
+        "wires": [
+            [
+                "dsp-iam-recv-check"
+            ]
+        ]
+    },
+    {
+        "id": "dsp-iam-recv-check",
+        "type": "function",
+        "z": "tab-dsp-iam-receive",
+        "name": "trusted issuer and participant credential type? accept or refuse",
+        "func": "// Decide on the resolved offer before anything is issued:\n//   - the issuer is a trusted one: its did:web (DSP_TRUSTED_ISSUERS) is the\n//     offer's credential_issuer URL (did:web:host[:path] <-> https://host[/path]);\n//   - every offered configuration is an SD-JWT VC (dc+sd-jwt) of the\n//     participant credential type (vct = DSP_PARTICIPANT_VCT).\n// Accept: the retrieval service runs OpenID4VCI with a proof signed by the\n// tenant's key (OCM_KEY_NAMESPACE/OCM_KEY_GROUP/OCM_KEY), the key the\n// credential then binds, and stores the credential. Refuse: the offer is\n// deleted, nothing is issued.\n// Outputs: 1 = clear request (accept or refuse), 2 = answer to the caller.\nconst answer = (statusCode, body) => {\n    msg.statusCode = statusCode;\n    msg.headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };\n    msg.payload = body;\n    return [null, msg];\n};\nconst code = msg.statusCode;\ndelete msg.statusCode;\nconst rows = code === 200 && Array.isArray(msg.payload) ? msg.payload : null;\nconst row = rows && rows.find((r) => r && r.requestId === msg._recv.requestId);\nif (!row) {\n    msg._recv.result = 'offer_not_found';\n    return answer(502, { error: 'offer_not_found', reason: 'the resolved offer is not in the tenant retrieval service' });\n}\n\nconst didToUrl = (did) => {\n    if (typeof did !== 'string' || !did.startsWith('did:web:')) return null;\n    const segs = did.slice('did:web:'.length).split(':').map(decodeURIComponent);\n    return 'https://' + segs.join('/');\n};\nconst norm = (u) => String(u || '').replace(/\\/+$/, '');\nconst offered = row.offering || {};\nconst meta = row.metadata || {};\nconst issuerUrl = norm(offered.credential_issuer);\nconst trusted = (env.get('DSP_TRUSTED_ISSUERS') || '').split(/[\\s,]+/).filter(Boolean);\nconst issuerDid = trusted.find((d) => norm(didToUrl(d)) === issuerUrl);\nconst vct = env.get('DSP_PARTICIPANT_VCT') || '';\nconst ids = Array.isArray(offered.credential_configuration_ids) ? offered.credential_configuration_ids : [];\nconst confs = meta.credential_configurations_supported || {};\nconst bad = ids.length === 0 ? 'no configuration offered'\n    : ids.find((id) => !confs[id] || confs[id].format !== 'dc+sd-jwt' || confs[id].vct !== vct);\n\nmsg._recv.issuer = issuerDid || issuerUrl || null;\nmsg._recv.configurations = ids;\nlet refusal = null;\nif (!issuerDid) refusal = 'the offering issuer is not a trusted issuer: ' + (issuerUrl || 'none');\nelse if (!vct) refusal = 'DSP_PARTICIPANT_VCT not configured';\nelse if (bad) refusal = 'not a participant credential (dc+sd-jwt, vct ' + vct + '): ' + bad;\n\nconst ns = env.get('OCM_KEY_NAMESPACE') || '';\nconst key = env.get('OCM_KEY') || '';\nif (!refusal && (!ns || !key)) refusal = 'OCM_KEY_NAMESPACE and OCM_KEY are required to accept';\n\nmsg._recv.accept = !refusal;\nmsg._recv.refusal = refusal;\nmsg.url = msg._recv.base + '/clear/' + encodeURIComponent(msg._recv.group) + '/' + encodeURIComponent(msg._recv.requestId);\nmsg.method = 'DELETE';\nmsg.headers = { 'Content-Type': 'application/json' };\nmsg.payload = refusal ? { accept: false } : { accept: true, holderKey: key, holderNamespace: ns, holderGroup: env.get('OCM_KEY_GROUP') || '' };\nreturn [msg, null];\n",
+        "outputs": 2,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 880,
+        "y": 180,
+        "wires": [
+            [
+                "dsp-iam-recv-clear"
+            ],
+            [
+                "dsp-iam-recv-event"
+            ]
+        ]
+    },
+    {
+        "id": "dsp-iam-recv-clear",
+        "type": "http request",
+        "z": "tab-dsp-iam-receive",
+        "name": "DELETE retrieval /v1/tenants/{t}/offering/clear/{group}/{id}",
+        "method": "use",
+        "ret": "obj",
+        "paytoqs": "ignore",
+        "url": "",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": false,
+        "headers": [],
+        "x": 650,
+        "y": 260,
+        "wires": [
+            [
+                "dsp-iam-recv-done"
+            ]
+        ]
+    },
+    {
+        "id": "dsp-iam-recv-done",
+        "type": "function",
+        "z": "tab-dsp-iam-receive",
+        "name": "outcome (never the credential)",
+        "func": "// The outcome. The credential itself is never returned or logged: the caller\n// gets the request id, the issuer and the configuration; iam.issue reads the\n// credential from the tenant storage when it presents it.\nconst code = msg.statusCode;\nconst r = msg._recv;\nmsg.headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };\nif (!r.accept) {\n    r.result = 'refused';\n    msg.statusCode = 403;\n    msg.payload = { error: 'offer_refused', reason: r.refusal, requestId: r.requestId, deleted: code === 200 };\n} else if (code === 200) {\n    r.result = 'stored';\n    msg.statusCode = 201;\n    msg.payload = { status: 'stored', requestId: r.requestId, issuer: r.issuer, configurations: r.configurations };\n} else {\n    r.result = 'issuance_failed';\n    msg.statusCode = 502;\n    msg.payload = { error: 'issuance_failed', reason: 'the tenant retrieval service could not obtain or store the credential', requestId: r.requestId };\n}\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 880,
+        "y": 260,
+        "wires": [
+            [
+                "dsp-iam-recv-event"
+            ]
+        ]
+    },
+    {
+        "id": "dsp-iam-recv-event",
+        "type": "function",
+        "z": "tab-dsp-iam-receive",
+        "name": "log iam.receive event with correlation id",
+        "func": "// Every offer handled is logged as a structured event with its correlation id\n// (no offer content, no credential).\nconst r = msg._recv || {};\nconst event = {\n    event: 'iam.receive',\n    correlationId: r.correlationId || null,\n    at: new Date().toISOString(),\n    result: r.result || null,\n    requestId: r.requestId || null,\n    issuer: r.issuer || null,\n    configurations: r.configurations || null,\n    reason: r.refusal || null\n};\nnode.warn(JSON.stringify(event));\ndelete msg._recv;\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1100,
+        "y": 180,
+        "wires": [
+            [
+                "dsp-iam-recv-response"
+            ]
+        ]
+    },
+    {
+        "id": "dsp-iam-recv-response",
+        "type": "http response",
+        "z": "tab-dsp-iam-receive",
+        "name": "",
+        "statusCode": "",
+        "headers": {},
+        "x": 1300,
+        "y": 180,
+        "wires": []
+    }
+]

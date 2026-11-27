@@ -59,8 +59,8 @@ code), so the list can change without a new schema version.
 | Format | State | Notes |
 |---|---|---|
 | JSON Schema | these files | Format-independent claim rules |
-| `jwt_vc_json` | generated in the issuer metadata | The format that works end to end on the W-Stack today |
-| SD-JWT (`dc+sd-jwt`) | designed, not generated | When enabled, `name` and `email` are selectively disclosable; `org_did` and `roles` are always disclosed |
+| `jwt_vc_json` | generated in the issuer metadata (`<id>_jwt`) | Claims under `credentialSubject`. The W-Stack's crypto provider doesn't verify this format in its current release |
+| SD-JWT VC (`dc+sd-jwt`) | generated in the issuer metadata (`<id>_sd_jwt`) | The format the DSP connector and the guard verify. Claims at the top level, the subject DID in `sub`, the type in `vct` (`--vct-base`, a placeholder by default), the holder key in `cnf`. For the role credential, `name` and `email` are meant to be selectively disclosable; `org_did` and `roles` are always disclosed |
 | JSON-LD (`ldp_vc`) | context provided, not generated | |
 
 Adding a format means more configurations in the generator; the schemas stay

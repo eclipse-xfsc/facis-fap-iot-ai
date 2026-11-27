@@ -42,6 +42,28 @@ orcePodEnv:
   renderSecret: true
   secretName: facis-sftp-orce-env
 
+# ---------------------------------------------------------------------------
+# External secrets
+# ---------------------------------------------------------------------------
+# -- ExternalSecrets (External Secrets Operator) for the Secrets this chart
+#    does not render. Off by default.
+externalSecrets:
+  enabled: false
+  # -- The SecretStore or ClusterSecretStore to read from.
+  secretStoreRef:
+    kind: SecretStore
+    name: ""
+  refreshInterval: 1h
+  # -- Store key holding sftp_password, for <fullname>-credentials. Used
+  #    when sftp.renderSecret=false.
+  credentials:
+    remoteKey: ""
+  # -- Store key holding the ORCE pod's environment (the keys
+  #    templates/orce-env-secret.yaml renders). Used when
+  #    orcePodEnv.renderSecret=false.
+  orcePodEnv:
+    remoteKey: ""
+
 image:
   repository: ghcr.io/eclipse-xfsc/facis-fap-iot-ai/sftp-ingestion-service
   tag: ""
@@ -62,8 +84,12 @@ sftp:
   host: ""
   port: 22
   username: facis
-  # -- Password (stored in Secret)
+  # -- Password (stored in the <fullname>-credentials Secret)
   password: ""
+  # -- Render <fullname>-credentials from sftp.password (default). Set to
+  #    false when that Secret (key sftp_password) comes from elsewhere, e.g.
+  #    an ExternalSecret (externalSecrets below).
+  renderSecret: true
   remotePath: /ingest
   archivePath: /archive
   pollIntervalSeconds: 60

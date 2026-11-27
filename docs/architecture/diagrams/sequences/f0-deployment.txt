@@ -2,7 +2,7 @@
 // The Mermaid copy in ../../icam-flows.md must be kept in step.
 title F0 Deployment with the Builder nodes
 autonumber 1
-participant "FAP deployment flow\n(ORCE)" as DEP
+participant "IoT & AI deployment flow\n(ORCE)" as DEP
 participant "ESB OCM-WStack\nBuilder node" as OCM
 participant "ESB PCM\nBuilder node" as PCM
 participant "Crypto provider\n(OpenBao)" as CRY

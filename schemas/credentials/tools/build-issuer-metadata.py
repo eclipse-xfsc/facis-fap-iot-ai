@@ -5,9 +5,13 @@ Reads the *.schema.json files and writes generated/issuer-credential-configurati
 the shape the OCM W-Stack well-known service (1.5.2) stores: OID4VCI 1.0 fields plus the
 W-Stack's 'schema' (credentialSubject, references inlined) and 'topic' (the NATS subject of
 the issuing plugin). The issuing plugin registers them over NATS
-'wellknown.issuer.registration'. Only the jwt_vc_json format is generated.
+'wellknown.issuer.registration'. Two formats per credential:
+  - jwt_vc_json (<id>_jwt): claims under credentialSubject;
+  - SD-JWT VC, dc+sd-jwt (<id>_sd_jwt): claims at the top level, the subject DID in `sub`,
+    the type in `vct` (<vct base>/<credential type>), the holder key in `cnf`.
 
-Usage: python3 schemas/credentials/tools/build-issuer-metadata.py [--topic-prefix PREFIX] [--check]
+Usage: python3 schemas/credentials/tools/build-issuer-metadata.py [--topic-prefix PREFIX]
+                                                                 [--vct-base URL] [--check]
   --check   do not write; exit 1 if the committed file differs from what the schemas produce
 """
 import argparse
@@ -18,6 +22,7 @@ from pathlib import Path
 
 SCHEMAS = Path(__file__).resolve().parent.parent
 CONTEXT = "https://schemas.facis.example/v1/facis.context.jsonld"
+VCT_BASE = "https://schemas.facis.example/v1/vct"
 CREDENTIALS = {
     "FacisParticipantCredential": (
         "facis_participant_jwt",
@@ -57,6 +62,7 @@ def inline(node, defs):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--topic-prefix", default="fap.iotai.TENANT")
+    parser.add_argument("--vct-base", default=VCT_BASE)
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
 
@@ -86,6 +92,21 @@ def main():
             },
             "schema": subject,
             "topic": f"{args.topic_prefix}.{config_id}",
+        }
+        sd_id = config_id[: -len("_jwt")] + "_sd_jwt"
+        configurations[sd_id] = {
+            "format": "dc+sd-jwt",
+            "scope": sd_id,
+            "vct": f"{args.vct_base}/{vc_type}",
+            "cryptographic_binding_methods_supported": ["jwk"],
+            "credential_signing_alg_values_supported": ALGS,
+            "proof_types_supported": {"jwt": {"proof_signing_alg_values_supported": ALGS}},
+            "credential_metadata": {
+                "claims": [{"path": [c["path"][1]], "mandatory": c["mandatory"]} for c in claims],
+                "display": [{"name": name, "locale": "en", "description": description}],
+            },
+            "schema": subject,
+            "topic": f"{args.topic_prefix}.{sd_id}",
         }
     out = SCHEMAS / "generated" / "issuer-credential-configurations.json"
     text = json.dumps({"credential_configurations_supported": configurations}, indent=2) + "\n"

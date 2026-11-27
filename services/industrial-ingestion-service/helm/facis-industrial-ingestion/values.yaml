@@ -72,6 +72,24 @@ ingest:
 kafka:
   brokers: ""
 
+# ---------------------------------------------------------------------------
+# External secrets
+# ---------------------------------------------------------------------------
+# -- ExternalSecrets (External Secrets Operator) for the Secrets this chart
+#    does not render. Off by default.
+externalSecrets:
+  enabled: false
+  # -- The SecretStore or ClusterSecretStore to read from.
+  secretStoreRef:
+    kind: SecretStore
+    name: ""
+  refreshInterval: 1h
+  # -- Store key holding the ORCE pod's environment (the keys
+  #    templates/orce-env-secret.yaml renders). Used when
+  #    orcePodEnv.renderSecret=false.
+  orcePodEnv:
+    remoteKey: ""
+
 nameOverride: ""
 fullnameOverride: ""
 

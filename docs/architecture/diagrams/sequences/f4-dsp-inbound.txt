@@ -4,18 +4,19 @@ title F4 DSP inbound check
 autonumber 1
 participant "Counterparty\nconnector" as CP
 participant "iam.verify\n(DSP connector)" as VER
+participant "Own tenant\ncrypto provider" as CRY
+participant "Status list\n(federation)" as SL
 participant "did:web\nresolution" as DID
-participant "W-Stack\ncrypto provider" as CRY
-participant "Status list" as SL
 participant "Policy engine" as POL
 participant "Negotiation state\n(Postgres)" as DB
-CP->VER:DSP request with a Bearer VP-JWT
-VER->VER:audience, expiry, nonce, jti not replayed
-VER->DID:resolve the holder and issuer DIDs
-VER->CRY:verify the presentation and the credential
-CRY-->VER:signature and holder binding valid
-VER->SL:status list (cached at most 5 min)
+CP->VER:DSP request with a Bearer SD-JWT VC presentation
+VER->VER:key binding by the credential holder key, sd_hash, audience, freshness, nonce not replayed
+VER->CRY:issuer signature of the credential
+CRY-->VER:valid
 VER->VER:issuer on the trusted-issuer list
+VER->SL:status list token
+VER->DID:issuer and participant DID documents (cached at most 5 min)
+VER->VER:status list signed by the issuer, entry valid, holder key is a key of the participant DID
 VER->POL:participant and negotiation policies
 POL-->VER:allow, or deny with a reason
 VER->DB:decision record

@@ -21,8 +21,8 @@ orce/
     facis-dsp-transfers.json    — full transfer FSM + access provisioning
     facis-dsp-errors.json       — catch-all error handler
     facis-dsp-iam-verify.json   — NF-1 shared VP/VC verifier (link-call)
-    facis-dsp-iam-issuance.json — did.json, OID4VCI issuer, Participant VC self-issuance
-    facis-dsp-iam-hub.json      — Identity Hub query API (Mongo-backed)
+    facis-dsp-iam-issue.json    — outbound VP from the W-Stack tenant (link-call iam.issue)
+    facis-dsp-iam-retired.json  — 410 for the former self-issuer and identity hub routes
     facis-dsp-data.json         — GET /api/data/:assetId (NF-2 provider-side data serving)
     facis-dsp-consumer.json     — POST /dsp/ingest (NF-2 consumer-side Bronze ingest)
   config/
@@ -178,8 +178,6 @@ teardown (steps 6–7).
 Prerequisites in the release namespace (the chart does **not** create these):
 
 - `facis-kafka-certs` — Kafka mTLS client cert (`ca.crt`/`tls.crt`/`tls.key`).
-- `facis-dsp-connector-identity-key` — this connector's signing JWK
-  (key `privateJwk`), wired to the pod as `DSP_CONNECTOR_KEY`.
 - `facis-orce-rdkafka-patch` ConfigMap (key `rdkafka-patch.js`) — the SSL
   overlay for `node-red-contrib-rdkafka`. Mounted `optional: true`; absence
   only logs a warning, but without it the Kafka data-plane cannot connect:
@@ -231,7 +229,7 @@ Prerequisites in the release namespace (the chart does **not** create these):
    ```
 6. **Remove the DSP tabs from the shared ORCE pod.** The DSP tab ids are:
    `tab-dsp-catalogue`, `tab-dsp-consumer`, `tab-dsp-data`, `tab-dsp-errors`,
-   `tab-dsp-health`, `tab-dsp-iam-hub`, `tab-dsp-iam-issuance`,
+   `tab-dsp-health`, `tab-dsp-iam-issue`, `tab-dsp-iam-receive`, `tab-dsp-iam-retired`,
    `tab-dsp-iam-verify`, `tab-dsp-negotiations`, `tab-dsp-state`,
    `tab-dsp-transfers`. Do **not** POST a filtered full set with
    `Node-RED-Deployment-Type: full` — full-replace on the shared pod would wipe
@@ -246,7 +244,7 @@ Prerequisites in the release namespace (the chart does **not** create these):
      TOKEN=<shared-orce admin token>                      # facis-orce-admin
      REV=$(curl -sS -H "Authorization: Bearer $TOKEN" -H 'Node-RED-API-Version: v2' \
        "$ORCE/flows" | jq -r '.rev')
-     TABS='["tab-dsp-catalogue","tab-dsp-consumer","tab-dsp-data","tab-dsp-errors","tab-dsp-health","tab-dsp-iam-hub","tab-dsp-iam-issuance","tab-dsp-iam-verify","tab-dsp-negotiations","tab-dsp-state","tab-dsp-transfers"]'
+     TABS='["tab-dsp-catalogue","tab-dsp-consumer","tab-dsp-data","tab-dsp-errors","tab-dsp-health","tab-dsp-iam-issue","tab-dsp-iam-receive","tab-dsp-iam-retired","tab-dsp-iam-verify","tab-dsp-negotiations","tab-dsp-state","tab-dsp-transfers"]'
      curl -sS -H "Authorization: Bearer $TOKEN" -H 'Node-RED-API-Version: v2' "$ORCE/flows" \
        | jq -c --argjson tabs "$TABS" --arg rev "$REV" \
          '{rev:$rev, flows: (.flows | map(if (.type=="tab" and (.id as $i | $tabs|index($i))) then .disabled=true else . end))}' \
@@ -301,28 +299,23 @@ follows its access object, and lands the result in `bronze.dsp_ingest` via
 a new `dsp.ingest.raw` Kafka topic (see
 `infrastructure/lakehouse/setup_lakehouse.py` /
 `setup_nifi.py`'s `--add-bronze-table` / `--add-topic` flags). It does not
-drive contract negotiation itself. It DOES now attach a self-issued VP to
+drive contract negotiation itself. It attaches a presentation to
 its own outbound calls to the provider: once per ingest run it link-calls
-`iam.issue` (`dsp-iam-issue-fn` in `facis-dsp-iam-issuance.json`), which
-mints a short-lived VP wrapping a self-issued Participant VC — both signed
-with `DSP_CONNECTOR_KEY` under `DSP_CONNECTOR_DID`, using the same
-`jose.SignJWT` pattern as the OID4VCI credential endpoint — and Bearer-sets
-it on both internal hops (`POST /dsp/transfers`, `GET /dsp/transfers/:id`).
-This lets the provider's own `iam.verify` accept the consumer's calls under
-`DSP_IAM_ENFORCE=enforce`. Mint failure is non-fatal (logged via
-`node.error`; the hops fall back to no auth, which still succeeds under
-`warn`).
+`iam.issue` (`facis-dsp-iam-issue.json`), which takes the connector's
+participant credential from its W-Stack tenant's storage (DCQL query) and has
+the tenant's crypto provider sign a short-lived presentation for the provider,
+then Bearer-sets it on both internal hops (`POST /dsp/transfers`,
+`GET /dsp/transfers/:id`). This lets the provider's own `iam.verify` accept
+the consumer's calls under `DSP_IAM_ENFORCE=enforce`. No private key reaches
+the connector.
 
-**Enforce-mode config prerequisite (self-issued VP)**: for the provider's
-`iam.verify` to accept the connector's own self-issued VP, the connector's
-DID (`dsp.iam.connectorDid` / `DSP_CONNECTOR_DID`,
-`did:web:fap-iotai.facis.cloud` by default) MUST be present in
-`DSP_TRUSTED_ISSUERS` (`dsp.iam.trustedIssuers`, empty by default). Without
-this, the internal hops are rejected with `untrusted_issuer` under enforce.
-The VP's `aud` is `DSP_VP_AUDIENCE` (also the connector's own DID by
-default, so this is self-consistent out of the box once the DID is
-trusted). The minted VC carries no `credentialStatus`, so no
-BitstringStatusList endpoint is needed for these internal hops.
+**Enforce-mode config prerequisite (trusted issuers)**: `iam.verify` accepts a
+presentation only when its credential's issuer is in `DSP_TRUSTED_ISSUERS`
+(`dsp.iam.trustedIssuers`, empty by default, which refuses everything): set it
+to the DID of the federation issuer of participant credentials. The same list
+applies to the connector's own presentations on the internal hops. The
+presentation's audience is the provider's base URL, which the provider
+accepts in `DSP_IAM_AUDIENCE`.
 
 **Topic creation assumption**: `--add-topic` only provisions the NiFi
 consumer flow for `dsp.ingest.raw`; nothing in this plan creates the Kafka

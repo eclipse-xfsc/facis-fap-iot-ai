@@ -1,14 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Preview of icam-overview.drawio. Edit the .drawio file, then export it again as SVG. -->
-<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="930" viewBox="0 0 1600 930" font-family="Helvetica, Arial, sans-serif"><rect width="1600" height="930" fill="#ffffff"/><rect x="20" y="60" width="250" height="780" rx="10" fill="#ffffff" stroke="#b7bec8" stroke-width="1.5" stroke-dasharray="6 4"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="930" viewBox="0 0 1600 930" font-family="Helvetica, Arial, sans-serif"><rect width="1600" height="930" fill="#ffffff"/>
+<defs><marker id="mb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#1c2430"/></marker><marker id="mr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#a2491f"/></marker></defs>
+<rect x="20" y="60" width="250" height="780" rx="10" fill="#ffffff" stroke="#b7bec8" stroke-width="1.5" stroke-dasharray="6 4"/>
 <text x="34" y="80" font-size="13" font-weight="bold" fill="#5a6575" text-anchor="start">OUTSIDE</text>
-<text x="34" y="96" font-size="12" font-weight="normal" fill="#5a6575" text-anchor="start">users, other participants</text>
+<text x="34" y="96" font-size="12" font-weight="normal" fill="#5a6575" text-anchor="start">users and their wallets, other participants</text>
 <rect x="320" y="60" width="580" height="780" rx="10" fill="#f4faf4" stroke="#5b8a5e" stroke-width="1.5"/>
-<text x="334" y="80" font-size="13" font-weight="bold" fill="#2e6b32" text-anchor="start">FAP DEPLOYMENT</text>
-<text x="334" y="96" font-size="12" font-weight="normal" fill="#5a6575" text-anchor="start">participant zone: the FAP IoT &amp; AI components</text>
-<rect x="930" y="60" width="650" height="630" rx="10" fill="#f6f8fb" stroke="#6c7c91" stroke-width="1.5"/>
-<text x="944" y="80" font-size="13" font-weight="bold" fill="#34465f" text-anchor="start">FEDERATION TRUST SERVICES</text>
-<text x="944" y="96" font-size="12" font-weight="normal" fill="#5a6575" text-anchor="start">OCM W-Stack, wallets, policy</text>
+<text x="334" y="80" font-size="13" font-weight="bold" fill="#2e6b32" text-anchor="start">PARTICIPANT: IOT &amp; AI SERVICES</text>
+<text x="334" y="96" font-size="12" font-weight="normal" fill="#5a6575" text-anchor="start">the participant&#x27;s own systems</text>
+<rect x="930" y="60" width="650" height="300" rx="10" fill="#f2f8f2" stroke="#5b8a5e" stroke-width="1.5"/>
+<text x="944" y="80" font-size="13" font-weight="bold" fill="#2e6b32" text-anchor="start">PARTICIPANT WALLET: ITS W-STACK TENANT</text>
+<text x="944" y="96" font-size="12" font-weight="normal" fill="#5a6575" text-anchor="start">only the participant decides what enters it</text>
+<rect x="930" y="390" width="650" height="300" rx="10" fill="#f6f8fb" stroke="#6c7c91" stroke-width="1.5"/>
+<text x="944" y="410" font-size="13" font-weight="bold" fill="#34465f" text-anchor="start">FEDERATION TRUST SERVICES</text>
+<text x="944" y="426" font-size="12" font-weight="normal" fill="#5a6575" text-anchor="start">issuers and status lists</text>
 <rect x="930" y="720" width="650" height="120" rx="10" fill="#fbfbfc" stroke="#9aa5b3" stroke-width="1.5" stroke-dasharray="6 4"/>
 <text x="944" y="740" font-size="13" font-weight="bold" fill="#5a6575" text-anchor="start">DATA LAKE</text>
 <text x="944" y="756" font-size="12" font-weight="normal" fill="#5a6575" text-anchor="start">Stackable: Trino, Kafka</text>
@@ -16,131 +21,141 @@
 <text x="355" y="126" font-size="12" font-weight="bold" fill="#2f5597" text-anchor="start">Guard (authorization server + login provider)</text>
 <rect x="345" y="310" width="520" height="330" rx="8" fill="#ffffff" stroke="#8ab08c" stroke-width="1.5"/>
 <text x="355" y="328" font-size="12" font-weight="bold" fill="#2e6b32" text-anchor="start">DSP connector (ORCE): identity steps</text>
-<rect x="1290" y="330" width="280" height="190" rx="8" fill="#fff6f1" stroke="#c0704a" stroke-width="1.5" stroke-dasharray="6 4"/>
-<text x="1300" y="348" font-size="12" font-weight="bold" fill="#a2491f" text-anchor="start">Internal APIs: default deny (TB3)</text>
-<line x1="287" y1="70" x2="287" y2="840" stroke="#c0704a" stroke-width="2.5" stroke-dasharray="8 5"/>
-<text x="0" y="0" font-size="12" font-weight="bold" fill="#a2491f" text-anchor="middle" transform="translate(281 750) rotate(-90)">INTERNET EDGE: TB1 / TB2</text>
-<rect x="45" y="100" width="200" height="64" rx="6" fill="#ffffff" stroke="#999999" stroke-width="1.5" stroke-dasharray="6 4"/>
-<text x="145.0" y="129.5" font-size="14" font-weight="bold" fill="#1c2430" text-anchor="middle">User</text>
-<text x="145.0" y="146.5" font-size="11.5" font-weight="normal" fill="#3d4756" text-anchor="middle">browser, smartphone</text>
-<rect x="45" y="360" width="200" height="80" rx="6" fill="#ffffff" stroke="#999999" stroke-width="1.5" stroke-dasharray="6 4"/>
-<text x="145.0" y="390.5" font-size="14" font-weight="bold" fill="#1c2430" text-anchor="middle">Counterparty</text>
-<text x="145.0" y="407.5" font-size="11.5" font-weight="normal" fill="#3d4756" text-anchor="middle">another participant's</text>
-<text x="145.0" y="421.5" font-size="11.5" font-weight="normal" fill="#3d4756" text-anchor="middle">DSP connector</text>
-<rect x="360" y="140" width="230" height="70" rx="6" fill="#d9f2d9" stroke="#2e7d32" stroke-width="1.5"/>
-<text x="475.0" y="165.5" font-size="14" font-weight="bold" fill="#1c2430" text-anchor="middle">Authorization server</text>
-<text x="475.0" y="182.5" font-size="11.5" font-weight="normal" fill="#3d4756" text-anchor="middle">Ory Hydra (Fosite)</text>
-<text x="475.0" y="196.5" font-size="11.5" font-weight="normal" fill="#3d4756" text-anchor="middle">OAuth2, issues the apps' JWTs</text>
-<rect x="620" y="140" width="230" height="110" rx="6" fill="#d9f2d9" stroke="#2e7d32" stroke-width="1.5"/>
-<text x="735.0" y="178.5" font-size="14" font-weight="bold" fill="#1c2430" text-anchor="middle">Login and consent provider</text>
-<text x="735.0" y="195.5" font-size="11.5" font-weight="normal" fill="#3d4756" text-anchor="middle">QR code, or redirect to a web wallet</text>
-<text x="735.0" y="209.5" font-size="11.5" font-weight="normal" fill="#3d4756" text-anchor="middle">OID4VP through the verifier</text>
-<text x="735.0" y="223.5" font-size="11.5" font-weight="normal" fill="#3d4756" text-anchor="middle">login policy, lockout</text>
-<rect x="370" y="365" width="210" height="56" rx="6" fill="#d9f2d9" stroke="#2e7d32" stroke-width="1.5"/>
-<text x="475.0" y="390.5" font-size="14" font-weight="bold" fill="#1c2430" text-anchor="middle">iam.verify</text>
-<text x="475.0" y="407.5" font-size="11.5" font-weight="normal" fill="#3d4756" text-anchor="middle">inbound presentation check</text>
-<rect x="630" y="365" width="210" height="56" rx="6" fill="#d9f2d9" stroke="#2e7d32" stroke-width="1.5"/>
-<text x="735.0" y="390.5" font-size="14" font-weight="bold" fill="#1c2430" text-anchor="middle">iam.issue</text>
-<text x="735.0" y="407.5" font-size="11.5" font-weight="normal" fill="#3d4756" text-anchor="middle">outbound presentation</text>
-<rect x="370" y="455" width="210" height="56" rx="6" fill="#d9f2d9" stroke="#2e7d32" stroke-width="1.5"/>
-<text x="475.0" y="480.5" font-size="14" font-weight="bold" fill="#1c2430" text-anchor="middle">negotiation.permit</text>
-<text x="475.0" y="497.5" font-size="11.5" font-weight="normal" fill="#3d4756" text-anchor="middle">replaces auto-finalize</text>
-<rect x="630" y="455" width="210" height="56" rx="6" fill="#d9f2d9" stroke="#2e7d32" stroke-width="1.5"/>
-<text x="735.0" y="480.5" font-size="14" font-weight="bold" fill="#1c2430" text-anchor="middle">Issuing plugin</text>
-<text x="735.0" y="497.5" font-size="11.5" font-weight="normal" fill="#3d4756" text-anchor="middle">the connector's own credential</text>
-<rect x="370" y="560" width="210" height="56" rx="6" fill="#d9f2d9" stroke="#2e7d32" stroke-width="1.5"/>
-<text x="475.0" y="585.5" font-size="14" font-weight="bold" fill="#1c2430" text-anchor="middle">Catalogue, transfer</text>
-<text x="475.0" y="602.5" font-size="11.5" font-weight="normal" fill="#3d4756" text-anchor="middle">gold layer, pull URL, Kafka topic</text>
-<rect x="630" y="690" width="210" height="64" rx="6" fill="#dbe8f7" stroke="#2f5597" stroke-width="1.5"/>
-<text x="735.0" y="719.5" font-size="14" font-weight="bold" fill="#1c2430" text-anchor="middle">AI Insight UI and service</text>
-<text x="735.0" y="736.5" font-size="11.5" font-weight="normal" fill="#3d4756" text-anchor="middle">check the guard access token</text>
-<rect x="960" y="100" width="260" height="64" rx="6" fill="#ffffff" stroke="#999999" stroke-width="1.5" stroke-dasharray="6 4"/>
-<text x="1090.0" y="122.5" font-size="14" font-weight="bold" fill="#1c2430" text-anchor="middle">Keycloak</text>
-<text x="1090.0" y="139.5" font-size="11.5" font-weight="normal" fill="#3d4756" text-anchor="middle">not on the login path</text>
-<text x="1090.0" y="153.5" font-size="11.5" font-weight="normal" fill="#3d4756" text-anchor="middle">open: kept for administrators?</text>
-<rect x="1300" y="100" width="260" height="64" rx="6" fill="#eeeeee" stroke="#666666" stroke-width="1.5"/>
-<text x="1430.0" y="122.5" font-size="14" font-weight="bold" fill="#1c2430" text-anchor="middle">Wallet</text>
-<text x="1430.0" y="139.5" font-size="11.5" font-weight="normal" fill="#3d4756" text-anchor="middle">PCM Cloud (web), mobile</text>
-<text x="1430.0" y="153.5" font-size="11.5" font-weight="normal" fill="#3d4756" text-anchor="middle">or any conformant wallet</text>
-<rect x="1300" y="220" width="260" height="64" rx="6" fill="#eeeeee" stroke="#666666" stroke-width="1.5"/>
-<text x="1430.0" y="249.5" font-size="14" font-weight="bold" fill="#1c2430" text-anchor="middle">W-Stack verifier</text>
-<text x="1430.0" y="266.5" font-size="11.5" font-weight="normal" fill="#3d4756" text-anchor="middle">OpenID4VP, DCQL</text>
-<rect x="1498" y="211" width="54" height="16" rx="8" fill="#ffffff" stroke="#2f5597" stroke-width="1"/>
-<text x="1525" y="223" font-size="10" font-weight="bold" fill="#2f5597" text-anchor="middle">PUBLIC</text>
-<rect x="960" y="330" width="260" height="64" rx="6" fill="#eeeeee" stroke="#666666" stroke-width="1.5"/>
-<text x="1090.0" y="352.5" font-size="14" font-weight="bold" fill="#1c2430" text-anchor="middle">Credential issuer</text>
-<text x="1090.0" y="369.5" font-size="11.5" font-weight="normal" fill="#3d4756" text-anchor="middle">W-Stack issuer, FAP PCI</text>
-<text x="1090.0" y="383.5" font-size="11.5" font-weight="normal" fill="#3d4756" text-anchor="middle">or any OID4VCI issuer</text>
-<rect x="1158" y="321" width="54" height="16" rx="8" fill="#ffffff" stroke="#2f5597" stroke-width="1"/>
-<text x="1185" y="333" font-size="10" font-weight="bold" fill="#2f5597" text-anchor="middle">PUBLIC</text>
-<rect x="960" y="430" width="260" height="50" rx="6" fill="#eeeeee" stroke="#666666" stroke-width="1.5"/>
-<text x="1090.0" y="452.5" font-size="14" font-weight="bold" fill="#1c2430" text-anchor="middle">Status list</text>
-<text x="1090.0" y="469.5" font-size="11.5" font-weight="normal" fill="#3d4756" text-anchor="middle">revocation (F6)</text>
-<rect x="1158" y="421" width="54" height="16" rx="8" fill="#ffffff" stroke="#2f5597" stroke-width="1"/>
-<text x="1185" y="433" font-size="10" font-weight="bold" fill="#2f5597" text-anchor="middle">PUBLIC</text>
-<rect x="960" y="500" width="260" height="80" rx="6" fill="#dbe8f7" stroke="#2f5597" stroke-width="1.5"/>
-<text x="1090.0" y="530.5" font-size="14" font-weight="bold" fill="#1c2430" text-anchor="middle">Connector tenant (W-Stack)</text>
-<text x="1090.0" y="547.5" font-size="11.5" font-weight="normal" fill="#3d4756" text-anchor="middle">its did:web, retrieval,</text>
-<text x="1090.0" y="561.5" font-size="11.5" font-weight="normal" fill="#3d4756" text-anchor="middle">storage, connector key</text>
-<rect x="1158" y="491" width="54" height="16" rx="8" fill="#ffffff" stroke="#2f5597" stroke-width="1"/>
-<text x="1185" y="503" font-size="10" font-weight="bold" fill="#2f5597" text-anchor="middle">PUBLIC</text>
-<rect x="960" y="615" width="260" height="56" rx="6" fill="#dbe8f7" stroke="#2f5597" stroke-width="1.5"/>
-<text x="1090.0" y="640.5" font-size="14" font-weight="bold" fill="#1c2430" text-anchor="middle">Policy engine</text>
-<text x="1090.0" y="657.5" font-size="11.5" font-weight="normal" fill="#3d4756" text-anchor="middle">Rego bundle of this repository</text>
-<rect x="1310" y="375" width="240" height="46" rx="6" fill="#eeeeee" stroke="#666666" stroke-width="1.5"/>
-<text x="1430.0" y="395.5" font-size="14" font-weight="bold" fill="#1c2430" text-anchor="middle">NATS</text>
-<text x="1430.0" y="412.5" font-size="11.5" font-weight="normal" fill="#3d4756" text-anchor="middle">issuance messaging</text>
-<rect x="1310" y="435" width="240" height="64" rx="6" fill="#eeeeee" stroke="#666666" stroke-width="1.5"/>
-<text x="1430.0" y="464.5" font-size="14" font-weight="bold" fill="#1c2430" text-anchor="middle">Crypto provider</text>
-<text x="1430.0" y="481.5" font-size="11.5" font-weight="normal" fill="#3d4756" text-anchor="middle">with OpenBao transit keys</text>
-<rect x="960" y="760" width="300" height="56" rx="6" fill="#ffffff" stroke="#999999" stroke-width="1.5" stroke-dasharray="6 4"/>
-<text x="1110.0" y="785.5" font-size="14" font-weight="bold" fill="#1c2430" text-anchor="middle">Trino, Kafka</text>
-<text x="1110.0" y="802.5" font-size="11.5" font-weight="normal" fill="#3d4756" text-anchor="middle">gold layer, per-transfer topics</text>
-<text x="964" y="597" font-size="12" font-weight="normal" fill="#5a6575" text-anchor="start">Shared or dedicated W-Stack: open</text>
-<text x="1290" y="763" font-size="12" font-weight="normal" fill="#5a6575" text-anchor="start">Trino doesn't call the policy engine:</text>
-<text x="1290" y="779" font-size="12" font-weight="normal" fill="#5a6575" text-anchor="start">access is enforced at the API.</text>
-<text x="1230" y="633" font-size="12" font-weight="normal" fill="#5a6575" text-anchor="start">where it runs</text>
-<text x="1230" y="649" font-size="12" font-weight="normal" fill="#5a6575" text-anchor="start">is open</text>
-<defs><marker id="mn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#1c2430"/></marker><marker id="mb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#1c2430"/></marker><marker id="mr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#a2491f"/></marker></defs>
-<polyline points="245.0,160.0 358.0,160.0" fill="none" stroke="#1c2430" stroke-width="1.6" marker-end="url(#mn)"/>
-<polyline points="590.0,175.0 618.0,175.0" fill="none" stroke="#1c2430" stroke-width="1.6" marker-end="url(#mn)"/>
-<polyline points="225.0,100.0 225.0,40.0 1430.0,40.0 1430.0,98.0" fill="none" stroke="#1c2430" stroke-width="1.6" marker-end="url(#mn)"/>
-<polyline points="850.0,240.0 1298.0,240.0" fill="none" stroke="#1c2430" stroke-width="1.6" marker-end="url(#mn)"/>
-<polyline points="1430.0,164.0 1430.0,218.0" fill="none" stroke="#1c2430" stroke-width="1.6" marker-end="url(#mn)"/>
-<polyline points="1220.0,345.0 1262.0,345.0 1262.0,145.0 1298.0,145.0" fill="none" stroke="#1c2430" stroke-width="1.6" marker-end="url(#mn)"/>
-<polyline points="960.0,380.0 905.0,380.0 905.0,483.0 842.0,483.0" fill="none" stroke="#1c2430" stroke-width="1.6" marker-end="url(#mn)"/>
-<polyline points="1220.0,385.0 1245.0,385.0 1245.0,520.0 1223.0,520.0" fill="none" stroke="#1c2430" stroke-width="1.6" marker-end="url(#mn)"/>
-<polyline points="1220.0,560.0 1275.0,560.0 1275.0,467.0 1307.0,467.0" fill="none" stroke="#1c2430" stroke-width="1.6" marker-end="url(#mn)"/>
-<polyline points="475.0,421.0 475.0,453.0" fill="none" stroke="#1c2430" stroke-width="1.6" marker-end="url(#mn)"/>
-<polyline points="475.0,511.0 475.0,558.0" fill="none" stroke="#1c2430" stroke-width="1.6" marker-end="url(#mn)"/>
-<polyline points="580.0,612.0 940.0,612.0 940.0,640.0 958.0,640.0" fill="none" stroke="#1c2430" stroke-width="1.6" marker-end="url(#mn)"/>
-<polyline points="475.0,616.0 475.0,805.0 958.0,805.0" fill="none" stroke="#1c2430" stroke-width="1.6" marker-end="url(#mn)"/>
-<polyline points="840.0,712.0 1000.0,712.0 1000.0,673.0" fill="none" stroke="#1c2430" stroke-width="1.6" marker-end="url(#mn)"/>
-<polyline points="735.0,754.0 735.0,775.0 958.0,775.0" fill="none" stroke="#1c2430" stroke-width="1.6" marker-end="url(#mn)"/>
-<polyline points="245.0,405.0 367.0,405.0" fill="none" stroke="#1c2430" stroke-width="3" marker-end="url(#mb)"/>
-<polyline points="735.0,365.0 735.0,298.0 272.0,298.0 272.0,382.0 248.0,382.0" fill="none" stroke="#1c2430" stroke-width="3" marker-end="url(#mb)"/>
-<polyline points="842.0,393.0 885.0,393.0 885.0,555.0 957.0,555.0" fill="none" stroke="#a2491f" stroke-width="1.8" marker-end="url(#mr)"/>
-<polyline points="865.0,418.0 1287.0,418.0" fill="none" stroke="#a2491f" stroke-width="1.8" marker-end="url(#mr)"/>
-<text x="300" y="152" font-size="12" font-weight="bold" fill="#1c2430" text-anchor="middle" stroke="#ffffff" stroke-width="4" paint-order="stroke">OAuth2 login</text>
-<text x="300" y="182" font-size="12" font-weight="bold" fill="#1c2430" text-anchor="middle" stroke="#ffffff" stroke-width="4" paint-order="stroke">(any FAP web app)</text>
-<text x="475" y="232" font-size="12" font-weight="bold" fill="#1c2430" text-anchor="middle" stroke="#ffffff" stroke-width="4" paint-order="stroke">login and consent challenge</text>
-<text x="800" y="33" font-size="12" font-weight="bold" fill="#1c2430" text-anchor="middle" stroke="#ffffff" stroke-width="4" paint-order="stroke">holds personal credentials</text>
-<text x="1075" y="233" font-size="12" font-weight="bold" fill="#1c2430" text-anchor="middle" stroke="#ffffff" stroke-width="4" paint-order="stroke">F3: OpenID4VP request, result</text>
-<text x="1440" y="196" font-size="12" font-weight="bold" fill="#1c2430" text-anchor="start" stroke="#ffffff" stroke-width="4" paint-order="stroke">F3</text>
-<text x="1270" y="303" font-size="12" font-weight="bold" fill="#1c2430" text-anchor="start" stroke="#ffffff" stroke-width="4" paint-order="stroke">F2</text>
-<text x="1270" y="318" font-size="12" font-weight="bold" fill="#1c2430" text-anchor="start" stroke="#ffffff" stroke-width="4" paint-order="stroke">OpenID4VCI</text>
-<text x="955" y="373" font-size="12" font-weight="bold" fill="#1c2430" text-anchor="end" stroke="#ffffff" stroke-width="4" paint-order="stroke">F1 claims callback</text>
-<text x="1252" y="470" font-size="12" font-weight="bold" fill="#1c2430" text-anchor="start" stroke="#ffffff" stroke-width="4" paint-order="stroke">F1</text>
-<text x="310" y="398" font-size="12" font-weight="bold" fill="#1c2430" text-anchor="start" stroke="#ffffff" stroke-width="4" paint-order="stroke">F4: DSP + VP</text>
-<text x="560" y="292" font-size="12" font-weight="bold" fill="#1c2430" text-anchor="middle" stroke="#ffffff" stroke-width="4" paint-order="stroke">F5: VP to the provider</text>
-<text x="598" y="605" font-size="12" font-weight="bold" fill="#1c2430" text-anchor="start" stroke="#ffffff" stroke-width="4" paint-order="stroke">catalogue, negotiation, transfer policies</text>
-<text x="484" y="540" font-size="12" font-weight="bold" fill="#1c2430" text-anchor="start" stroke="#ffffff" stroke-width="4" paint-order="stroke">agreement</text>
-<text x="490" y="798" font-size="12" font-weight="bold" fill="#1c2430" text-anchor="start" stroke="#ffffff" stroke-width="4" paint-order="stroke">DSP transfer (after F4): catalogue, pull URL, Kafka topic</text>
-<text x="850" y="706" font-size="12" font-weight="bold" fill="#1c2430" text-anchor="start" stroke="#ffffff" stroke-width="4" paint-order="stroke">F7 policy</text>
-<text x="745" y="769" font-size="12" font-weight="bold" fill="#1c2430" text-anchor="start" stroke="#ffffff" stroke-width="4" paint-order="stroke">F7 query, permitted columns</text>
-<text x="1075" y="410" font-size="12" font-weight="bold" fill="#a2491f" text-anchor="middle" stroke="#ffffff" stroke-width="4" paint-order="stroke">TB3: allow-listed only</text>
-<text x="878" y="535" font-size="12" font-weight="bold" fill="#a2491f" text-anchor="end" stroke="#ffffff" stroke-width="4" paint-order="stroke">F5 reads its credential</text>
-<text x="1300" y="548" font-size="12" font-weight="bold" fill="#1c2430" text-anchor="start" stroke="#ffffff" stroke-width="4" paint-order="stroke">signs with its key</text>
+<rect x="945" y="180" width="620" height="165" rx="8" fill="#fff6f1" stroke="#c0704a" stroke-width="1.5" stroke-dasharray="6 4"/>
+<text x="955" y="198" font-size="12" font-weight="bold" fill="#a2491f" text-anchor="start">Internal APIs: default deny (TB3)</text>
+<line x1="287" y1="70" x2="287" y2="840" stroke="#c0704a" stroke-width="2.5" stroke-dasharray="6 4"/>
+<text x="0" y="0" font-size="12" font-weight="bold" fill="#a2491f" text-anchor="middle" transform="translate(301,750) rotate(-90)">INTERNET EDGE: TB1 / TB2</text>
+<polyline points="245,132 358,132" fill="none" stroke="#1c2430" stroke-width="1.6" marker-end="url(#mb)"/>
+<polyline points="590,175 618,175" fill="none" stroke="#1c2430" stroke-width="1.6" marker-end="url(#mb)"/>
+<polyline points="145,164 145,198" fill="none" stroke="#1c2430" stroke-width="1.6" marker-end="url(#mb)"/>
+<polyline points="850,150 958,150" fill="none" stroke="#1c2430" stroke-width="1.6" marker-end="url(#mb)"/>
+<polyline points="45,222 30,222 30,40 1250,40 1250,136 1222,136" fill="none" stroke="#1c2430" stroke-width="1.6" marker-end="url(#mb)"/>
+<polyline points="960,482 922,482 922,858 38,858 38,245 43,245" fill="none" stroke="#1c2430" stroke-width="1.6" marker-end="url(#mb)"/>
+<polyline points="245,393 368,393" fill="none" stroke="#1c2430" stroke-width="1.6" marker-end="url(#mb)"/>
+<polyline points="735,365 735,295 145,295 145,358" fill="none" stroke="#1c2430" stroke-width="1.6" marker-end="url(#mb)"/>
+<polyline points="475,421 475,453" fill="none" stroke="#1c2430" stroke-width="1.6" marker-end="url(#mb)"/>
+<polyline points="475,511 475,558" fill="none" stroke="#1c2430" stroke-width="1.6" marker-end="url(#mb)"/>
+<polyline points="455,616 455,688" fill="none" stroke="#1c2430" stroke-width="1.6" marker-end="url(#mb)"/>
+<polyline points="630,718 562,718" fill="none" stroke="#1c2430" stroke-width="1.6" marker-end="url(#mb)"/>
+<polyline points="580,600 600,600 600,800 958,800" fill="none" stroke="#1c2430" stroke-width="1.6" marker-end="url(#mb)"/>
+<polyline points="840,740 908,740 908,776 958,776" fill="none" stroke="#1c2430" stroke-width="1.6" marker-end="url(#mb)"/>
+<polyline points="840,380 895,380 895,235 958,235" fill="none" stroke="#a2491f" stroke-width="1.8" marker-end="url(#mr)"/>
+<polyline points="840,483 905,483 905,270 958,270" fill="none" stroke="#a2491f" stroke-width="1.8" marker-end="url(#mr)"/>
+<polyline points="1220,250 1288,250" fill="none" stroke="#1c2430" stroke-width="1.6" marker-end="url(#mb)"/>
+<polyline points="1200,295 1200,432 1120,432 1120,448" fill="none" stroke="#1c2430" stroke-width="1.6" marker-end="url(#mb)"/>
+<polyline points="1220,478 1288,478" fill="none" stroke="#1c2430" stroke-width="1.6" marker-end="url(#mb)"/>
+<polyline points="1420,506 1420,528" fill="none" stroke="#1c2430" stroke-width="1.6" marker-end="url(#mb)"/>
+<polyline points="1090,514 1090,558" fill="none" stroke="#1c2430" stroke-width="1.6" marker-end="url(#mb)"/>
+<rect x="45" y="100" width="200" height="64" rx="8" fill="#ffffff" stroke="#999999" stroke-width="1.5" stroke-dasharray="6 4"/>
+<text x="145.0" y="130" font-size="14" font-weight="bold" fill="#1c2430" text-anchor="middle">User</text>
+<text x="145.0" y="146" font-size="11" font-weight="normal" fill="#1c2430" text-anchor="middle">browser, smartphone</text>
+<rect x="45" y="200" width="200" height="64" rx="8" fill="#eeeeee" stroke="#666666" stroke-width="1.5"/>
+<text x="145.0" y="222" font-size="14" font-weight="bold" fill="#1c2430" text-anchor="middle">Wallet</text>
+<text x="145.0" y="238" font-size="11" font-weight="normal" fill="#1c2430" text-anchor="middle">PCM Cloud (web), mobile</text>
+<text x="145.0" y="252" font-size="11" font-weight="normal" fill="#1c2430" text-anchor="middle">or any conformant wallet</text>
+<rect x="45" y="360" width="200" height="80" rx="8" fill="#ffffff" stroke="#999999" stroke-width="1.5" stroke-dasharray="6 4"/>
+<text x="145.0" y="390" font-size="14" font-weight="bold" fill="#1c2430" text-anchor="middle">Counterparty</text>
+<text x="145.0" y="406" font-size="11" font-weight="normal" fill="#1c2430" text-anchor="middle">another participant&#x27;s</text>
+<text x="145.0" y="420" font-size="11" font-weight="normal" fill="#1c2430" text-anchor="middle">DSP connector</text>
+<rect x="360" y="140" width="230" height="70" rx="8" fill="#d9f2d9" stroke="#2e7d32" stroke-width="1.5"/>
+<text x="475.0" y="165" font-size="14" font-weight="bold" fill="#1c2430" text-anchor="middle">Authorization server</text>
+<text x="475.0" y="181" font-size="11" font-weight="normal" fill="#1c2430" text-anchor="middle">Ory Hydra (Fosite)</text>
+<text x="475.0" y="195" font-size="11" font-weight="normal" fill="#1c2430" text-anchor="middle">OAuth2, issues the apps&#x27; JWTs</text>
+<rect x="620" y="140" width="230" height="110" rx="8" fill="#d9f2d9" stroke="#2e7d32" stroke-width="1.5"/>
+<text x="735.0" y="178" font-size="14" font-weight="bold" fill="#1c2430" text-anchor="middle">Login and consent provider</text>
+<text x="735.0" y="194" font-size="11" font-weight="normal" fill="#1c2430" text-anchor="middle">QR code, or redirect to a web wallet</text>
+<text x="735.0" y="208" font-size="11" font-weight="normal" fill="#1c2430" text-anchor="middle">OID4VP through the verifier</text>
+<text x="735.0" y="222" font-size="11" font-weight="normal" fill="#1c2430" text-anchor="middle">login policy, lockout</text>
+<rect x="370" y="365" width="210" height="56" rx="8" fill="#d9f2d9" stroke="#2e7d32" stroke-width="1.5"/>
+<text x="475.0" y="390" font-size="14" font-weight="bold" fill="#1c2430" text-anchor="middle">iam.verify</text>
+<text x="475.0" y="406" font-size="11" font-weight="normal" fill="#1c2430" text-anchor="middle">inbound presentation check</text>
+<rect x="630" y="365" width="210" height="56" rx="8" fill="#d9f2d9" stroke="#2e7d32" stroke-width="1.5"/>
+<text x="735.0" y="390" font-size="14" font-weight="bold" fill="#1c2430" text-anchor="middle">iam.issue</text>
+<text x="735.0" y="406" font-size="11" font-weight="normal" fill="#1c2430" text-anchor="middle">outbound presentation</text>
+<rect x="370" y="455" width="210" height="56" rx="8" fill="#d9f2d9" stroke="#2e7d32" stroke-width="1.5"/>
+<text x="475.0" y="480" font-size="14" font-weight="bold" fill="#1c2430" text-anchor="middle">negotiation.permit</text>
+<text x="475.0" y="496" font-size="11" font-weight="normal" fill="#1c2430" text-anchor="middle">replaces auto-finalize</text>
+<rect x="630" y="455" width="210" height="56" rx="8" fill="#d9f2d9" stroke="#2e7d32" stroke-width="1.5"/>
+<text x="735.0" y="480" font-size="14" font-weight="bold" fill="#1c2430" text-anchor="middle">iam.receive</text>
+<text x="735.0" y="496" font-size="11" font-weight="normal" fill="#1c2430" text-anchor="middle">accepts its credential (F1)</text>
+<rect x="370" y="560" width="210" height="56" rx="8" fill="#d9f2d9" stroke="#2e7d32" stroke-width="1.5"/>
+<text x="475.0" y="586" font-size="14" font-weight="bold" fill="#1c2430" text-anchor="middle">Catalogue, transfer</text>
+<text x="475.0" y="602" font-size="11" font-weight="normal" fill="#1c2430" text-anchor="middle">gold layer, pull URL, Kafka topic</text>
+<rect x="350" y="690" width="210" height="56" rx="8" fill="#dbe8f7" stroke="#2f5597" stroke-width="1.5"/>
+<text x="455.0" y="716" font-size="14" font-weight="bold" fill="#1c2430" text-anchor="middle">Policy engine</text>
+<text x="455.0" y="732" font-size="11" font-weight="normal" fill="#1c2430" text-anchor="middle">Rego bundle of this repository</text>
+<rect x="630" y="690" width="210" height="64" rx="8" fill="#dbe8f7" stroke="#2f5597" stroke-width="1.5"/>
+<text x="735.0" y="720" font-size="14" font-weight="bold" fill="#1c2430" text-anchor="middle">AI Insight UI and service</text>
+<text x="735.0" y="736" font-size="11" font-weight="normal" fill="#1c2430" text-anchor="middle">check the guard access token</text>
+<rect x="960" y="104" width="260" height="64" rx="8" fill="#eeeeee" stroke="#666666" stroke-width="1.5"/>
+<text x="1090.0" y="134" font-size="14" font-weight="bold" fill="#1c2430" text-anchor="middle">W-Stack verifier</text>
+<text x="1090.0" y="150" font-size="11" font-weight="normal" fill="#1c2430" text-anchor="middle">OpenID4VP, DCQL, for the guard</text>
+<rect x="1158" y="95" width="54" height="16" rx="8" fill="#ffffff" stroke="#2f5597" stroke-width="1"/>
+<text x="1185" y="107" font-size="10" font-weight="bold" fill="#2f5597" text-anchor="middle">PUBLIC</text>
+<rect x="960" y="215" width="260" height="80" rx="8" fill="#dbe8f7" stroke="#2f5597" stroke-width="1.5"/>
+<text x="1090.0" y="245" font-size="14" font-weight="bold" fill="#1c2430" text-anchor="middle">Tenant: retrieval, storage</text>
+<text x="1090.0" y="261" font-size="11" font-weight="normal" fill="#1c2430" text-anchor="middle">its did:web and</text>
+<text x="1090.0" y="275" font-size="11" font-weight="normal" fill="#1c2430" text-anchor="middle">its participant credential</text>
+<rect x="1158" y="206" width="54" height="16" rx="8" fill="#ffffff" stroke="#2f5597" stroke-width="1"/>
+<text x="1185" y="218" font-size="10" font-weight="bold" fill="#2f5597" text-anchor="middle">PUBLIC</text>
+<rect x="1290" y="215" width="260" height="64" rx="8" fill="#eeeeee" stroke="#666666" stroke-width="1.5"/>
+<text x="1420.0" y="244" font-size="14" font-weight="bold" fill="#1c2430" text-anchor="middle">Crypto provider</text>
+<text x="1420.0" y="260" font-size="11" font-weight="normal" fill="#1c2430" text-anchor="middle">tenant key in OpenBao</text>
+<rect x="960" y="450" width="260" height="64" rx="8" fill="#eeeeee" stroke="#666666" stroke-width="1.5"/>
+<text x="1090.0" y="472" font-size="14" font-weight="bold" fill="#1c2430" text-anchor="middle">Credential issuers</text>
+<text x="1090.0" y="488" font-size="11" font-weight="normal" fill="#1c2430" text-anchor="middle">W-Stack issuer, FAP PCI</text>
+<text x="1090.0" y="502" font-size="11" font-weight="normal" fill="#1c2430" text-anchor="middle">or any OID4VCI issuer</text>
+<rect x="1158" y="441" width="54" height="16" rx="8" fill="#ffffff" stroke="#2f5597" stroke-width="1"/>
+<text x="1185" y="453" font-size="10" font-weight="bold" fill="#2f5597" text-anchor="middle">PUBLIC</text>
+<rect x="1290" y="450" width="260" height="56" rx="8" fill="#eeeeee" stroke="#666666" stroke-width="1.5"/>
+<text x="1420.0" y="476" font-size="14" font-weight="bold" fill="#1c2430" text-anchor="middle">Issuing plugin</text>
+<text x="1420.0" y="492" font-size="11" font-weight="normal" fill="#1c2430" text-anchor="middle">claims of participant credentials</text>
+<rect x="1290" y="530" width="260" height="46" rx="8" fill="#eeeeee" stroke="#666666" stroke-width="1.5"/>
+<text x="1420.0" y="550" font-size="14" font-weight="bold" fill="#1c2430" text-anchor="middle">NATS</text>
+<text x="1420.0" y="566" font-size="11" font-weight="normal" fill="#1c2430" text-anchor="middle">issuance messaging</text>
+<rect x="960" y="560" width="260" height="50" rx="8" fill="#eeeeee" stroke="#666666" stroke-width="1.5"/>
+<text x="1090.0" y="582" font-size="14" font-weight="bold" fill="#1c2430" text-anchor="middle">Status list</text>
+<text x="1090.0" y="598" font-size="11" font-weight="normal" fill="#1c2430" text-anchor="middle">revocation (F6)</text>
+<rect x="1158" y="551" width="54" height="16" rx="8" fill="#ffffff" stroke="#2f5597" stroke-width="1"/>
+<text x="1185" y="563" font-size="10" font-weight="bold" fill="#2f5597" text-anchor="middle">PUBLIC</text>
+<rect x="960" y="760" width="300" height="56" rx="8" fill="#ffffff" stroke="#999999" stroke-width="1.5" stroke-dasharray="6 4"/>
+<text x="1110.0" y="786" font-size="14" font-weight="bold" fill="#1c2430" text-anchor="middle">Trino, Kafka</text>
+<text x="1110.0" y="802" font-size="11" font-weight="normal" fill="#1c2430" text-anchor="middle">gold layer, per-transfer topics</text>
+<rect x="256" y="111" width="87" height="17" fill="#ffffff"/>
+<text x="300" y="124" font-size="12" font-weight="bold" fill="#1c2430" text-anchor="middle">OAuth2 login</text>
+<rect x="893" y="131" width="21" height="17" fill="#ffffff"/>
+<text x="904" y="144" font-size="12" font-weight="bold" fill="#1c2430" text-anchor="middle">F3</text>
+<rect x="530" y="31" width="219" height="17" fill="#ffffff"/>
+<text x="640" y="44" font-size="12" font-weight="bold" fill="#1c2430" text-anchor="middle">F3: presentation to the verifier</text>
+<rect x="437" y="849" width="246" height="17" fill="#ffffff"/>
+<text x="560" y="862" font-size="12" font-weight="bold" fill="#1c2430" text-anchor="middle">F2: personal credential (OpenID4VCI)</text>
+<rect x="229" y="371" width="153" height="17" fill="#ffffff"/>
+<text x="306" y="384" font-size="12" font-weight="bold" fill="#1c2430" text-anchor="middle">F4: DSP + presentation</text>
+<rect x="360" y="286" width="219" height="17" fill="#ffffff"/>
+<text x="470" y="299" font-size="12" font-weight="bold" fill="#1c2430" text-anchor="middle">F5: presentation to the provider</text>
+<rect x="486" y="526" width="67" height="17" fill="#ffffff"/>
+<text x="520" y="539" font-size="12" font-weight="bold" fill="#1c2430" text-anchor="middle">agreement</text>
+<rect x="481" y="653" width="94" height="17" fill="#ffffff"/>
+<text x="528" y="666" font-size="12" font-weight="bold" fill="#1c2430" text-anchor="middle">policy checks</text>
+<rect x="604" y="697" width="21" height="17" fill="#ffffff"/>
+<text x="615" y="710" font-size="12" font-weight="bold" fill="#1c2430" text-anchor="middle">F7</text>
+<rect x="640" y="777" width="239" height="17" fill="#ffffff"/>
+<text x="760" y="790" font-size="12" font-weight="bold" fill="#1c2430" text-anchor="middle">DSP transfer: pull URL, Kafka topic</text>
+<rect x="844" y="719" width="61" height="17" fill="#ffffff"/>
+<text x="874" y="732" font-size="12" font-weight="bold" fill="#1c2430" text-anchor="middle">F7 query</text>
+<rect x="869" y="359" width="21" height="17" fill="#ffffff"/>
+<text x="880" y="372" font-size="12" font-weight="bold" fill="#a2491f" text-anchor="middle">F5</text>
+<rect x="869" y="489" width="21" height="17" fill="#ffffff"/>
+<text x="880" y="502" font-size="12" font-weight="bold" fill="#a2491f" text-anchor="middle">F1</text>
+<rect x="1234" y="227" width="41" height="17" fill="#ffffff"/>
+<text x="1254" y="240" font-size="12" font-weight="bold" fill="#1c2430" text-anchor="middle">signs</text>
+<rect x="1212" y="366" width="100" height="17" fill="#ffffff"/>
+<text x="1262" y="379" font-size="12" font-weight="bold" fill="#1c2430" text-anchor="middle">F1: OpenID4VCI</text>
+<rect x="1230" y="457" width="48" height="17" fill="#ffffff"/>
+<text x="1254" y="470" font-size="12" font-weight="bold" fill="#1c2430" text-anchor="middle">claims</text>
+<text x="1290" y="764" font-size="12" font-weight="normal" fill="#5a6575" text-anchor="start">Trino doesn&#x27;t call the policy engine:</text>
+<text x="1290" y="779" font-size="12" font-weight="normal" fill="#5a6575" text-anchor="start">access is enforced at the API</text>
+<text x="1214" y="330" font-size="12" font-weight="normal" fill="#5a6575" text-anchor="start">One tenant per participant, on a shared or its own W-Stack</text>
 <rect x="20" y="875" width="22" height="14" rx="3" fill="#d9f2d9" stroke="#2e7d32" stroke-width="1.5"/>
 <text x="48" y="887" font-size="13" font-weight="normal" fill="#3d4756" text-anchor="start">built by the change</text>
 <rect x="211" y="875" width="22" height="14" rx="3" fill="#dbe8f7" stroke="#2f5597" stroke-width="1.5"/>
@@ -149,8 +164,10 @@
 <text x="367" y="887" font-size="13" font-weight="normal" fill="#3d4756" text-anchor="start">reused as is</text>
 <rect x="481" y="875" width="22" height="14" rx="3" fill="#ffffff" stroke="#999999" stroke-width="1.5" stroke-dasharray="6 4"/>
 <text x="509" y="887" font-size="13" font-weight="normal" fill="#3d4756" text-anchor="start">external</text>
-<line x1="595" y1="882" x2="617" y2="882" stroke="#1c2430" stroke-width="3"/>
+<line x1="585" y1="882" x2="617" y2="882" stroke="#1c2430" stroke-width="3"/>
 <text x="623" y="887" font-size="13" font-weight="normal" fill="#3d4756" text-anchor="start">trust-boundary crossing (F4, F5)</text>
-<line x1="877" y1="882" x2="899" y2="882" stroke="#a2491f" stroke-width="1.8"/>
-<text x="905" y="887" font-size="13" font-weight="normal" fill="#a2491f" text-anchor="start">TB3: FAP to internal APIs, listed NATS subjects and routes only</text>
-<text x="20" y="912" font-size="13" fill="#3d4756"><tspan font-weight="bold">Two wallets:</tspan> the organisation's is a W-Stack tenant, people's is any conformant wallet (PCM Cloud as a web wallet). The guard issues the web applications' tokens; Keycloak is not on the login path.</text></svg>
+<line x1="867" y1="882" x2="899" y2="882" stroke="#a2491f" stroke-width="1.8"/>
+<text x="905" y="887" font-size="13" font-weight="normal" fill="#a2491f" text-anchor="start">TB3: to its own wallet&#x27;s internal APIs only</text>
+<text x="20" y="908" font-size="13" font-weight="normal" fill="#3d4756" text-anchor="start">Two kinds of wallet: the participant&#x27;s is its W-Stack tenant, which it alone fills by accepting offers (F1); people&#x27;s are in their phone or browser (F2, F3). The federation issues and publishes</text>
+<text x="20" y="924" font-size="13" font-weight="normal" fill="#3d4756" text-anchor="start">status lists; it never acts in a participant&#x27;s systems. Keycloak is not on the login path.</text>
+</svg>

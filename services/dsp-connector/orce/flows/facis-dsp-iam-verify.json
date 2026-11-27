@@ -1,226 +1,256 @@
 [
-  {
-    "id": "tab-dsp-iam-verify",
-    "type": "tab",
-    "label": "FACIS DSP — IAM Verify",
-    "disabled": false,
-    "info": "NF-1 / FR-IAM-001 / FR-IAM-002 shared verifier. Reached via `link call`\nfrom tab-dsp-negotiations and tab-dsp-transfers (NOT the fire-and-forget\n`link out`/`link in` idiom used by dsp.persist.* — this needs a result back,\nwhich only `link call` + `link in [return]` provide).\n\nDSP_IAM_ENFORCE=off|warn|enforce (default enforce):\n  off     — always returns msg.identity=null, msg.iamRejected=false (parity\n            mode; callers must fall back to their pre-NF-1 behaviour).\n  warn    — verification runs and failures are logged, but msg.iamRejected\n            is always false (never blocks a request).\n  enforce — failures set msg.iamRejected=true + a DSP-shaped 401.\n\nVP holder DID resolution (dsp-iam-prep → dsp-iam-resolve-did →\ndsp-iam-verify-vp) and VC issuer DID resolution (dsp-iam-verify-vp →\ndsp-iam-resolve-vc-did → dsp-iam-verify-vc) both go through a real\nNode-RED `http request` node — function nodes never call the raw fetch\nAPI directly, since the function-node vm sandbox does not expose it.\n\nSee orce/tests/flows/iam-verify.spec.js / iam-verify-golden.spec.js for the\nmirrored pure logic this tab's function nodes must stay byte-identical to."
-  },
-  {
-    "id": "dsp-iam-verify-in",
-    "type": "link in",
-    "z": "tab-dsp-iam-verify",
-    "name": "← iam.verify (call)",
-    "links": [
-      "dsp-neg-iam-call",
-      "dsp-tx-iam-call",
-      "dsp-tx-list-iam-call",
-      "dsp-cat-iam-call",
-      "dsp-consumer-iam-call"
-    ],
-    "x": 150,
-    "y": 120,
-    "wires": [
-      [
-        "dsp-iam-prep"
-      ]
-    ]
-  },
-  {
-    "id": "dsp-iam-prep",
-    "type": "function",
-    "z": "tab-dsp-iam-verify",
-    "name": "prep + cache check",
-    "func": "function didWebToUrl(did) {\n    const parts = did.split(':');\n    if (parts[0] !== 'did' || parts[1] !== 'web') {\n        throw new Error('unsupported DID method: ' + did);\n    }\n    const segments = parts.slice(2).map(decodeURIComponent);\n    const domain = segments[0];\n    const p = segments.slice(1);\n    if (p.length === 0) return 'https://' + domain + '/.well-known/did.json';\n    return 'https://' + domain + '/' + p.join('/') + '/did.json';\n}\n\nfunction dspError(code, detail) {\n    return {\n        statusCode: 401,\n        headers: { 'Content-Type': 'application/json', 'WWW-Authenticate': 'Bearer' },\n        payload: { '@context': 'https://w3id.org/dspace/2025/1/context.jsonld', '@type': 'dspace:Error', 'dspace:code': code, 'dspace:reason': [detail] }\n    };\n}\n\nconst enforce = (env.get('DSP_IAM_ENFORCE') || 'enforce').toLowerCase();\nif (enforce === 'off') {\n    msg.identity = null;\n    msg.iamRejected = false;\n    msg._iamMode = 'off';\n    return [null, null, msg];\n}\nmsg._iamMode = enforce;\n\nconst authHeader = (msg.req && msg.req.headers && msg.req.headers.authorization) || '';\nconst m = /^Bearer\\s+(.+)$/i.exec(authHeader.trim());\nif (!m) {\n    const err = dspError('missing_authorization', 'Authorization: Bearer <vp+jwt> header is required');\n    if (enforce === 'enforce') {\n        Object.assign(msg, err);\n        msg.identity = null;\n        msg.iamRejected = true;\n    } else {\n        msg.identity = null;\n        msg.iamRejected = false;\n        node.warn('[iam-verify] warn-mode: ' + err.payload['dspace:reason'][0]);\n    }\n    return [null, null, msg];\n}\nconst vpToken = m[1];\n\nlet vpPayload, vpHeader;\ntry {\n    const parts = vpToken.split('.');\n    vpHeader = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));\n    vpPayload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));\n} catch (e) {\n    const err = dspError('invalid_signature', 'malformed VP token');\n    if (enforce === 'enforce') { Object.assign(msg, err); msg.identity = null; msg.iamRejected = true; }\n    else { msg.identity = null; msg.iamRejected = false; node.warn('[iam-verify] warn-mode: malformed VP'); }\n    return [null, null, msg];\n}\n\nconst holderDid = vpPayload.iss;\nif (!holderDid || vpPayload.sub !== holderDid) {\n    const err = dspError('holder_binding_failed', 'VP iss/sub mismatch');\n    if (enforce === 'enforce') { Object.assign(msg, err); msg.identity = null; msg.iamRejected = true; }\n    else { msg.identity = null; msg.iamRejected = false; node.warn('[iam-verify] warn-mode: VP iss/sub mismatch'); }\n    return [null, null, msg];\n}\n\nlet didUrl;\ntry {\n    didUrl = didWebToUrl(holderDid || '');\n} catch (e) {\n    const err = dspError('key_mismatch', 'unsupported or missing holder DID');\n    if (enforce === 'enforce') { Object.assign(msg, err); msg.identity = null; msg.iamRejected = true; }\n    else { msg.identity = null; msg.iamRejected = false; node.warn('[iam-verify] warn-mode: ' + e.message); }\n    return [null, null, msg];\n}\n\nmsg._iamOrigPayload = msg.payload;\n    msg._iamVp = { vpToken, vpPayload, vpHeader, holderDid, didUrl };\n\nconst cacheTtlMs = Number(env.get('DSP_IAM_DID_CACHE_TTL_SECONDS') || '300') * 1000;\nconst cache = global.get('iamDidCache') || new Map();\nconst cached = cache.get(didUrl);\nconst now = Date.now();\nif (cached && (now - cached.fetchedAt) < cacheTtlMs) {\n    msg._iamVp.didDoc = cached.doc;\n    return [msg, null, null];\n}\nmsg.url = didUrl;\nreturn [null, msg, null];\n",
-    "outputs": 3,
-    "timeout": "",
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [],
-    "x": 380,
-    "y": 120,
-    "wires": [
-      [
-        "dsp-iam-verify-vp"
-      ],
-      [
-        "dsp-iam-resolve-did"
-      ],
-      [
-        "dsp-iam-return"
-      ]
-    ]
-  },
-  {
-    "id": "dsp-iam-resolve-did",
-    "type": "http request",
-    "z": "tab-dsp-iam-verify",
-    "name": "GET did.json (VP holder)",
-    "method": "GET",
-    "ret": "obj",
-    "paytoqs": "ignore",
-    "url": "",
-    "tls": "",
-    "persist": false,
-    "proxy": "",
-    "insecureHTTPParser": false,
-    "authType": "",
-    "senderr": false,
-    "headers": [],
-    "x": 620,
-    "y": 160,
-    "wires": [
-      [
-        "dsp-iam-verify-vp"
-      ]
-    ]
-  },
-  {
-    "id": "dsp-iam-verify-vp",
-    "type": "function",
-    "z": "tab-dsp-iam-verify",
-    "name": "verify VP + policy (thru VC decode)",
-    "func": "function dspError(code, detail) {\n    return {\n        statusCode: 401,\n        headers: { 'Content-Type': 'application/json', 'WWW-Authenticate': 'Bearer' },\n        payload: { '@context': 'https://w3id.org/dspace/2025/1/context.jsonld', '@type': 'dspace:Error', 'dspace:code': code, 'dspace:reason': [detail] }\n    };\n}\n\nfunction reject(msg, code, detail) {\n    delete msg._iamOrigPayload;\n    const err = dspError(code, detail);\n    if (msg._iamMode === 'enforce') {\n        Object.assign(msg, err);\n        msg.identity = null;\n        msg.iamRejected = true;\n    } else {\n        msg.identity = null;\n        msg.iamRejected = false;\n        node.warn('[iam-verify] warn-mode: ' + code + ' — ' + detail);\n    }\n    return msg;\n}\n\nfunction findJwk(doc, kid) {\n    const vm = doc.verificationMethod.find(v => v.id === kid || v.id === (kid || '').split('#').pop());\n    if (!vm || !vm.publicKeyJwk) throw new Error('verificationMethod not found for kid=' + kid);\n    return vm.publicKeyJwk;\n}\n\nfunction didWebToUrlSafe(did) {\n    const parts = (did || '').split(':');\n    if (parts[0] !== 'did' || parts[1] !== 'web') throw new Error('unsupported DID method: ' + did);\n    const segs = parts.slice(2).map(decodeURIComponent);\n    return segs.length === 1 ? 'https://' + segs[0] + '/.well-known/did.json'\n                             : 'https://' + segs[0] + '/' + segs.slice(1).join('/') + '/did.json';\n}\n\n// `jose` here is in scope from this node's own `libs` declaration below\n// (Node-RED's functionExternalModules injects it as a bound variable,\n// exactly like the existing `crypto` variable is in-scope in dsp-tx-create\n// via its own libs array) — it is NOT read from global context.\n//\n// Outputs: [0] cache-hit on the VC issuer DID → straight to dsp-iam-verify-vc,\n// [1] cache-miss → dsp-iam-resolve-vc-did (http request), [2] any VP-stage\n// rejection → dsp-iam-return (same rejection wiring the old single-node\n// verifier used).\n\n(async () => {\n    const vp = msg._iamVp;\n    if (!vp) {\n        node.error('[iam-verify] missing _iamVp context — programmer error, check wiring');\n        node.send([null, null, reject(msg, 'invalid_signature', 'internal verifier error')]);\n        return;\n    }\n\n    // This response came either from the cache-hit branch (msg._iamVp.didDoc\n    // already set by dsp-iam-prep) or from the http-request node (msg.payload\n    // is the fetched did.json body).\n    const didDoc = vp.didDoc || msg.payload;\n    if ('_iamOrigPayload' in msg) msg.payload = msg._iamOrigPayload;\n    if (!didDoc || !Array.isArray(didDoc.verificationMethod)) {\n        node.send([null, null, reject(msg, 'key_mismatch', 'did.json unresolvable or malformed: ' + vp.didUrl)]);\n        return;\n    }\n    if (!vp.didDoc) {\n        const cache = global.get('iamDidCache') || new Map();\n        cache.set(vp.didUrl, { doc: didDoc, fetchedAt: Date.now() });\n        global.set('iamDidCache', cache);\n    }\n\n    let vpKey;\n    try {\n        vpKey = await jose.importJWK(findJwk(didDoc, vp.vpHeader.kid), vp.vpHeader.alg);\n    } catch (err) {\n        node.send([null, null, reject(msg, 'key_mismatch', 'could not resolve VP signer key: ' + err.message)]);\n        return;\n    }\n\n    try {\n        const audience = env.get('DSP_VP_AUDIENCE') || 'did:web:fap-iotai.facis.cloud';\n        await jose.jwtVerify(vp.vpToken, vpKey, { audience });\n    } catch (err) {\n        if (err && err.code === 'ERR_JWT_EXPIRED') { node.send([null, null, reject(msg, 'token_expired', 'VP expired')]); return; }\n        if (err && err.code === 'ERR_JWT_CLAIM_VALIDATION_FAILED' && err.claim === 'aud') {\n            node.send([null, null, reject(msg, 'invalid_audience', 'VP aud mismatch')]); return;\n        }\n        node.send([null, null, reject(msg, 'invalid_signature', 'VP signature verification failed: ' + err.message)]);\n        return;\n    }\n\n    // vp.holderDid !== vp.vpPayload.sub (holder_binding_failed) is already\n    // gated in dsp-iam-prep, before key resolution/signature verify, to\n    // match iam-verify.spec.js's priority order — unreachable here.\n    if (!vp.vpPayload.jti) {\n        node.send([null, null, reject(msg, 'invalid_signature', 'VP missing jti')]); return;\n    }\n\n    const jtiTtlMs = Number(env.get('DSP_IAM_JTI_TTL_SECONDS') || '300') * 1000;\n    const jtiCache = global.get('iamJtiCache') || new Map();\n    const now = Date.now();\n    for (const [k, exp] of jtiCache) { if (exp <= now) jtiCache.delete(k); }\n    if (jtiCache.has(vp.vpPayload.jti)) {\n        node.send([null, null, reject(msg, 'replay_detected', 'VP jti already used: ' + vp.vpPayload.jti)]); return;\n    }\n    jtiCache.set(vp.vpPayload.jti, now + jtiTtlMs);\n    global.set('iamJtiCache', jtiCache);\n\n    const vcTokens = (vp.vpPayload.vp && vp.vpPayload.vp.verifiableCredential) || [];\n    if (!vcTokens.length) { node.send([null, null, reject(msg, 'invalid_credential', 'VP has no verifiableCredential')]); return; }\n    const vcToken = vcTokens[0];\n\n    let vcHeader, vcPayload;\n    try {\n        const parts = vcToken.split('.');\n        vcHeader = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));\n        vcPayload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));\n    } catch (e) {\n        node.send([null, null, reject(msg, 'invalid_credential', 'malformed inner VC')]); return;\n    }\n\n    const trustedIssuers = (env.get('DSP_TRUSTED_ISSUERS') || '').split(',').map(s => s.trim()).filter(Boolean);\n    if (!trustedIssuers.includes(vcPayload.iss)) {\n        node.send([null, null, reject(msg, 'untrusted_issuer', 'VC issuer not in allowlist: ' + vcPayload.iss)]); return;\n    }\n\n    const subject = (vcPayload.vc && vcPayload.vc.credentialSubject) || {};\n    if (subject.id !== vp.holderDid) {\n        node.send([null, null, reject(msg, 'holder_binding_failed', 'VC credentialSubject.id != VP holder')]); return;\n    }\n\n    // VC issuer DID URL resolution (not key resolution yet — that only\n    // happens once we actually have the did.json doc in dsp-iam-verify-vc).\n    // A bad did:web string here is itself a \"could not resolve VC issuer\n    // key\" failure per iam-verify.spec.js → key_mismatch.\n    let vcDidUrl;\n    try {\n        vcDidUrl = didWebToUrlSafe(vcPayload.iss);\n    } catch (err) {\n        node.send([null, null, reject(msg, 'key_mismatch', 'could not resolve VC issuer key: ' + err.message)]); return;\n    }\n\n    msg._iamVc = { vcToken, vcHeader, vcPayload, holderDid: vp.holderDid, subject, vcDidUrl };\n    delete msg._iamVp;\n\n    const cacheTtlMs = Number(env.get('DSP_IAM_DID_CACHE_TTL_SECONDS') || '300') * 1000;\n    const cache = global.get('iamDidCache') || new Map();\n    const cached = cache.get(vcDidUrl);\n    const nowMs = Date.now();\n    if (cached && (nowMs - cached.fetchedAt) < cacheTtlMs) {\n        msg._iamVc.vcDoc = cached.doc;\n        node.send([msg, null, null]);\n        return;\n    }\n    msg.url = vcDidUrl;\n    node.send([null, msg, null]);\n})();\nreturn;\n",
-    "outputs": 3,
-    "timeout": "",
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [
-      {
-        "var": "jose",
-        "module": "jose"
-      }
-    ],
-    "x": 640,
-    "y": 260,
-    "wires": [
-      [
-        "dsp-iam-verify-vc"
-      ],
-      [
-        "dsp-iam-resolve-vc-did"
-      ],
-      [
-        "dsp-iam-return"
-      ]
-    ]
-  },
-  {
-    "id": "dsp-iam-resolve-vc-did",
-    "type": "http request",
-    "z": "tab-dsp-iam-verify",
-    "name": "GET did.json (VC issuer)",
-    "method": "GET",
-    "ret": "obj",
-    "paytoqs": "ignore",
-    "url": "",
-    "tls": "",
-    "persist": false,
-    "proxy": "",
-    "insecureHTTPParser": false,
-    "authType": "",
-    "senderr": false,
-    "headers": [],
-    "x": 900,
-    "y": 320,
-    "wires": [
-      [
-        "dsp-iam-verify-vc"
-      ]
-    ]
-  },
-  {
-    "id": "dsp-iam-verify-vc",
-    "type": "function",
-    "z": "tab-dsp-iam-verify",
-    "name": "verify VC signature",
-    "func": "function dspError(code, detail) {\n    return {\n        statusCode: 401,\n        headers: { 'Content-Type': 'application/json', 'WWW-Authenticate': 'Bearer' },\n        payload: { '@context': 'https://w3id.org/dspace/2025/1/context.jsonld', '@type': 'dspace:Error', 'dspace:code': code, 'dspace:reason': [detail] }\n    };\n}\n\nfunction reject(msg, code, detail) {\n    delete msg._iamOrigPayload;\n    const err = dspError(code, detail);\n    if (msg._iamMode === 'enforce') {\n        Object.assign(msg, err);\n        msg.identity = null;\n        msg.iamRejected = true;\n    } else {\n        msg.identity = null;\n        msg.iamRejected = false;\n        node.warn('[iam-verify] warn-mode: ' + code + ' — ' + detail);\n    }\n    return msg;\n}\n\nfunction findJwk(doc, kid) {\n    const vm = doc.verificationMethod.find(v => v.id === kid || v.id === (kid || '').split('#').pop());\n    if (!vm || !vm.publicKeyJwk) throw new Error('verificationMethod not found for kid=' + kid);\n    return vm.publicKeyJwk;\n}\n\n// `jose` here is in scope from this node's own `libs` declaration below.\n// Each function node's sandbox is independent — libs declared on\n// dsp-iam-verify-vp are NOT visible here, hence the separate declaration.\n\n(async () => {\n    const vc = msg._iamVc;\n    if (!vc) {\n        node.error('[iam-verify] missing _iamVc context — programmer error, check wiring');\n        node.send(reject(msg, 'invalid_signature', 'internal verifier error'));\n        return;\n    }\n\n    // This response came either from dsp-iam-verify-vp's cache-hit branch\n    // (msg._iamVc.vcDoc already set) or from the http-request node\n    // (msg.payload is the fetched did.json body) — the same\n    // `didDoc || msg.payload` convention the VP stage uses, so a cache-hit's\n    // carried-forward doc is never confused with an unrelated msg.payload.\n    const vcDoc = vc.vcDoc || msg.payload;\n    if ('_iamOrigPayload' in msg) msg.payload = msg._iamOrigPayload;\n    if (!vcDoc || !Array.isArray(vcDoc.verificationMethod)) {\n        node.send(reject(msg, 'key_mismatch', 'did.json unresolvable or malformed: ' + vc.vcDidUrl));\n        return;\n    }\n    if (!vc.vcDoc) {\n        const cache = global.get('iamDidCache') || new Map();\n        cache.set(vc.vcDidUrl, { doc: vcDoc, fetchedAt: Date.now() });\n        global.set('iamDidCache', cache);\n    }\n\n    let vcKey;\n    try {\n        vcKey = await jose.importJWK(findJwk(vcDoc, vc.vcHeader.kid), vc.vcHeader.alg);\n    } catch (err) {\n        node.send(reject(msg, 'key_mismatch', 'could not resolve VC issuer key: ' + err.message));\n        return;\n    }\n\n    try {\n        await jose.jwtVerify(vc.vcToken, vcKey);\n    } catch (err) {\n        if (err && err.code === 'ERR_JWT_EXPIRED') { node.send(reject(msg, 'token_expired', 'VC expired')); return; }\n        node.send(reject(msg, 'invalid_credential', 'VC signature verification failed: ' + err.message));\n        return;\n    }\n\n    const identity = {\n        did: vc.holderDid,\n        roles: vc.subject.roles || [],\n        credentialId: vc.vcPayload.jti || vc.vcPayload.id || null,\n        verifiedAt: new Date().toISOString()\n    };\n    delete msg._iamVc;\n\n    // BitstringStatusList revocation check (net-new, gated by\n    // DSP_STATUS_LIST_MODE=off|warn|enforce). credentialStatus is optional\n    // on a VC — most VCs won't carry one, and a VC without it always skips\n    // straight through here unchanged, exactly like before this check\n    // existed. See dsp-iam-verify-status-list-fn for the fetch+decode.\n    const statusListMode = (env.get('DSP_STATUS_LIST_MODE') || 'warn').toLowerCase();\n    const credentialStatus = vc.vcPayload.vc && vc.vcPayload.vc.credentialStatus;\n    if (statusListMode === 'off' || !credentialStatus || !credentialStatus.statusListCredential) {\n        msg.identity = identity;\n        msg.iamRejected = false;\n        delete msg._iamOrigPayload;\n        node.send([msg, null]);\n        return;\n    }\n\n    // Function nodes have no fetch API (see this tab's own info blurb), so\n    // the status list fetch is a real http-request node, same as DID\n    // resolution. vcKey carries forward to verify the status list's own\n    // signature without a second DID lookup — this design only\n    // self-issues, so the status list and every VC it can be attached to\n    // always share one issuer key.\n    msg._iamStatusCheck = { credentialStatus, vcKey, identity, mode: statusListMode };\n    msg.url = credentialStatus.statusListCredential;\n    node.send([null, msg]);\n})();\nreturn;\n",
-    "outputs": 2,
-    "timeout": "",
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [
-      {
-        "var": "jose",
-        "module": "jose"
-      }
-    ],
-    "x": 1140,
-    "y": 260,
-    "wires": [
-      [
-        "dsp-iam-return"
-      ],
-      [
-        "dsp-iam-resolve-status-list"
-      ]
-    ]
-  },
-  {
-    "id": "dsp-iam-resolve-status-list",
-    "type": "http request",
-    "z": "tab-dsp-iam-verify",
-    "name": "GET status list credential",
-    "method": "GET",
-    "ret": "obj",
-    "paytoqs": "ignore",
-    "url": "",
-    "tls": "",
-    "persist": false,
-    "proxy": "",
-    "insecureHTTPParser": false,
-    "authType": "",
-    "senderr": false,
-    "headers": [],
-    "x": 1140,
-    "y": 400,
-    "wires": [
-      [
-        "dsp-iam-verify-status-list-fn"
-      ]
-    ]
-  },
-  {
-    "id": "dsp-iam-verify-status-list-fn",
-    "type": "function",
-    "z": "tab-dsp-iam-verify",
-    "name": "verify status list + check bit",
-    "func": "function dspError(code, detail) {\n    return {\n        statusCode: 401,\n        headers: { 'Content-Type': 'application/json', 'WWW-Authenticate': 'Bearer' },\n        payload: { '@context': 'https://w3id.org/dspace/2025/1/context.jsonld', '@type': 'dspace:Error', 'dspace:code': code, 'dspace:reason': [detail] }\n    };\n}\n\nfunction rejectRevoked(msg, mode, detail) {\n    delete msg._iamOrigPayload;\n    const err = dspError('credential_revoked', detail);\n    if (mode === 'enforce') {\n        Object.assign(msg, err);\n        msg.identity = null;\n        msg.iamRejected = true;\n    } else {\n        msg.identity = null;\n        msg.iamRejected = false;\n        node.warn('[iam-verify] warn-mode: credential_revoked — ' + detail);\n    }\n    return msg;\n}\n\n// jose/zlib are in scope from this node's own libs declaration below.\n// Each function node's sandbox is independent — libs declared on\n// dsp-iam-verify-vc are NOT visible here.\n\n(async () => {\n    const check = msg._iamStatusCheck;\n    delete msg._iamStatusCheck;\n    if (!check) {\n        if ('_iamOrigPayload' in msg) msg.payload = msg._iamOrigPayload;\n        node.error('[iam-verify] missing _iamStatusCheck context — programmer error, check wiring');\n        msg.identity = null;\n        msg.iamRejected = false;\n        delete msg._iamOrigPayload;\n        node.send(msg);\n        return;\n    }\n\n    function proceed() {\n        msg.identity = check.identity;\n        msg.iamRejected = false;\n        delete msg._iamOrigPayload;\n        node.send(msg);\n    }\n\n    // Fail-open on infra problems below (unreachable/malformed status\n    // list, bad signature): this is an availability-vs-security\n    // tradeoff for a control whose absence merely returns to\n    // pre-status-list behaviour, not a hole in identity verification\n    // itself — the VP/VC signature checks that already passed by the\n    // time this node runs are entirely unaffected. Every fail-open\n    // path is logged via node.warn so a persistently-unreachable\n    // status list is operationally visible, not silently ignored.\n    const statusListJwt = msg.payload && msg.payload.credential;\n    if ('_iamOrigPayload' in msg) msg.payload = msg._iamOrigPayload;\n    if (!statusListJwt) {\n        node.warn('[iam-verify] status list fetch returned no credential — skipping revocation check (fail-open): ' + check.credentialStatus.statusListCredential);\n        return proceed();\n    }\n\n    let slPayload;\n    try {\n        const verified = await jose.jwtVerify(statusListJwt, check.vcKey);\n        slPayload = verified.payload;\n    } catch (err) {\n        node.warn('[iam-verify] status list signature invalid — skipping revocation check (fail-open): ' + err.message);\n        return proceed();\n    }\n\n    try {\n        const encodedList = slPayload.vc && slPayload.vc.credentialSubject && slPayload.vc.credentialSubject.encodedList;\n        const compressed = Buffer.from(encodedList, 'base64url');\n        const bitstring = zlib.gunzipSync(compressed);\n        const idx = Number(check.credentialStatus.statusListIndex);\n        const byteIdx = Math.floor(idx / 8);\n        const bitIdx = 7 - (idx % 8);\n        const revoked = ((bitstring[byteIdx] >> bitIdx) & 1) === 1;\n\n        if (!revoked) {\n            return proceed();\n        }\n\n        node.send(rejectRevoked(msg, check.mode, 'credential ' + (check.identity.credentialId || '') + ' has been revoked'));\n    } catch (err) {\n        node.warn('[iam-verify] status list decode failed — skipping revocation check (fail-open): ' + err.message);\n        return proceed();\n    }\n})();\nreturn null;",
-    "outputs": 1,
-    "timeout": "",
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [
-      {
-        "var": "jose",
-        "module": "jose"
-      },
-      {
-        "var": "zlib",
-        "module": "zlib"
-      }
-    ],
-    "x": 1400,
-    "y": 400,
-    "wires": [
-      [
-        "dsp-iam-return"
-      ]
-    ]
-  },
-  {
-    "id": "dsp-iam-return",
-    "type": "link out",
-    "z": "tab-dsp-iam-verify",
-    "name": "return to caller",
-    "mode": "return",
-    "links": [],
-    "x": 1380,
-    "y": 200,
-    "wires": []
-  }
+    {
+        "id": "tab-dsp-iam-verify",
+        "type": "tab",
+        "label": "DSP iam.verify — SD-JWT VC presentations (key binding, W-Stack crypto provider, status list, participant DID)",
+        "disabled": false,
+        "info": ""
+    },
+    {
+        "id": "dsp-iam-verify-in",
+        "type": "link in",
+        "z": "tab-dsp-iam-verify",
+        "name": "← iam.verify (call)",
+        "links": [
+            "dsp-neg-iam-call",
+            "dsp-tx-iam-call",
+            "dsp-tx-list-iam-call",
+            "dsp-cat-iam-call",
+            "dsp-consumer-iam-call",
+            "dsp-tx-mut-iam-call"
+        ],
+        "x": 110,
+        "y": 120,
+        "wires": [
+            [
+                "dsp-iam-prep"
+            ]
+        ]
+    },
+    {
+        "id": "dsp-iam-prep",
+        "type": "function",
+        "z": "tab-dsp-iam-verify",
+        "name": "prep + local checks (SD-JWT key binding, audience, nonce, credential)",
+        "func": "// prep + local checks of the counterparty's presentation.\n// The Bearer token is an SD-JWT VC presentation with key binding (dc+sd-jwt):\n// <issuer-signed JWT>~<disclosure>~...~<key-binding JWT>. Checked here, from\n// the token alone:\n//   - the key-binding JWT is signed by the key the credential binds (cnf.jwk),\n//     covers exactly what was presented (sd_hash), is addressed to this\n//     connector (aud in DSP_IAM_AUDIENCE), is fresh (iat) and carries a nonce\n//     not seen before (replay);\n//   - every disclosure is one the issuer committed to (_sd digests);\n//   - the credential is a participant credential (vct = DSP_PARTICIPANT_VCT),\n//     names its participant (sub, a did:web), is within its validity period\n//     and carries a status entry.\n// The issuer's signature is checked next by the W-Stack crypto provider, the\n// status and the holder's DID afterwards. The connector checks the key binding\n// itself, whatever the services it calls also check.\n// enforce is the DEFAULT (verification is mandatory); 'off' survives only as a\n// documented evidence mode.\n// Outputs: 1 = next check, 2 = rejection (-> event), 3 = off mode (-> return).\nfunction dspError(code, detail) {\n    return {\n        statusCode: 401,\n        headers: { 'Content-Type': 'application/json', 'WWW-Authenticate': 'Bearer' },\n        payload: { '@context': 'https://w3id.org/dspace/2025/1/context.jsonld', '@type': 'dspace:Error', 'dspace:code': code, 'dspace:reason': [detail] }\n    };\n}\n\nconst enforce = (env.get('DSP_IAM_ENFORCE') || 'enforce').toLowerCase();\nmsg._iamMode = enforce;\n\nconst reqHeaders = (msg.req && msg.req.headers) || {};\nmsg._iamCorrelationId = reqHeaders['x-correlation-id'] || crypto.randomUUID();\nif (msg.res && typeof msg.res.set === 'function') msg.res.set('X-Correlation-Id', msg._iamCorrelationId);\n\nif (enforce === 'off') {\n    msg.identity = null;\n    msg.iamRejected = false;\n    return [null, null, msg];\n}\n\nfunction reject(code, detail) {\n    Object.assign(msg, dspError(code, detail));\n    msg.identity = null;\n    msg.iamRejected = true;\n    return [null, msg, null];\n}\n\nconst authHeader = reqHeaders.authorization || '';\nconst m = /^Bearer\\s+(\\S+)$/i.exec(authHeader.trim());\nif (!m) return reject('missing_authorization', 'Authorization: Bearer <SD-JWT VC presentation> header is required');\nconst token = m[1];\n\nconst audiences = (env.get('DSP_IAM_AUDIENCE') || '').split(',').map((s) => s.trim()).filter(Boolean);\nif (audiences.length === 0) return reject('config_missing', 'DSP_IAM_AUDIENCE not configured — fail closed');\nconst vct = env.get('DSP_PARTICIPANT_VCT') || '';\nif (!vct) return reject('config_missing', 'DSP_PARTICIPANT_VCT not configured — fail closed');\nconst ttlS = Number(env.get('DSP_IAM_VP_TTL_SECONDS') || '300');\nconst skewS = 60;\n\nconst eq = (x, y) => typeof x === 'string' && typeof y === 'string' && x.length === y.length &&\n    crypto.timingSafeEqual(Buffer.from(x), Buffer.from(y));\nconst b64json = (s) => { try { return JSON.parse(Buffer.from(String(s), 'base64url').toString('utf8')); } catch (e) { return null; } };\nconst jwtParts = (s) => {\n    const p = String(s).split('.');\n    if (p.length !== 3) return null;\n    const h = b64json(p[0]);\n    const pl = b64json(p[1]);\n    return h && pl && typeof h === 'object' && typeof pl === 'object' ? { h, pl, raw: p } : null;\n};\nconst sha256 = (s) => crypto.createHash('sha256').update(s, 'ascii').digest('base64url');\n\nconst parts = token.split('~');\nif (parts.length < 2) return reject('invalid_presentation', 'not an SD-JWT VC presentation');\nconst kb = parts.pop();\nif (!kb) return reject('invalid_presentation', 'SD-JWT presentation has no key binding');\nconst [ijwt, ...discs] = parts;\nconst ij = jwtParts(ijwt);\nconst kj = jwtParts(kb);\nif (!ij || !kj) return reject('invalid_presentation', 'SD-JWT presentation not readable');\nif (kj.h.typ !== 'kb+jwt') return reject('invalid_presentation', 'key binding JWT has the wrong type');\nif ((ij.pl._sd_alg || 'sha-256') !== 'sha-256') return reject('invalid_presentation', 'SD-JWT digest algorithm not supported');\nif (!eq(kj.pl.sd_hash, sha256(ijwt + '~' + discs.map((d) => d + '~').join('')))) {\n    return reject('invalid_presentation', 'key binding does not cover the presented disclosures');\n}\n\n// claims: only disclosures whose digest the issuer signed\nconst byDigest = {};\nfor (const d of discs) {\n    const arr = b64json(d);\n    if (!Array.isArray(arr) || (arr.length !== 3 && arr.length !== 2)) return reject('invalid_presentation', 'SD-JWT disclosure not readable');\n    byDigest[sha256(d)] = arr;\n}\nconst used = new Set();\nconst resolve = (v) => {\n    if (Array.isArray(v)) {\n        const out = [];\n        for (const x of v) {\n            if (x && typeof x === 'object' && !Array.isArray(x) && Object.keys(x).length === 1 && typeof x['...'] === 'string') {\n                const dd = byDigest[x['...']];\n                if (dd && dd.length === 2) { used.add(x['...']); out.push(resolve(dd[1])); }\n            } else out.push(resolve(x));\n        }\n        return out;\n    }\n    if (v && typeof v === 'object') {\n        const out = {};\n        for (const [k, x] of Object.entries(v)) if (k !== '_sd' && k !== '_sd_alg') out[k] = resolve(x);\n        for (const dg of Array.isArray(v._sd) ? v._sd : []) {\n            const dd = byDigest[dg];\n            if (dd && dd.length === 3 && !['_sd', '...'].includes(dd[1])) { used.add(dg); out[dd[1]] = resolve(dd[2]); }\n        }\n        return out;\n    }\n    return v;\n};\nconst claims = resolve(ij.pl);\nif (used.size !== Object.keys(byDigest).length) return reject('invalid_presentation', 'SD-JWT disclosure not committed by the issuer');\n\n// the key-binding JWT is signed by the bound key\nconst jwk = claims.cnf && claims.cnf.jwk;\nif (!jwk || typeof jwk !== 'object') return reject('holder_binding_failed', 'credential binds no holder key');\nconst algs = { ES256: 'sha256', ES384: 'sha384', ES512: 'sha512', EdDSA: null };\ntry {\n    const alg = kj.h.alg;\n    if (!Object.prototype.hasOwnProperty.call(algs, alg)) return reject('holder_binding_failed', 'key binding algorithm not supported');\n    const key = crypto.createPublicKey({ key: jwk, format: 'jwk' });\n    const ok = crypto.verify(algs[alg], Buffer.from(kj.raw[0] + '.' + kj.raw[1]),\n        alg === 'EdDSA' ? key : { key, dsaEncoding: 'ieee-p1363' }, Buffer.from(kj.raw[2], 'base64url'));\n    if (!ok) return reject('holder_binding_failed', 'key binding not signed by the holder key');\n} catch (e) {\n    return reject('holder_binding_failed', 'key binding not verifiable');\n}\n\nconst nowS = Math.floor(Date.now() / 1000);\nconst kbAud = Array.isArray(kj.pl.aud) ? kj.pl.aud : [kj.pl.aud];\nif (!kbAud.some((a) => audiences.some((x) => eq(a, x)))) return reject('invalid_audience', 'presentation not addressed to this connector');\nif (typeof kj.pl.iat !== 'number' || kj.pl.iat > nowS + skewS || kj.pl.iat < nowS - ttlS) {\n    return reject('token_expired', 'key binding missing or outside its ' + ttlS + ' s lifetime — fail closed');\n}\nif (typeof kj.pl.nonce !== 'string' || kj.pl.nonce.length < 16) return reject('invalid_presentation', 'key binding nonce missing or too short');\nconst nonceCache = global.get('iamNonceCache') || new Map();\nfor (const [k, expAt] of nonceCache) { if (expAt <= Date.now()) nonceCache.delete(k); }\nglobal.set('iamNonceCache', nonceCache);\nif (nonceCache.has(kj.pl.nonce)) return reject('replay_detected', 'presentation nonce already used');\n// the nonce is only SPENT once the signatures and the status pass — an\n// unsigned token must not consume a real nonce (see dsp-iam-check-status-list).\nmsg._iamPendingNonce = kj.pl.nonce;\nmsg._iamNonceTtlMs = (ttlS + skewS) * 1000;\n\nif (!eq(claims.vct, vct)) return reject('invalid_credential', 'not a participant credential (vct)');\nif (typeof claims.exp === 'number' && claims.exp < nowS) return reject('token_expired', 'participant credential expired');\nif (typeof claims.nbf === 'number' && claims.nbf > nowS + skewS) return reject('invalid_credential', 'participant credential not yet valid');\nif (typeof claims.sub !== 'string' || !claims.sub.startsWith('did:web:')) return reject('invalid_credential', 'participant credential names no did:web participant (sub)');\nif (typeof claims.iss !== 'string' || !claims.iss.startsWith('did:')) return reject('invalid_credential', 'participant credential has no issuer DID');\nconst sl = claims.status && claims.status.status_list;\nconst idx = sl && (typeof sl.idx === 'number' ? sl.idx : (/^[0-9]{1,9}$/.test(String(sl.idx)) ? Number(sl.idx) : -1));\nlet statusUrl = null;\ntry { statusUrl = sl ? new url.URL(String(sl.uri)) : null; } catch (e) { statusUrl = null; }\nif (!statusUrl || statusUrl.protocol !== 'https:' || !(idx >= 0)) return reject('invalid_credential', 'participant credential has no readable status entry');\n\nmsg._iamVp = {\n    token: token,\n    nonce: kj.pl.nonce,\n    aud: kbAud.find((a) => audiences.includes(a)),\n    issuer: claims.iss,\n    holderDid: claims.sub,\n    holderJwk: jwk,\n    claims: claims,\n    status: { uri: statusUrl.href, idx: idx }\n};\nmsg._iamVcs = [{ issuer: claims.iss }];\nreturn [msg, null, null];\n",
+        "outputs": 3,
+        "x": 320,
+        "y": 120,
+        "wires": [
+            [
+                "dsp-iam-trusted-issuer"
+            ],
+            [
+                "dsp-iam-emit-event"
+            ],
+            [
+                "dsp-iam-return"
+            ]
+        ],
+        "libs": [
+            {
+                "var": "crypto",
+                "module": "crypto"
+            },
+            {
+                "var": "url",
+                "module": "url"
+            }
+        ]
+    },
+    {
+        "id": "dsp-iam-trusted-issuer",
+        "type": "function",
+        "z": "tab-dsp-iam-verify",
+        "name": "trusted-issuer allowlist (DSP_TRUSTED_ISSUERS, fail closed)",
+        "func": "function dspError(code, detail) {\n    return {\n        statusCode: 401,\n        headers: { 'Content-Type': 'application/json', 'WWW-Authenticate': 'Bearer' },\n        payload: { '@context': 'https://w3id.org/dspace/2025/1/context.jsonld', '@type': 'dspace:Error', 'dspace:code': code, 'dspace:reason': [detail] }\n    };\n}\n\n// trusted-issuer check: the VC issuers must be in the\n// DSP_TRUSTED_ISSUERS allowlist — the federation issuer's DID, not a\n// local list. Empty allowlist fails CLOSED.\nfunction reject(code, detail) {\n    Object.assign(msg, dspError(code, detail));\n    msg.identity = null;\n    msg.iamRejected = true;\n    return [null, msg];\n}\n\nconst allow = (env.get('DSP_TRUSTED_ISSUERS') || '').split(/[\\s,]+/).filter(Boolean);\nif (allow.length === 0) return reject('untrusted_issuer', 'DSP_TRUSTED_ISSUERS is empty — fail closed');\nfor (const vc of msg._iamVcs) {\n    if (!vc.issuer || !allow.includes(vc.issuer)) {\n        return reject('untrusted_issuer', 'VC issuer not in allowlist: ' + vc.issuer);\n    }\n}\nreturn [msg, null];\n",
+        "outputs": 2,
+        "x": 540,
+        "y": 100,
+        "wires": [
+            [
+                "dsp-iam-prep-vp-ocm"
+            ],
+            [
+                "dsp-iam-emit-event"
+            ]
+        ]
+    },
+    {
+        "id": "dsp-iam-prep-vp-ocm",
+        "type": "function",
+        "z": "tab-dsp-iam-verify",
+        "name": "build request — crypto provider presentation/verify (dc+sd-jwt)",
+        "func": "// Ask the W-Stack crypto provider to check the presentation:\n// POST /v1/presentation/verify, x-format dc+sd-jwt, the presentation in\n// standard base64, with the audience and nonce the key binding carries. It\n// checks the issuer's signature on the credential; the key binding itself was\n// checked in dsp-iam-prep.\nfunction dspError(code, detail) {\n    return {\n        statusCode: 401,\n        headers: { 'Content-Type': 'application/json', 'WWW-Authenticate': 'Bearer' },\n        payload: { '@context': 'https://w3id.org/dspace/2025/1/context.jsonld', '@type': 'dspace:Error', 'dspace:code': code, 'dspace:reason': [detail] }\n    };\n}\nfunction reject(code, detail) {\n    Object.assign(msg, dspError(code, detail));\n    msg.identity = null;\n    msg.iamRejected = true;\n    return [null, msg];\n}\n\nconst base = (env.get('OCM_CRYPTO_URL') || '').replace(/\\/+$/, '');\nif (!base) return reject('config_missing', 'OCM_CRYPTO_URL not set — fail closed');\nmsg._iamOrigPayload = msg.payload;\nmsg.url = base + '/v1/presentation/verify';\nmsg.method = 'POST';\nmsg.headers = { 'Content-Type': 'application/json', 'x-format': 'dc+sd-jwt' };\nmsg.payload = {\n    presentation: Buffer.from(msg._iamVp.token, 'utf8').toString('base64'),\n    aud: msg._iamVp.aud,\n    nonce: msg._iamVp.nonce,\n    disclosureFrame: []\n};\nreturn [msg, null];\n",
+        "outputs": 2,
+        "x": 540,
+        "y": 180,
+        "wires": [
+            [
+                "dsp-iam-vp-ocm"
+            ],
+            [
+                "dsp-iam-emit-event"
+            ]
+        ],
+        "libs": []
+    },
+    {
+        "id": "dsp-iam-vp-ocm",
+        "type": "http request",
+        "z": "tab-dsp-iam-verify",
+        "name": "POST crypto provider /v1/presentation/verify",
+        "method": "use",
+        "url": "",
+        "headers": [],
+        "x": 750,
+        "y": 180,
+        "wires": [
+            [
+                "dsp-iam-check-vp-ocm"
+            ]
+        ],
+        "ret": "obj",
+        "paytoqs": "ignore"
+    },
+    {
+        "id": "dsp-iam-check-vp-ocm",
+        "type": "function",
+        "z": "tab-dsp-iam-verify",
+        "name": "evaluate crypto provider verdict, then GET the status list",
+        "func": "// The crypto provider's verdict on the presentation: valid, and for the same\n// credential (issuer and participant) dsp-iam-prep read. Anything else, an\n// error answer included, is a rejection. Then fetch the status list.\nfunction dspError(code, detail) {\n    return {\n        statusCode: 401,\n        headers: { 'Content-Type': 'application/json', 'WWW-Authenticate': 'Bearer' },\n        payload: { '@context': 'https://w3id.org/dspace/2025/1/context.jsonld', '@type': 'dspace:Error', 'dspace:code': code, 'dspace:reason': [detail] }\n    };\n}\nfunction reject(code, detail) {\n    if ('_iamOrigPayload' in msg) { msg.payload = msg._iamOrigPayload; delete msg._iamOrigPayload; }\n    Object.assign(msg, dspError(code, detail));\n    msg.identity = null;\n    msg.iamRejected = true;\n    return [null, msg];\n}\n\nconst resp = msg.payload;\nconst code = msg.statusCode;\nif ('_iamOrigPayload' in msg) { msg.payload = msg._iamOrigPayload; delete msg._iamOrigPayload; }\ndelete msg.statusCode;\nif (code !== 200 || !resp || typeof resp !== 'object' || resp.valid !== true) {\n    return reject('invalid_signature', 'crypto provider rejected the presentation');\n}\nconst dc = resp.disclosedCredential || {};\nif (dc.iss !== msg._iamVp.issuer || dc.sub !== msg._iamVp.holderDid) {\n    return reject('invalid_signature', 'crypto provider verdict is for another credential');\n}\nmsg._iamOrigPayload = msg.payload;\nmsg.url = msg._iamVp.status.uri;\nmsg.method = 'GET';\nmsg.headers = { accept: 'application/statuslist+jwt' };\nmsg.payload = '';\nreturn [msg, null];\n",
+        "outputs": 2,
+        "x": 950,
+        "y": 180,
+        "wires": [
+            [
+                "dsp-iam-status-list-ocm"
+            ],
+            [
+                "dsp-iam-emit-event"
+            ]
+        ],
+        "libs": []
+    },
+    {
+        "id": "dsp-iam-status-list-ocm",
+        "type": "http request",
+        "z": "tab-dsp-iam-verify",
+        "name": "GET status list token (statuslist+jwt)",
+        "method": "use",
+        "url": "",
+        "headers": [],
+        "x": 1150,
+        "y": 180,
+        "wires": [
+            [
+                "dsp-iam-resolve-dids"
+            ]
+        ],
+        "ret": "txt",
+        "paytoqs": "ignore"
+    },
+    {
+        "id": "dsp-iam-check-status-list",
+        "type": "function",
+        "z": "tab-dsp-iam-verify",
+        "name": "status list signature + entry, holder key in the participant DID",
+        "func": "// Last checks, fail closed:\n//   - the status list token (IETF Token Status List, statuslist+jwt) is signed\n//     by a key of the credential's issuer, is the list the credential points to\n//     (sub), is not expired, and the credential's entry is 0 (valid);\n//   - holder: the key the credential binds is a key of the participant's own\n//     DID document, so the presenter is that participant, not just a key.\n// Then the identity is set and the nonce spent.\n// libs: zlib. Outputs: 1 = accepted, 2 = rejection (both -> event).\nfunction dspError(code, detail) {\n    return {\n        statusCode: 401,\n        headers: { 'Content-Type': 'application/json', 'WWW-Authenticate': 'Bearer' },\n        payload: { '@context': 'https://w3id.org/dspace/2025/1/context.jsonld', '@type': 'dspace:Error', 'dspace:code': code, 'dspace:reason': [detail] }\n    };\n}\nfunction reject(code, detail) {\n    Object.assign(msg, dspError(code, detail));\n    msg.identity = null;\n    msg.iamRejected = true;\n    return [null, msg];\n}\n\nconst vp = msg._iamVp;\nconst b64json = (s) => { try { return JSON.parse(Buffer.from(String(s), 'base64url').toString('utf8')); } catch (e) { return null; } };\nconst sameKey = (a, b) => a && b && ['kty', 'crv', 'x', 'y', 'n', 'e'].every((k) => a[k] === b[k]);\nconst methods = (doc) => (Array.isArray(doc.verificationMethod) ? doc.verificationMethod : [])\n    .filter((m) => m && m.publicKeyJwk && typeof m.id === 'string')\n    .map((m) => ({ id: m.id.startsWith('#') ? doc.id + m.id : m.id, jwk: m.publicKeyJwk }));\nconst algs = { ES256: 'sha256', ES384: 'sha384', ES512: 'sha512', EdDSA: null };\n\n// status list token\nconst [h64, p64, s64] = msg._iamStatusJwt.split('.');\nconst sh = b64json(h64);\nconst sp = b64json(p64);\nif (!sh || !sp || sh.typ !== 'statuslist+jwt') return reject('status_unavailable', 'credential status list not readable');\nif (typeof sh.kid !== 'string' || sh.kid.split('#')[0] !== vp.issuer) return reject('status_unavailable', 'status list not signed by the credential issuer');\nconst vm = methods(msg._iamDids.issuer).find((m) => m.id === sh.kid);\nif (!vm || !Object.prototype.hasOwnProperty.call(algs, sh.alg)) return reject('status_unavailable', 'status list signing key not found');\nlet sigOk = false;\ntry {\n    const key = crypto.createPublicKey({ key: vm.jwk, format: 'jwk' });\n    sigOk = crypto.verify(algs[sh.alg], Buffer.from(h64 + '.' + p64), sh.alg === 'EdDSA' ? key : { key, dsaEncoding: 'ieee-p1363' }, Buffer.from(s64, 'base64url'));\n} catch (e) {\n    sigOk = false;\n}\nif (!sigOk) return reject('status_unavailable', 'status list signature invalid');\nif (sp.sub !== vp.status.uri) return reject('status_unavailable', 'status list is not the one the credential points to');\nconst nowS = Math.floor(Date.now() / 1000);\nif (typeof sp.exp === 'number' && sp.exp < nowS) return reject('status_unavailable', 'status list expired');\nconst lst = sp.status_list || {};\nconst bits = Number(lst.bits);\nlet bytes = null;\ntry { bytes = [1, 2, 4, 8].includes(bits) && typeof lst.lst === 'string' ? zlib.inflateSync(Buffer.from(lst.lst, 'base64url')) : null; } catch (e) { bytes = null; }\nif (!bytes) return reject('status_unavailable', 'credential status list not readable');\nconst bitPos = vp.status.idx * bits;\nconst byteAt = Math.floor(bitPos / 8);\nif (byteAt >= bytes.length) return reject('status_unavailable', 'credential status index outside the list');\nconst value = (bytes[byteAt] >> (bitPos % 8)) & ((1 << bits) - 1);\nif (value !== 0) return reject('credential_revoked', 'participant credential revoked or suspended');\n\n// holder: the bound key belongs to the participant's DID\nif (msg._iamDids.holder.id !== vp.holderDid || !methods(msg._iamDids.holder).some((m) => sameKey(m.jwk, vp.holderJwk))) {\n    return reject('holder_binding_failed', 'the holder key is not a key of the participant DID ' + vp.holderDid);\n}\n\nmsg.identity = {\n    did: vp.holderDid,\n    roles: Array.isArray(vp.claims.participantRoles) ? vp.claims.participantRoles.filter((r) => typeof r === 'string') : [],\n    issuer: vp.issuer,\n    legalName: typeof vp.claims.legalName === 'string' ? vp.claims.legalName : undefined\n};\nmsg.iamRejected = false;\nconst cache = global.get('iamNonceCache') || new Map();\ncache.set(vp.nonce, Date.now() + (msg._iamNonceTtlMs || 360000));\nglobal.set('iamNonceCache', cache);\ndelete msg._iamStatusJwt;\ndelete msg._iamDids;\nreturn [msg, null];\n",
+        "outputs": 2,
+        "x": 1000,
+        "y": 260,
+        "wires": [
+            [
+                "dsp-iam-emit-event"
+            ],
+            [
+                "dsp-iam-emit-event"
+            ]
+        ],
+        "libs": [
+            {
+                "var": "crypto",
+                "module": "crypto"
+            },
+            {
+                "var": "zlib",
+                "module": "zlib"
+            }
+        ]
+    },
+    {
+        "id": "dsp-iam-emit-event",
+        "type": "function",
+        "z": "tab-dsp-iam-verify",
+        "name": "log verification event with correlation id",
+        "func": "\n// every verification result is logged as a structured event WITH\n// the correlation id (an operator finds a decision in the pod logs by the\n// id from the X-Correlation-Id response header).\nconst event = {\n    event: 'iam.verify',\n    correlationId: msg._iamCorrelationId || null,\n    at: new Date().toISOString(),\n    mode: msg._iamMode || null,\n    result: msg.iamRejected ? 'rejected' : 'accepted',\n    code: (msg.iamRejected && msg.payload && msg.payload['dspace:code']) || null,\n    did: (msg._iamVp && msg._iamVp.holderDid) || (msg.identity && msg.identity.did) || null\n};\nnode.warn(JSON.stringify(event));\nconst log = global.get('iamVerifyEvents') || [];\nlog.push(event);\nglobal.set('iamVerifyEvents', log);\nreturn msg;\n",
+        "outputs": 1,
+        "x": 1150,
+        "y": 240,
+        "wires": [
+            [
+                "dsp-iam-return"
+            ]
+        ]
+    },
+    {
+        "id": "dsp-iam-return",
+        "type": "link out",
+        "z": "tab-dsp-iam-verify",
+        "name": "return to caller",
+        "mode": "return",
+        "links": [],
+        "x": 1350,
+        "y": 240,
+        "wires": []
+    },
+    {
+        "id": "dsp-iam-resolve-dids",
+        "type": "function",
+        "z": "tab-dsp-iam-verify",
+        "initialize": "",
+        "finalize": "",
+        "noerr": 0,
+        "name": "resolve the issuer and participant DIDs (cached)",
+        "func": "// Collects what the last checks need: the status list token (from the GET\n// before), then the DID documents of the issuer (its key signs the status\n// list) and of the participant (its keys must include the credential's holder\n// key). did:web only, cached for DSP_IAM_DID_CACHE_TTL_SECONDS.\n// Called again with each fetched DID document (msg._iamDidPending set).\n// Outputs: 1 = fetch a DID document, 2 = all resolved, 3 = rejection.\nfunction dspError(code, detail) {\n    return {\n        statusCode: 401,\n        headers: { 'Content-Type': 'application/json', 'WWW-Authenticate': 'Bearer' },\n        payload: { '@context': 'https://w3id.org/dspace/2025/1/context.jsonld', '@type': 'dspace:Error', 'dspace:code': code, 'dspace:reason': [detail] }\n    };\n}\nfunction reject(code, detail) {\n    if ('_iamOrigPayload' in msg) { msg.payload = msg._iamOrigPayload; delete msg._iamOrigPayload; }\n    delete msg._iamDidPending;\n    Object.assign(msg, dspError(code, detail));\n    msg.identity = null;\n    msg.iamRejected = true;\n    return [null, null, msg];\n}\n\nconst ttlMs = Number(env.get('DSP_IAM_DID_CACHE_TTL_SECONDS') || '300') * 1000;\nconst cache = global.get('iamDidCache') || new Map();\nfor (const [k, v] of cache) { if (v.expAt <= Date.now()) cache.delete(k); }\n\nconst resp = msg.payload;\nconst code = msg.statusCode;\ndelete msg.statusCode;\nif (msg._iamDidPending) {\n    const did = msg._iamDidPending;\n    delete msg._iamDidPending;\n    if (code !== 200 || !resp || typeof resp !== 'object' || resp.id !== did) return reject('invalid_credential', 'DID document not resolvable: ' + did);\n    cache.set(did, { doc: resp, expAt: Date.now() + ttlMs });\n} else {\n    let body = resp;\n    if (Buffer.isBuffer(body)) body = body.toString('utf8');\n    if (code !== 200 || typeof body !== 'string' || body.trim().split('.').length !== 3) {\n        return reject('status_unavailable', 'credential status list unavailable — fail closed');\n    }\n    msg._iamStatusJwt = body.trim();\n}\nglobal.set('iamDidCache', cache);\n\nconst didWebUrl = (did) => {\n    const segs = did.slice('did:web:'.length).split(':').map(decodeURIComponent);\n    if (!segs[0] || segs.some((s) => !s || s.includes('/') || s === '.' || s === '..')) return null;\n    const host = segs.shift();\n    return 'https://' + host + '/' + (segs.length ? segs.join('/') + '/did.json' : '.well-known/did.json');\n};\nfor (const did of [msg._iamVp.issuer, msg._iamVp.holderDid]) {\n    if (cache.has(did)) continue;\n    if (!did.startsWith('did:web:')) return reject('invalid_credential', 'only did:web DIDs can be resolved: ' + did);\n    const u = didWebUrl(did);\n    if (!u) return reject('invalid_credential', 'malformed did:web: ' + did);\n    msg._iamDidPending = did;\n    msg.url = u;\n    msg.method = 'GET';\n    msg.headers = { accept: 'application/did+json, application/json' };\n    msg.payload = '';\n    return [msg, null, null];\n}\nif ('_iamOrigPayload' in msg) { msg.payload = msg._iamOrigPayload; delete msg._iamOrigPayload; }\nmsg._iamDids = { issuer: cache.get(msg._iamVp.issuer).doc, holder: cache.get(msg._iamVp.holderDid).doc };\nreturn [null, msg, null];\n",
+        "outputs": 3,
+        "wires": [
+            [
+                "dsp-iam-did-fetch"
+            ],
+            [
+                "dsp-iam-check-status-list"
+            ],
+            [
+                "dsp-iam-emit-event"
+            ]
+        ],
+        "libs": [],
+        "x": 750,
+        "y": 260
+    },
+    {
+        "id": "dsp-iam-did-fetch",
+        "type": "http request",
+        "z": "tab-dsp-iam-verify",
+        "method": "use",
+        "url": "",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": false,
+        "headers": [],
+        "name": "GET did:web document",
+        "ret": "obj",
+        "paytoqs": "ignore",
+        "wires": [
+            [
+                "dsp-iam-resolve-dids"
+            ]
+        ],
+        "x": 750,
+        "y": 340
+    }
 ]

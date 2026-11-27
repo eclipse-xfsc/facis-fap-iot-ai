@@ -27,6 +27,8 @@ mkdir -p "${FLOWS_DEST}" "${CONFIG_DEST}"
 find "${FLOWS_DEST}" -maxdepth 1 -type f -name '*.json' -delete
 find "${CONFIG_DEST}" -maxdepth 1 -type f -name '*.json' -delete
 
+# facis-dsp-iam-retired.json (410 for the former identity routes) is synced
+# like any other flow, so the chart ships it in the orce-flows ConfigMap.
 cp -v "${ORCE_DIR}"/flows/*.json "${FLOWS_DEST}/"
 
 if [[ -f "${ORCE_DIR}/config/datasets.json" ]]; then

@@ -12,25 +12,28 @@ Editable source: [`diagrams/icam-overview.drawio`](diagrams/icam-overview.drawio
 
 | Zone | Contents |
 |---|---|
-| Outside | Users with their browser or smartphone, other participants' DSP connectors |
-| FAP deployment | The guard, the DSP connector with its identity steps, AI Insight |
-| Federation trust services | OCM W-Stack (issuer, verifier, status list, connector tenant, NATS, crypto provider), wallets, the policy engine. Keycloak is no longer on the login path |
+| Outside | Users with their browser or smartphone and their wallets, other participants' DSP connectors |
+| Participant: the IoT & AI services | The guard, the DSP connector with its identity steps, AI Insight, the policy engine |
+| Participant: its wallet | Its W-Stack tenant: credential retrieval and storage, the crypto provider with the participant's key, and the verifier the guard uses. Run by the participant, or for it, but only the participant decides what enters it |
+| Federation trust services | The issuers of participant and role credentials (W-Stack issuer, issuing plugin, pre-authorization bridge), their status lists and `did:web` documents, the trusted-issuer list. Keycloak is no longer on the login path |
 | Data lake | Trino and Kafka, reached by the connector for transfers and by AI Insight for queries |
+
+Federation and participants are decoupled: only public protocol crosses between them (OpenID4VCI offers and requests, `did:web` documents, status lists, presentations). The federation's operators issue and revoke; they never act inside a participant's systems.
 
 Trust boundaries:
 
-- **TB1, Internet to the federation services:** only the public routes (OpenID4VCI, OpenID4VP, `did:web`, well-known documents, status list).
+- **TB1, Internet to the federation services:** only the public routes (OpenID4VCI, `did:web`, well-known documents, status list).
 - **TB2, Internet to the FAP:** the DSP endpoints, where every request carries a verified presentation (F4), and the web applications, behind the guard (F3).
-- **TB3, FAP to the W-Stack internal APIs:** only the listed NATS subjects and REST routes. These APIs don't authenticate callers, so default-deny network policies and NATS ACLs are the control.
+- **TB3, the IoT & AI services to their own wallet's internal APIs:** the connector and the guard call their tenant's retrieval, storage, crypto provider and verifier, nothing of the federation's. These APIs don't authenticate callers, so default-deny network policies are the control.
 
 ## F0. Deployment with the Builder nodes
 
-The Easy Stack Builder nodes deploy the trust services; their outputs configure the FAP deployment, the guard included, with no manual copying. The issuer key and the connector key are created in the crypto provider, and the connector's `did:web` is published.
+The Easy Stack Builder nodes deploy the trust services; their outputs configure the IoT & AI deployment, the guard included, with no manual copying. The issuer key and the connector key are created in the crypto provider, and the connector's `did:web` is published.
 
 ```mermaid
 sequenceDiagram
   autonumber
-  participant DEP as FAP deployment flow<br/>(ORCE)
+  participant DEP as IoT & AI deployment flow<br/>(ORCE)
   participant OCM as ESB OCM-WStack<br/>Builder node
   participant PCM as ESB PCM<br/>Builder node
   participant CRY as Crypto provider<br/>(OpenBao)
@@ -57,23 +60,30 @@ Editable source: [`diagrams/sequences/f0-deployment.txt`](diagrams/sequences/f0-
 
 ## F1. Organisation credential
 
-The DSP connector receives its participant credential from the federation issuer over OpenID4VCI (pre-authorized code), into its W-Stack tenant. The issuing plugin supplies the claims and registers the credential in the status list.
+The federation issuer offers the participant credential; the participant's connector decides whether to accept it into its own wallet, its W-Stack tenant. The connector accepts only an SD-JWT VC of the participant credential type from a trusted issuer, with the tenant's key as holder key. The issuing plugin, on the federation side, supplies the claims and registers the credential in the status list.
 
 ```mermaid
 sequenceDiagram
   autonumber
-  participant OP as Federation operator<br/>(ORCE admin flow)
-  participant ISS as W-Stack issuer
+  participant OP as Federation operator
+  participant ISS as Federation issuer<br/>(W-Stack issuer)
   participant PAB as Pre-authorization<br/>bridge
-  participant PLG as Issuing plugin<br/>(DSP connector)
-  participant SL as Status list
-  participant RET as Connector tenant<br/>(retrieval)
-  participant CRY as Crypto provider<br/>(connector key)
-  participant STO as Connector tenant<br/>(storage)
-  OP->>ISS: credential offer (connector DID, participant credential type)
-  ISS-->>OP: offer URI and pre-authorized code
-  OP->>RET: accept the offer
+  participant PLG as Issuing plugin<br/>(federation)
+  participant SL as Status list<br/>(federation)
+  participant ADM as Participant<br/>administrator
+  participant CON as DSP connector<br/>(iam.receive)
+  participant RET as Participant tenant<br/>(retrieval)
+  participant CRY as Participant tenant<br/>(crypto provider)
+  participant STO as Participant tenant<br/>(storage)
+  OP->>ISS: credential offer (participant DID, participant credential type)
+  ISS-->>OP: offer link and pre-authorized code
+  OP-->>ADM: offer link (out of band)
+  ADM->>CON: POST /iam/credentials/offers (admin token)
+  CON->>RET: resolve the offer
   RET->>ISS: issuer metadata (well-known)
+  RET-->>CON: resolved offer
+  CON->>CON: trusted issuer, SD-JWT VC of the participant type
+  CON->>RET: accept, holder key = the tenant key
   RET->>PAB: token request (pre-authorized code)
   PAB-->>RET: access token, c_nonce
   RET->>CRY: sign the proof JWT
@@ -83,8 +93,10 @@ sequenceDiagram
   PLG->>SL: create a status entry
   SL-->>PLG: status URL and index
   PLG-->>ISS: claims (legal name, roles, trust framework, status)
-  ISS-->>RET: signed credential (jwt_vc_json)
+  ISS-->>RET: signed credential (SD-JWT VC, bound to the tenant key)
   RET->>STO: store the credential
+  CON-->>ADM: stored, or refused and the offer deleted
+  Note over OP,CON: The federation offers, the participant decides what enters its wallet
 ```
 
 Editable source: [`diagrams/sequences/f1-organisation-credential.txt`](diagrams/sequences/f1-organisation-credential.txt)
@@ -116,7 +128,7 @@ sequenceDiagram
   PLG->>SL: create a status entry
   SL-->>PLG: status URL and index
   PLG-->>ISS: claims (name, email, org_did, roles, purposes, status)
-  ISS-->>W: signed credential (jwt_vc_json)
+  ISS-->>W: signed credential (SD-JWT VC)
 ```
 
 Editable source: [`diagrams/sequences/f2-personal-credential.txt`](diagrams/sequences/f2-personal-credential.txt)
@@ -162,25 +174,26 @@ Editable source: [`diagrams/sequences/f3-wallet-login.txt`](diagrams/sequences/f
 
 ## F4. DSP inbound check
 
-A counterparty's DSP request carries a presentation. The connector checks it, fails closed, logs the result, and asks the policy engine before any agreement or transfer.
+A counterparty's DSP request carries an SD-JWT VC presentation of its participant credential. The connector checks it, fails closed, logs the result, and asks the policy engine before any agreement or transfer. It checks the key binding itself; its own tenant's crypto provider checks the issuer's signature.
 
 ```mermaid
 sequenceDiagram
   autonumber
   participant CP as Counterparty<br/>connector
   participant VER as iam.verify<br/>(DSP connector)
+  participant CRY as Own tenant<br/>crypto provider
+  participant SL as Status list<br/>(federation)
   participant DID as did:web<br/>resolution
-  participant CRY as W-Stack<br/>crypto provider
-  participant SL as Status list
   participant POL as Policy engine
   participant DB as Negotiation state<br/>(Postgres)
-  CP->>VER: DSP request with a Bearer VP-JWT
-  VER->>VER: audience, expiry, nonce, jti not replayed
-  VER->>DID: resolve the holder and issuer DIDs
-  VER->>CRY: verify the presentation and the credential
-  CRY-->>VER: signature and holder binding valid
-  VER->>SL: status list (cached at most 5 min)
+  CP->>VER: DSP request with a Bearer SD-JWT VC presentation
+  VER->>VER: key binding by the credential holder key, sd_hash, audience, freshness, nonce not replayed
+  VER->>CRY: issuer signature of the credential
+  CRY-->>VER: valid
   VER->>VER: issuer on the trusted-issuer list
+  VER->>SL: status list token
+  VER->>DID: issuer and participant DID documents (cached at most 5 min)
+  VER->>VER: status list signed by the issuer, entry valid, holder key is a key of the participant DID
   VER->>POL: participant and negotiation policies
   POL-->>VER: allow, or deny with a reason
   VER->>DB: decision record
@@ -192,24 +205,24 @@ Editable source: [`diagrams/sequences/f4-dsp-inbound.txt`](diagrams/sequences/f4
 
 ## F5. DSP outbound presentation
 
-The connector takes its credential from its tenant, has the crypto provider sign a presentation for this provider, and attaches it to its DSP requests.
+The connector takes its participant credential from its tenant's storage, has the tenant's crypto provider add the key binding for this provider, and attaches the presentation to its DSP requests.
 
 ```mermaid
 sequenceDiagram
   autonumber
   participant DSP as DSP connector<br/>(consumer flow)
   participant ISS as iam.issue<br/>(DSP connector)
-  participant STO as Connector tenant<br/>(storage)
-  participant CRY as Crypto provider<br/>(connector key in OpenBao)
+  participant STO as Participant tenant<br/>(storage)
+  participant CRY as Participant tenant<br/>(crypto provider)
   participant P as Counterparty<br/>provider
   DSP->>ISS: presentation needed for this provider
-  ISS->>STO: DCQL query for the participant credential
-  STO-->>ISS: credential (jwt_vc_json)
-  ISS->>CRY: sign a presentation (audience = provider, nonce, 5 min expiry)
-  CRY-->>ISS: signed VP-JWT
+  ISS->>STO: DCQL query for the participant credential (SD-JWT VC)
+  STO-->>ISS: credential
+  ISS->>CRY: key binding (audience = the provider base URL, fresh nonce)
+  CRY-->>ISS: SD-JWT VC presentation
   ISS-->>DSP: Bearer token
-  DSP->>P: DSP request with the Bearer VP-JWT
-  Note over ISS,CRY: No private key in the connector: the crypto provider signs with the connector key
+  DSP->>P: DSP request with the Bearer presentation
+  Note over ISS,CRY: No private key in the connector: the tenant crypto provider signs with the tenant key
 ```
 
 Editable source: [`diagrams/sequences/f5-dsp-outbound.txt`](diagrams/sequences/f5-dsp-outbound.txt)

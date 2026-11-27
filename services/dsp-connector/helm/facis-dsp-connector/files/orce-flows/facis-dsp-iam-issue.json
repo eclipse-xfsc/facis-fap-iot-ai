@@ -1,0 +1,178 @@
+[
+    {
+        "id": "tab-dsp-iam-issue",
+        "type": "tab",
+        "label": "DSP iam.issue — SD-JWT VC presentation from the W-Stack tenant (storage, crypto provider key binding)",
+        "disabled": false,
+        "info": ""
+    },
+    {
+        "id": "dsp-iam-issue-in",
+        "type": "link in",
+        "z": "tab-dsp-iam-issue",
+        "name": "← iam.issue (call)",
+        "links": [
+            "dsp-consumer-issue-call"
+        ],
+        "x": 110,
+        "y": 120,
+        "wires": [
+            [
+                "dsp-iam-issue-prep"
+            ]
+        ]
+    },
+    {
+        "id": "dsp-iam-issue-prep",
+        "type": "function",
+        "z": "tab-dsp-iam-issue",
+        "name": "prep — counterparty audience, nonce, correlation id",
+        "func": "function dspError(code, detail, statusCode) {\n    return {\n        statusCode: statusCode || 401,\n        headers: { 'Content-Type': 'application/json' },\n        payload: { '@context': 'https://w3id.org/dspace/2025/1/context.jsonld', '@type': 'dspace:Error', 'dspace:code': code, 'dspace:reason': [detail] }\n    };\n}\n\n// prep: the counterparty is the presentation's audience: its base URL as this\n// connector calls it (msg.payload.providerBaseUrl from the consumer flow, or\n// msg.payload.counterparty), falling back to DSP_PEER_ENDPOINT. The\n// counterparty accepts its own base URL in DSP_IAM_AUDIENCE. A fresh nonce per\n// presentation (the counterparty refuses a nonce it has seen), and a\n// correlation id for the iam.issue event.\nfunction reject(code, detail, statusCode) {\n    Object.assign(msg, dspError(code, detail, statusCode));\n    msg.iamIssueRejected = true;\n    return [null, msg];\n}\n\nconst reqHeaders = (msg.req && msg.req.headers) || {};\nmsg._iamCorrelationId = reqHeaders['x-correlation-id'] || crypto.randomUUID();\nif (msg.res && typeof msg.res.set === 'function') msg.res.set('X-Correlation-Id', msg._iamCorrelationId);\n\nconst p = msg.payload && typeof msg.payload === 'object' ? msg.payload : {};\nconst audience = String(p.counterparty || p.providerBaseUrl || env.get('DSP_PEER_ENDPOINT') || '').replace(/\\/+$/, '');\nif (!audience) return reject('config_missing', 'no counterparty (msg.payload.providerBaseUrl, msg.payload.counterparty or DSP_PEER_ENDPOINT)', 500);\nconst nonce = (msg.payload && msg.payload.nonce) || crypto.randomUUID();\nmsg._iamIssue = { audience: audience, nonce: nonce };\nreturn [msg, null];\n",
+        "outputs": 2,
+        "x": 320,
+        "y": 120,
+        "wires": [
+            [
+                "dsp-iam-issue-prep-storage"
+            ],
+            [
+                "dsp-iam-issue-emit-event"
+            ]
+        ],
+        "libs": [
+            {
+                "var": "crypto",
+                "module": "crypto"
+            }
+        ]
+    },
+    {
+        "id": "dsp-iam-issue-prep-storage",
+        "type": "function",
+        "z": "tab-dsp-iam-issue",
+        "name": "build DCQL query — tenant storage (dc+sd-jwt participant credential)",
+        "func": "// The connector's participant credential from its W-Stack tenant's storage:\n// POST /v1/tenants/{tenant}/storage/{region}/{country}/{account}/credentials\n// with a DCQL query for an SD-JWT VC of the participant credential type\n// (DSP_PARTICIPANT_VCT). Region, country and account are where the tenant's\n// retrieval service filed it when the connector accepted the offer.\nfunction dspError(code, detail, statusCode) {\n    return {\n        statusCode: statusCode || 401,\n        headers: { 'Content-Type': 'application/json' },\n        payload: { '@context': 'https://w3id.org/dspace/2025/1/context.jsonld', '@type': 'dspace:Error', 'dspace:code': code, 'dspace:reason': [detail] }\n    };\n}\nfunction reject(code, detail, statusCode) {\n    Object.assign(msg, dspError(code, detail, statusCode));\n    msg.iamIssueRejected = true;\n    return [null, msg];\n}\n\nconst base = (env.get('OCM_STORAGE_URL') || '').replace(/\\/+$/, '');\nconst tenant = env.get('OCM_TENANT') || '';\nconst region = env.get('OCM_REGION') || '';\nconst country = env.get('OCM_COUNTRY') || '';\nconst account = env.get('OCM_ACCOUNT') || '';\nconst vct = env.get('DSP_PARTICIPANT_VCT') || '';\nif (!base || !tenant || !region || !country || !account || !vct) {\n    return reject('config_missing', 'OCM_STORAGE_URL, OCM_TENANT, OCM_REGION, OCM_COUNTRY, OCM_ACCOUNT and DSP_PARTICIPANT_VCT are required — fail closed', 500);\n}\nmsg._iamOrigPayload = msg.payload;\nmsg.url = base + '/v1/tenants/' + [tenant, 'storage', region, country, account].map(encodeURIComponent).join('/') + '/credentials';\nmsg.method = 'POST';\nmsg.headers = { 'Content-Type': 'application/json' };\nmsg.payload = { credentials: [{ id: 'participant', format: 'dc+sd-jwt', meta: { vct_values: [vct] } }] };\nreturn [msg, null];\n",
+        "outputs": 2,
+        "x": 540,
+        "y": 120,
+        "wires": [
+            [
+                "dsp-iam-storage-ocm"
+            ],
+            [
+                "dsp-iam-issue-emit-event"
+            ]
+        ]
+    },
+    {
+        "id": "dsp-iam-storage-ocm",
+        "type": "http request",
+        "z": "tab-dsp-iam-issue",
+        "name": "POST tenant storage /v1/tenants/{t}/storage/{region}/{country}/{account}/credentials (DCQL)",
+        "method": "use",
+        "url": "",
+        "headers": [],
+        "x": 760,
+        "y": 120,
+        "wires": [
+            [
+                "dsp-iam-issue-check-storage"
+            ]
+        ],
+        "ret": "obj"
+    },
+    {
+        "id": "dsp-iam-issue-check-storage",
+        "type": "function",
+        "z": "tab-dsp-iam-issue",
+        "name": "pick the participant credential; abort when storage has none",
+        "func": "// The storage answer: {groups: [{credentials: {<id>: {data}}}]} for the DCQL\n// query, {} when nothing matches. Takes the participant credential that\n// expires last among the valid ones; none -> abort (never present nothing).\nfunction dspError(code, detail, statusCode) {\n    return {\n        statusCode: statusCode || 401,\n        headers: { 'Content-Type': 'application/json' },\n        payload: { '@context': 'https://w3id.org/dspace/2025/1/context.jsonld', '@type': 'dspace:Error', 'dspace:code': code, 'dspace:reason': [detail] }\n    };\n}\nfunction reject(code, detail, statusCode) {\n    if ('_iamOrigPayload' in msg) { msg.payload = msg._iamOrigPayload; delete msg._iamOrigPayload; }\n    Object.assign(msg, dspError(code, detail, statusCode));\n    msg.iamIssueRejected = true;\n    return [null, msg];\n}\n\nconst resp = msg.payload;\nconst code = msg.statusCode;\nif ('_iamOrigPayload' in msg) { msg.payload = msg._iamOrigPayload; delete msg._iamOrigPayload; }\ndelete msg.statusCode;\nif (code !== 200 || !resp || typeof resp !== 'object') return reject('storage_unavailable', 'tenant storage did not answer the query', 502);\nconst nowS = Math.floor(Date.now() / 1000);\nconst payloadOf = (sdjwt) => {\n    try { return JSON.parse(Buffer.from(sdjwt.split('~')[0].split('.')[1], 'base64url').toString('utf8')); } catch (e) { return null; }\n};\nlet best = null;\nfor (const g of Array.isArray(resp.groups) ? resp.groups : []) {\n    for (const c of Object.values((g && g.credentials) || {})) {\n        const sdjwt = c && typeof c.data === 'string' ? c.data : null;\n        const p = sdjwt && sdjwt.includes('~') ? payloadOf(sdjwt) : null;\n        if (!p || (typeof p.exp === 'number' && p.exp <= nowS)) continue;\n        if (!best || (p.exp || Infinity) > (best.p.exp || Infinity)) best = { sdjwt, p };\n    }\n}\nif (!best) return reject('no_credential', 'no valid participant credential in the tenant storage — abort', 500);\nmsg._iamIssue.vcToken = best.sdjwt;\nreturn [msg, null];\n",
+        "outputs": 2,
+        "x": 980,
+        "y": 120,
+        "wires": [
+            [
+                "dsp-iam-issue-prep-proof"
+            ],
+            [
+                "dsp-iam-issue-emit-event"
+            ]
+        ]
+    },
+    {
+        "id": "dsp-iam-issue-prep-proof",
+        "type": "function",
+        "z": "tab-dsp-iam-issue",
+        "name": "build request — crypto provider presentation/proof (tenant key)",
+        "func": "// Ask the tenant's crypto provider for the presentation: it adds the\n// key-binding JWT (audience = the counterparty, the nonce, sd_hash), signed\n// with the tenant's key, the one the credential binds. Of the claims listed in\n// DSP_IAM_DISCLOSE, those the credential holds as disclosures are presented\n// (claims the issuer did not make selectively disclosable are always there).\n// This flow never signs anything itself.\nfunction dspError(code, detail, statusCode) {\n    return {\n        statusCode: statusCode || 401,\n        headers: { 'Content-Type': 'application/json' },\n        payload: { '@context': 'https://w3id.org/dspace/2025/1/context.jsonld', '@type': 'dspace:Error', 'dspace:code': code, 'dspace:reason': [detail] }\n    };\n}\nfunction reject(code, detail, statusCode) {\n    Object.assign(msg, dspError(code, detail, statusCode));\n    msg.iamIssueRejected = true;\n    return [null, msg];\n}\n\nconst base = (env.get('OCM_CRYPTO_URL') || '').replace(/\\/+$/, '');\nconst ns = env.get('OCM_KEY_NAMESPACE') || '';\nconst group = env.get('OCM_KEY_GROUP') || '';\nconst key = env.get('OCM_KEY') || '';\nif (!base || !ns || !key) return reject('config_missing', 'OCM_CRYPTO_URL, OCM_KEY_NAMESPACE and OCM_KEY are required — fail closed', 500);\nconst wanted = (env.get('DSP_IAM_DISCLOSE') || 'legalName,participantRoles').split(',').map((s) => s.trim()).filter(Boolean);\nconst held = msg._iamIssue.vcToken.split('~').slice(1).filter(Boolean).map((d) => {\n    try { const a = JSON.parse(Buffer.from(d, 'base64url').toString('utf8')); return Array.isArray(a) && a.length === 3 ? a[1] : null; } catch (e) { return null; }\n});\nconst frame = wanted.filter((n) => held.includes(n));\nmsg._iamOrigPayload = msg.payload;\nmsg.url = base + '/v1/presentation/proof';\nmsg.method = 'POST';\nmsg.headers = { 'Content-Type': 'application/json' };\nmsg.payload = {\n    namespace: ns,\n    group: group,\n    key: key,\n    format: 'dc+sd-jwt',\n    presentation: msg._iamIssue.vcToken,\n    aud: msg._iamIssue.audience,\n    nonce: msg._iamIssue.nonce,\n    disclosureFrame: frame\n};\nreturn [msg, null];\n",
+        "outputs": 2,
+        "x": 540,
+        "y": 240,
+        "wires": [
+            [
+                "dsp-iam-proof-ocm"
+            ],
+            [
+                "dsp-iam-issue-emit-event"
+            ]
+        ]
+    },
+    {
+        "id": "dsp-iam-proof-ocm",
+        "type": "http request",
+        "z": "tab-dsp-iam-issue",
+        "name": "POST crypto provider /v1/presentation/proof",
+        "method": "use",
+        "url": "",
+        "headers": [],
+        "x": 760,
+        "y": 240,
+        "wires": [
+            [
+                "dsp-iam-issue-check-proof"
+            ]
+        ],
+        "ret": "obj"
+    },
+    {
+        "id": "dsp-iam-issue-check-proof",
+        "type": "function",
+        "z": "tab-dsp-iam-issue",
+        "name": "take the presentation; abort when the proof failed",
+        "func": "// The crypto provider's answer is the presentation itself: the SD-JWT VC, its\n// presented disclosures and the key-binding JWT. Anything else -> abort. On\n// success only msg.vpToken carries it: facis-dsp-consumer.json puts it in\n// Authorization: Bearer; the payload stays the caller's (never leak the\n// credential into downstream logs or evidence).\nfunction dspError(code, detail, statusCode) {\n    return {\n        statusCode: statusCode || 401,\n        headers: { 'Content-Type': 'application/json' },\n        payload: { '@context': 'https://w3id.org/dspace/2025/1/context.jsonld', '@type': 'dspace:Error', 'dspace:code': code, 'dspace:reason': [detail] }\n    };\n}\nfunction reject(code, detail, statusCode) {\n    if ('_iamOrigPayload' in msg) { msg.payload = msg._iamOrigPayload; delete msg._iamOrigPayload; }\n    Object.assign(msg, dspError(code, detail, statusCode));\n    msg.iamIssueRejected = true;\n    return msg;\n}\n\nconst resp = msg.payload;\nconst code = msg.statusCode;\nif ('_iamOrigPayload' in msg) { msg.payload = msg._iamOrigPayload; delete msg._iamOrigPayload; }\ndelete msg.statusCode;\nconst token = typeof resp === 'string' ? resp.trim() : null;\nconst parts = token ? token.split('~') : [];\nconst kb = parts.length >= 2 ? parts[parts.length - 1] : '';\nif (code !== 200 || !token || kb.split('.').length !== 3 || !token.startsWith(msg._iamIssue.vcToken.split('~')[0] + '~')) {\n    return reject('proof_failed', 'crypto provider returned no presentation — abort', 502);\n}\nmsg._iamIssue.vpJwt = token;\nmsg.vpToken = token;\nreturn msg;\n",
+        "outputs": 1,
+        "x": 980,
+        "y": 240,
+        "wires": [
+            [
+                "dsp-iam-issue-emit-event"
+            ]
+        ]
+    },
+    {
+        "id": "dsp-iam-issue-emit-event",
+        "type": "function",
+        "z": "tab-dsp-iam-issue",
+        "name": "log iam.issue event with correlation id",
+        "func": "\n// Symmetric with iam.verify: the issuance result is logged as a structured event with\n// the correlation id.\nconst event = {\n    event: 'iam.issue',\n    correlationId: msg._iamCorrelationId || null,\n    at: new Date().toISOString(),\n    result: (msg._iamIssue && msg._iamIssue.vpJwt) ? 'issued' : 'aborted',\n    aud: (msg._iamIssue && msg._iamIssue.audience) || null,\n    code: (msg.iamIssueRejected && msg.payload && msg.payload['dspace:code']) || null\n};\nnode.warn(JSON.stringify(event));\nconst log = global.get('iamIssueEvents') || [];\nlog.push(event);\nglobal.set('iamIssueEvents', log);\nreturn msg;\n",
+        "outputs": 1,
+        "x": 1180,
+        "y": 180,
+        "wires": [
+            [
+                "dsp-iam-issue-return"
+            ]
+        ]
+    },
+    {
+        "id": "dsp-iam-issue-return",
+        "type": "link out",
+        "z": "tab-dsp-iam-issue",
+        "name": "return to caller",
+        "mode": "return",
+        "links": [],
+        "x": 1380,
+        "y": 180,
+        "wires": []
+    }
+]

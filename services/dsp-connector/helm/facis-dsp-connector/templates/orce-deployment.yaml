@@ -88,7 +88,7 @@ spec:
                 echo "[init-deps] package.json missing - init-data has not run yet; skipping"
                 exit 0
               fi
-              PKGS="node-red-contrib-rdkafka jose@5.10.0 jsonld@9.0.0 @gaia-x/json-web-signature-2020@2.3.0 node-red-contrib-mongodb4@3.4.0 pg@8.13.1"
+              PKGS="node-red-contrib-rdkafka jose@5.10.0 jsonld@9.0.0 @gaia-x/json-web-signature-2020@2.3.0 pg@8.13.1"
               MISSING=""
               for p in $PKGS; do
                 # Strip a trailing @version so pinned entries resolve to their
@@ -308,19 +308,13 @@ spec:
                 secretKeyRef:
                   name: {{ include "facis-dsp-connector.fullname" . }}-orce-admin
                   key: token
-            # This connector's own signing key (did:web + Participant VC
-            # self-issuance). The Secret's data key is `privateJwk`, renamed
-            # here to the DSP_CONNECTOR_KEY env the issuance flow reads. Must
-            # be pre-created (see the rollout runbook); not rendered by this
-            # chart.
-            - name: DSP_CONNECTOR_KEY
-              valueFrom:
-                secretKeyRef:
-                  # Chart-rendered identity-key Secret when dsp.iam.privateJwk is
-                  # set (self-contained clean install, NF-10); else the
-                  # pre-created keySecret (prod path).
-                  name: {{ if .Values.dsp.iam.privateJwk }}{{ include "facis-dsp-connector.fullname" . }}-identity-key{{ else }}{{ .Values.dsp.iam.keySecret }}{{ end }}
-                  key: privateJwk
+            # No private key reaches this pod: the connector's credential and
+            # presentations are signed by the W-Stack crypto provider with the
+            # tenant's key (the self-issuance flows that read DSP_CONNECTOR_KEY
+            # are retired).
+            {{- with .Values.dedicatedOrce.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           envFrom:
             - secretRef:
                 name: {{ include "facis-dsp-connector.fullname" . }}-dsp-secrets

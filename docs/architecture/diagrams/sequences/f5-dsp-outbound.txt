@@ -4,14 +4,14 @@ title F5 DSP outbound presentation
 autonumber 1
 participant "DSP connector\n(consumer flow)" as DSP
 participant "iam.issue\n(DSP connector)" as ISS
-participant "Connector tenant\n(storage)" as STO
-participant "Crypto provider\n(connector key in OpenBao)" as CRY
+participant "Participant tenant\n(storage)" as STO
+participant "Participant tenant\n(crypto provider)" as CRY
 participant "Counterparty\nprovider" as P
 DSP->ISS:presentation needed for this provider
-ISS->STO:DCQL query for the participant credential
-STO-->ISS:credential (jwt_vc_json)
-ISS->CRY:sign a presentation (audience = provider, nonce, 5 min expiry)
-CRY-->ISS:signed VP-JWT
+ISS->STO:DCQL query for the participant credential (SD-JWT VC)
+STO-->ISS:credential
+ISS->CRY:key binding (audience = the provider base URL, fresh nonce)
+CRY-->ISS:SD-JWT VC presentation
 ISS-->DSP:Bearer token
-DSP->P:DSP request with the Bearer VP-JWT
-note over ISS,CRY:No private key in the connector: the crypto provider signs with the connector key
+DSP->P:DSP request with the Bearer presentation
+note over ISS,CRY:No private key in the connector: the tenant crypto provider signs with the tenant key

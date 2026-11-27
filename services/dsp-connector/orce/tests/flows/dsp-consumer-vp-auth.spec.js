@@ -2,30 +2,19 @@
 //
 // dsp-consumer-vp-auth.spec.js — NF-2 authenticated-hop coverage.
 //
-// Two guards, both driving the REAL committed `func` strings via
-// ../harness/run-node.js (no hand-mirrored logic to drift):
-//
-//   1. The consumer's two internal provider hops (POST /dsp/transfers,
-//      GET /dsp/transfers/:id) now attach the minted VP as an
-//      Authorization: Bearer header alongside Content-Type — the core
-//      regression guard for the enforce-mode ingest path.
-//
-//   2. A real self-issue -> self-verify round trip: dsp-iam-issue-fn mints a
-//      VP, dsp-iam-issuance-did-fn publishes this connector's did:web
-//      document, and jose verifies the VP's signature + audience + holder
-//      binding against that published key with the connector DID as the
-//      trusted issuer — i.e. exactly what the provider's iam.verify does.
+// Drives the REAL committed `func` strings via ../harness/run-node.js (no
+// hand-mirrored logic to drift): the consumer's two internal provider hops
+// (POST /dsp/transfers, GET /dsp/transfers/:id) attach the VP from iam.issue
+// as an Authorization: Bearer header alongside Content-Type — the regression
+// guard for the enforce-mode ingest path. The VP itself comes from the W-Stack
+// (iam-issue-wstack.spec.js).
 //
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const jose = require('jose');
 const { runNode } = require('../harness/run-node.js');
 
 const CONSUMER_FLOW = '../flows/facis-dsp-consumer.json';
-const ISSUANCE_FLOW = '../flows/facis-dsp-iam-issuance.json';
 
-const DID = 'did:web:connector.example';
-const AUDIENCE = 'did:web:provider.example';
 const FAKE_VP = 'eyJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJ4In0.sig';
 
 // ---- 1. hop headers carry the Bearer VP ----
@@ -66,49 +55,4 @@ test('prep-get-transfer: no stashed VP → Content-Type only, no Authorization',
     const out = r.result[1];
     assert.equal(out.headers['Content-Type'], 'application/json');
     assert.ok(!('Authorization' in out.headers));
-});
-
-// ---- 2. self-issue -> self-verify round trip ----
-
-async function connectorKeyEnv() {
-    const { privateKey } = await jose.generateKeyPair('ES256', { extractable: true });
-    const jwk = await jose.exportJWK(privateKey);
-    jwk.alg = 'ES256';
-    return { DSP_CONNECTOR_DID: DID, DSP_CONNECTOR_KEY: JSON.stringify(jwk), DSP_VP_AUDIENCE: AUDIENCE };
-}
-
-test('iam.issue mints a VP the provider verifier accepts (real signature + audience + holder binding + trusted issuer)', async () => {
-    const env = await connectorKeyEnv();
-
-    // Mint the VP with the committed iam.issue node.
-    const mint = await runNode(ISSUANCE_FLOW, 'dsp-iam-issue-fn', { env, msg: {} });
-    const vpToken = mint.sent[0].vpToken;
-    assert.ok(typeof vpToken === 'string' && vpToken.split('.').length === 3, 'iam.issue must produce a compact JWS VP');
-
-    // Publish this connector's did:web document with the committed did.json node.
-    const didDocRun = await runNode(ISSUANCE_FLOW, 'dsp-iam-issuance-did-fn', { env, msg: {} });
-    const didDoc = didDocRun.sent[0].payload;
-    const publicJwk = didDoc.verificationMethod[0].publicKeyJwk;
-    const key = await jose.importJWK(publicJwk, publicJwk.alg);
-
-    // Verify exactly like dsp-iam-prep/verify-vp does: signature + aud.
-    const { payload: vpPayload } = await jose.jwtVerify(vpToken, key, { audience: AUDIENCE });
-
-    // Holder binding: VP iss == sub == holder DID (dsp-iam-prep gate).
-    assert.equal(vpPayload.iss, DID);
-    assert.equal(vpPayload.sub, DID);
-    assert.ok(vpPayload.jti, 'VP must carry a jti (replay protection)');
-
-    // Inner VC: trusted issuer + credentialSubject binds to the holder.
-    const trustedIssuers = [DID];
-    const vcJwt = vpPayload.vp.verifiableCredential[0];
-    const { payload: vcPayload } = await jose.jwtVerify(vcJwt, key);
-    assert.ok(trustedIssuers.includes(vcPayload.iss), 'inner VC issuer must be the trusted connector DID');
-    assert.equal(vcPayload.vc.credentialSubject.id, DID);
-});
-
-test('iam.issue without a provisioned key nulls vpToken instead of crashing', async () => {
-    const r = await runNode(ISSUANCE_FLOW, 'dsp-iam-issue-fn', { env: { DSP_CONNECTOR_DID: DID }, msg: {} });
-    assert.equal(r.result.vpToken, null);
-    assert.equal(r.errors.length, 1);
 });
