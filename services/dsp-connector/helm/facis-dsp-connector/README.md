@@ -169,6 +169,29 @@ helm upgrade orce <orce-chart-path> --reuse-values \
 #    Watch with: kubectl logs -n facis job/<release>-facis-dsp-connector-orce-flow-deploy
 ```
 
+## Secrets from an external store
+
+By default the chart renders `<fullname>-dsp-secrets` from `dsp.*`. To keep those values out of
+the chart and read them from a secret store through the External Secrets Operator instead:
+
+```yaml
+dsp:
+  renderSecret: false
+externalSecrets:
+  enabled: true
+  secretStoreRef: {kind: SecretStore, name: <your store>}
+  dspSecrets:
+    remoteKey: <store key>
+```
+
+The store key must hold every key `templates/orce-secret.yaml` renders (`DSP_HMAC_SECRET`,
+`DSP_IAM_ENFORCE`, ..., and `DSP_PG_PASSWORD` / `DSP_PG_URI` when `dsp.pg.enabled`): the
+ExternalSecret copies all of its properties into the Secret. The chart refuses
+`externalSecrets.enabled` while `dsp.renderSecret` is true.
+
+For ORCE settings that have no value in this chart, `dedicatedOrce.extraEnv` adds environment
+variables to the ORCE container (`name`/`value` or `name`/`valueFrom`).
+
 ## ORCE Admin API token
 
 In the default dedicated mode the chart renders the admin-token Secret itself

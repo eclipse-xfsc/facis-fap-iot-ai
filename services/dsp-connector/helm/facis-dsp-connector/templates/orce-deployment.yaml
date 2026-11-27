@@ -321,6 +321,9 @@ spec:
                   # pre-created keySecret (prod path).
                   name: {{ if .Values.dsp.iam.privateJwk }}{{ include "facis-dsp-connector.fullname" . }}-identity-key{{ else }}{{ .Values.dsp.iam.keySecret }}{{ end }}
                   key: privateJwk
+            {{- with .Values.dedicatedOrce.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           envFrom:
             - secretRef:
                 name: {{ include "facis-dsp-connector.fullname" . }}-dsp-secrets

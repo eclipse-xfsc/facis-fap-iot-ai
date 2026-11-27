@@ -80,6 +80,28 @@ helm upgrade orce <orce-chart-path> --reuse-values \
 kubectl logs -n facis job/<release>-facis-sftp-ingestion-orce-flow-deploy
 ```
 
+## Secrets from an external store
+
+The chart renders two Secrets: `<fullname>-credentials` (key `sftp_password`) and the ORCE pod's
+environment (`orcePodEnv.secretName`). To read either from a secret store through the External
+Secrets Operator instead, turn its rendering off and give its store key:
+
+```yaml
+sftp:
+  renderSecret: false              # <fullname>-credentials
+orcePodEnv:
+  renderSecret: false              # the ORCE pod's environment
+externalSecrets:
+  enabled: true
+  secretStoreRef: {kind: SecretStore, name: <your store>}
+  credentials:
+    remoteKey: <store key holding sftp_password>
+  orcePodEnv:
+    remoteKey: <store key holding the keys templates/orce-env-secret.yaml renders>
+```
+
+Each ExternalSecret copies all the properties of its store key into its Secret.
+
 ## ORCE Admin API token
 
 The post-install Job needs a Bearer token in `facis-orce-admin` (key

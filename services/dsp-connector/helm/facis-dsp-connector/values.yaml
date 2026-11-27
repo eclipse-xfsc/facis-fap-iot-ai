@@ -27,6 +27,10 @@ dedicatedOrce:
   # -- ConfigMap holding rdkafka-patch.js (SSL support overlay for
   #    node-red-contrib-rdkafka; same ConfigMap the shared instance uses).
   rdkafkaPatchConfigMap: facis-orce-rdkafka-patch
+  # -- Extra environment variables for the ORCE container, in the Kubernetes
+  #    `env` format (name/value or name/valueFrom), for settings the flows read
+  #    with env.get() that have no value of their own in this chart.
+  extraEnv: []
   resources:
     requests: { cpu: 250m, memory: 512Mi }
     limits: { cpu: "1", memory: 1Gi }
@@ -78,7 +82,12 @@ orceFlowDeploy:
 # (see templates/orce-secret.yaml). The ORCE chart must include
 # `envFrom: [secretRef: <fullname>-dsp-secrets]` in its Deployment.
 dsp:
-  # -- HMAC secret for signed-URL generation (REQUIRED).
+  # -- Render <fullname>-dsp-secrets from these values (default). Set to false
+  #    when the Secret comes from elsewhere, e.g. an ExternalSecret
+  #    (externalSecrets below); hmacSecret and the other secret values are
+  #    then not read.
+  renderSecret: true
+  # -- HMAC secret for signed-URL generation (REQUIRED when renderSecret).
   #    Generate with: openssl rand -hex 32
   hmacSecret: ""
   # -- Base URL for the data API (HTTP-pull endpoint). Must be the live
@@ -259,6 +268,23 @@ dspStatePvc:
 # --set networkPolicies.enabled=false.
 networkPolicies:
   enabled: true
+
+# ---------------------------------------------------------------------------
+# External secrets
+# ---------------------------------------------------------------------------
+# -- ExternalSecrets (External Secrets Operator) for the Secrets this chart
+#    does not render. Off by default.
+externalSecrets:
+  enabled: false
+  # -- The SecretStore or ClusterSecretStore to read from.
+  secretStoreRef:
+    kind: SecretStore
+    name: ""
+  refreshInterval: 1h
+  # -- Store key holding every key of <fullname>-dsp-secrets (the keys
+  #    templates/orce-secret.yaml renders). Needs dsp.renderSecret=false.
+  dspSecrets:
+    remoteKey: ""
 
 nameOverride: ""
 fullnameOverride: ""
