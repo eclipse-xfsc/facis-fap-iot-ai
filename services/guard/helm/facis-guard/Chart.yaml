@@ -1,0 +1,10 @@
+apiVersion: v2
+name: facis-guard
+description: >-
+  Wallet login for the FAP IoT & AI web applications. An OAuth2 / OpenID Connect
+  authorization server (Ory Hydra, with its PostgreSQL) whose login and consent
+  provider runs as an ORCE flow: the user presents a role credential from a wallet
+  (OID4VP, checked by the W-Stack credential verifier) and the policy engine decides.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

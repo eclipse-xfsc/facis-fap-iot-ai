@@ -1,0 +1,55 @@
+{{- $full := include "facis-guard.fullname" . }}
+{{- $pub := include "facis-guard.publicUrl" . }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $full }}-hydra
+  labels:
+    {{- include "facis-guard.labels" . | nindent 4 }}
+data:
+  hydra.yaml: |
+    # Secrets (dsn, secrets.system) come from the environment, never from here.
+    dev: {{ .Values.dev }}
+    serve:
+      public:
+        port: 4444
+        {{- $origins := list }}
+        {{- range .Values.clients }}{{ range (default list .allowedCorsOrigins) }}{{ $origins = append $origins . }}{{ end }}{{ end }}
+        {{- if $origins }}
+        # Browser applications call the token endpoint from their own origin.
+        cors:
+          enabled: true
+          allowed_origins: {{ $origins | uniq | toJson }}
+          allowed_methods: ["GET", "POST", "OPTIONS"]
+          allowed_headers: ["Authorization", "Content-Type"]
+          allow_credentials: false
+        {{- end }}
+      admin:
+        port: 4445
+      cookies:
+        same_site_mode: Lax
+    urls:
+      self:
+        issuer: {{ printf "%s/" $pub | quote }}
+        public: {{ printf "%s/" $pub | quote }}
+      login: {{ printf "%s/guard/login" $pub | quote }}
+      consent: {{ printf "%s/guard/consent" $pub | quote }}
+      logout: {{ printf "%s/guard/logout" $pub | quote }}
+      error: {{ printf "%s/guard/error" $pub | quote }}
+    strategies:
+      access_token: jwt
+      scope: exact
+    oauth2:
+      pkce:
+        enforced: true
+      allowed_top_level_claims: {{ toJson .Values.hydra.topLevelClaims }}
+      mirror_top_level_claims: false
+    ttl:
+      access_token: {{ .Values.hydra.ttl.accessToken }}
+      id_token: {{ .Values.hydra.ttl.idToken }}
+      auth_code: {{ .Values.hydra.ttl.authCode }}
+      login_consent_request: {{ .Values.hydra.ttl.loginConsentRequest }}
+      refresh_token: {{ .Values.hydra.ttl.accessToken }}
+    log:
+      level: {{ .Values.hydra.logLevel }}
+      leak_sensitive_values: false

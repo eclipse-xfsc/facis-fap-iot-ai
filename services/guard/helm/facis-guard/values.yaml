@@ -1,0 +1,191 @@
+# =============================================================================
+# FACIS guard — Helm values
+# =============================================================================
+# Required for any install: publicUrl, hydra.systemSecret (or
+# existingSecrets.hydra), postgres.password (or existingSecrets.postgres),
+# loginProvider.verifier.*, loginProvider.statusListOrigins, clients, and the
+# policy bundle ConfigMap (see policyEngine). `helm template` fails with a
+# message naming any missing value.
+
+nameOverride: ""
+fullnameOverride: ""
+
+# -- Public HTTPS origin of the guard, as browsers and wallets reach it, e.g.
+#    https://login.fap-iotai.example.org. It is the token issuer, and the login
+#    pages are served under <publicUrl>/guard/.
+publicUrl: ""
+
+# -- Development mode: allows an http publicUrl and non-secure cookies. Never in
+#    a shared environment.
+dev: false
+
+# Secrets created outside the chart (kubectl, external secret store). When set,
+# the chart renders no Secret for that part. Key names are listed per entry.
+existingSecrets:
+  # keys: system-secret (Hydra's system secret, 32+ characters), dsn
+  hydra: ""
+  # keys: password
+  postgres: ""
+  # keys: admin-token (bearer for the lockout endpoints; optional)
+  loginProvider: ""
+
+# -----------------------------------------------------------------------------
+# Authorization server (Ory Hydra)
+# -----------------------------------------------------------------------------
+hydra:
+  image:
+    repository: oryd/hydra
+    # v26.2.0 (20 Mar 2026), multi-arch index digest
+    tag: "v26.2.0@sha256:ff67c7fb5f95074fa53374d41151713554960504b340cd3f95b09e65deaea2a9"
+    pullPolicy: IfNotPresent
+  # -- Hydra's system secret (signs cookies, encrypts its keys at rest).
+  #    Generate with: openssl rand -hex 32
+  systemSecret: ""
+  # -- Token lifetimes. 5 minutes, and no refresh token is granted: a revoked
+  #    credential stops working at the next login.
+  ttl:
+    accessToken: 5m
+    idToken: 5m
+    authCode: 5m
+    # how long a login or consent request may stay open (the user scanning)
+    loginConsentRequest: 15m
+  # -- Claims put at the top level of the JWT access token (from the verified
+  #    credential; see the login provider's consent step).
+  topLevelClaims: [org_did, roles, purpose]
+  logLevel: info
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { cpu: 500m, memory: 256Mi }
+
+# -- OAuth2 clients: the first-party web applications. Registered (created or
+#    updated) by a post-install/upgrade Job, and the only clients the login
+#    provider accepts. Public clients: authorization code with PKCE.
+clients: []
+#  - clientId: facis-ai-insight-ui
+#    name: AI Insight
+#    redirectUris: [https://fap-iotai.example.org/orce/aiInsight/]
+#    postLogoutRedirectUris: [https://fap-iotai.example.org/orce/aiInsight/]
+#    audience: [facis-ai-insight]
+#    # browser applications that call the token endpoint themselves (code + PKCE
+#    # in the browser) list their origin; it enables CORS for those origins only
+#    allowedCorsOrigins: [https://fap-iotai.example.org]
+
+clientRegistration:
+  # Image with curl and jq (the DSP connector chart uses the same one).
+  image:
+    repository: badouralix/curl-jq
+    tag: "alpine@sha256:e1f1e84c4c23c24d665cd9243dcf7fa531965a0b37b89a64cabca847d834dd62"
+    pullPolicy: IfNotPresent
+
+# -----------------------------------------------------------------------------
+# PostgreSQL for Hydra
+# -----------------------------------------------------------------------------
+postgres:
+  # -- false: use an external database; existingSecrets.hydra must then hold the dsn.
+  enabled: true
+  image:
+    repository: postgres
+    # the same image as the DSP connector's database
+    tag: "16.4@sha256:e62fbf9d3e2b49816a32c400ed2dba83e3b361e6833e624024309c35d334b412"
+    pullPolicy: IfNotPresent
+  database: hydra
+  user: hydra
+  # -- Generate with: openssl rand -hex 24
+  password: ""
+  storage: 1Gi
+  storageClassName: ""
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+
+# -----------------------------------------------------------------------------
+# Login and consent provider (ORCE flow)
+# -----------------------------------------------------------------------------
+loginProvider:
+  image:
+    repository: ecofacis/xfsc-orce
+    # 2.0.12, the release the FAP's shared ORCE runs
+    tag: "2.0.12@sha256:92ca4020ab03c72139e3410a0f234a7a8d1eab309737f1223096291feab77833"
+    pullPolicy: IfNotPresent
+  # -- npm packages the flow's function nodes declare (installed at start).
+  packages: ["qrcode@1.5.4"]
+  # Credential verifier of the W-Stack (OID4VP, DCQL).
+  verifier:
+    # -- In-cluster base URL of the credential verification service.
+    url: ""
+    # -- cvs-1.3 (verifier 1.3.x: permission set) or cvs-1.2 (verifier 1.2.x:
+    #    presentation policy id and client id).
+    api: cvs-1.3
+    tenant: ""
+    group: default
+    permissionSet: ""
+    policyId: ""
+    clientId: ""
+  # -- Origins the status lists of the trusted issuers are served from (the
+  #    login provider fetches nothing else from a presented credential).
+  statusListOrigins: []
+  # -- Web wallets the login page can redirect to: [{name, url}], url with
+  #    {openid4vp} or {request_uri} (and optionally {client_id}).
+  webWallets: []
+  # -- Media type asked of the status list services (one only). The W-Stack's
+  #    own list is the default: its token status list (statuslist+jwt) carries
+  #    the bits in the W3C order, not the order that format defines.
+  statusListAccept: application/vnd.xfsc.status-list
+  attemptTtlSeconds: 300
+  lockout:
+    maxFailures: 5
+    windowSeconds: 900
+    seconds: 900
+  # -- Proxies in front of the login provider that set X-Forwarded-For (the ingress).
+  trustedProxyHops: 1
+  # -- Extra CA certificates the login provider trusts (PEM), for a verifier or
+  #    status lists served with a private CA. A ConfigMap in the release
+  #    namespace; empty: the system CAs only.
+  caBundle:
+    configMap: ""
+    key: ca.crt
+  # -- Bearer for GET/DELETE /guard/admin/lockouts (cluster-internal only).
+  #    Empty: the endpoints are disabled. Generate with: openssl rand -hex 32
+  adminToken: ""
+  resources:
+    requests: { cpu: 100m, memory: 192Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+
+# -----------------------------------------------------------------------------
+# Policy engine (OPA) serving the policy bundle of infrastructure/opa
+# -----------------------------------------------------------------------------
+policyEngine:
+  # -- false: use an external policy engine at policyEngine.url.
+  enabled: true
+  image:
+    repository: openpolicyagent/opa
+    tag: "1.22.0-static@sha256:906bfc9904b2693733e7959d71773dd073e6c135cf06f26d955abe94603e82b3"
+    pullPolicy: IfNotPresent
+  # -- ConfigMap holding bundle.tar.gz: the repository's policies plus the
+  #    deployment data (trusted issuers, roles per application), created before
+  #    the install (services/guard/README.md, Deploy):
+  #      opa build infrastructure/opa/bundle <deployment-data-dir> -o bundle.tar.gz
+  #      kubectl create configmap facis-policy-bundle --from-file=bundle.tar.gz
+  bundleConfigMap: facis-policy-bundle
+  # -- Used when enabled is false: the data API URL of the login decision.
+  url: ""
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { cpu: 500m, memory: 256Mi }
+
+# -----------------------------------------------------------------------------
+# Exposure
+# -----------------------------------------------------------------------------
+ingress:
+  enabled: true
+  className: nginx
+  # -- TLS Secret for the publicUrl host (none in dev).
+  tlsSecretName: ""
+  annotations: {}
+
+networkPolicy:
+  # -- Hydra's admin API is reachable from the login provider and the client
+  #    registration Job only; the database from Hydra only.
+  enabled: true
+  # -- Namespace of the ingress controller, allowed to reach the public ports.
+  ingressNamespace: ingress-nginx

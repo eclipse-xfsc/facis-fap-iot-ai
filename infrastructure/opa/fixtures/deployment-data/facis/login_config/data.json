@@ -1,0 +1,9 @@
+{
+  "comment": "Example deployment data for the fixture replay: who may vouch for which organisation, and the roles allowed per application. A deployment keeps its own copy outside the bundle and builds it in (see ../../README.md, Deployment data).",
+  "trusted_issuers": {
+    "did:web:issuer.example.org": { "organisations": ["did:web:org-x.facis.cloud"] }
+  },
+  "clients": {
+    "facis-ai-insight-ui": { "allowed_roles": ["administrator", "data_scientist", "data_analyst"] }
+  }
+}

@@ -1,0 +1,42 @@
+{{- if .Values.ingress.enabled }}
+{{- $full := include "facis-guard.fullname" . }}
+{{- $host := include "facis-guard.publicUrl" . | trimPrefix "https://" | trimPrefix "http://" | splitList "/" | first | splitList ":" | first }}
+# Only the public OAuth2 / OpenID Connect endpoints and the login pages are
+# routed. Hydra's admin API, the lockout endpoints and the policy engine are not.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $full }}
+  labels:
+    {{- include "facis-guard.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- if .Values.ingress.tlsSecretName }}
+  tls:
+    - hosts: [{{ $host | quote }}]
+      secretName: {{ .Values.ingress.tlsSecretName }}
+  {{- end }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          {{- range list "/oauth2/" "/.well-known/" "/userinfo" }}
+          - path: {{ . }}
+            pathType: Prefix
+            backend: { service: { name: {{ $full }}-hydra-public, port: { name: public } } }
+          {{- end }}
+          {{- range list "/guard/login" "/guard/consent" "/guard/logout" "/guard/error" }}
+          - path: {{ . }}
+            pathType: Exact
+            backend: { service: { name: {{ $full }}-login, port: { name: http } } }
+          {{- end }}
+          - path: /guard/login/status
+            pathType: Exact
+            backend: { service: { name: {{ $full }}-login, port: { name: http } } }
+{{- end }}

@@ -1,0 +1,10 @@
+{
+  "comment": "Deployment data of the local test setup: the stub issuer vouches for one test organisation. facis-local-test is a second client, only here, which accepts any role, so the end-to-end check can also mint tokens that an application must refuse.",
+  "trusted_issuers": {
+    "did:web:issuer.local.test": { "organisations": ["did:web:org-a.local.test"] }
+  },
+  "clients": {
+    "facis-ai-insight-ui": { "allowed_roles": ["administrator", "data_scientist", "data_analyst"] },
+    "facis-local-test": { "allowed_roles": ["administrator", "data_engineer", "data_scientist", "data_analyst", "operator"] }
+  }
+}

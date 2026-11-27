@@ -1,0 +1,99 @@
+{{- $full := include "facis-guard.fullname" . }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $full }}-hydra
+  labels:
+    {{- include "facis-guard.labels" . | nindent 4 }}
+    app.kubernetes.io/component: hydra
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "facis-guard.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: hydra
+  template:
+    metadata:
+      labels:
+        {{- include "facis-guard.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: hydra
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/hydra-config.yaml") . | sha256sum | trunc 16 }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10000
+        seccompProfile: { type: RuntimeDefault }
+      initContainers:
+        # Schema migrations before every start (idempotent).
+        - name: migrate
+          image: "{{ .Values.hydra.image.repository }}:{{ .Values.hydra.image.tag }}"
+          imagePullPolicy: {{ .Values.hydra.image.pullPolicy }}
+          args: ["migrate", "sql", "up", "-e", "--yes"]
+          env:
+            - name: DSN
+              valueFrom: { secretKeyRef: { name: {{ include "facis-guard.hydraSecretName" . }}, key: dsn } }
+          securityContext: &sc
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          resources: {{ toJson .Values.hydra.resources }}
+      containers:
+        - name: hydra
+          image: "{{ .Values.hydra.image.repository }}:{{ .Values.hydra.image.tag }}"
+          imagePullPolicy: {{ .Values.hydra.image.pullPolicy }}
+          args: ["serve", "all", "--config", "/etc/hydra/hydra.yaml"{{ if .Values.dev }}, "--dev"{{ end }}]
+          env:
+            - name: DSN
+              valueFrom: { secretKeyRef: { name: {{ include "facis-guard.hydraSecretName" . }}, key: dsn } }
+            - name: SECRETS_SYSTEM
+              valueFrom: { secretKeyRef: { name: {{ include "facis-guard.hydraSecretName" . }}, key: system-secret } }
+          ports:
+            - { name: public, containerPort: 4444 }
+            - { name: admin, containerPort: 4445 }
+          readinessProbe:
+            httpGet: { path: /health/ready, port: admin }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health/alive, port: admin }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          volumeMounts:
+            - { name: config, mountPath: /etc/hydra, readOnly: true }
+          securityContext: *sc
+          resources: {{ toJson .Values.hydra.resources }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ $full }}-hydra
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $full }}-hydra-public
+  labels:
+    {{- include "facis-guard.labels" . | nindent 4 }}
+    app.kubernetes.io/component: hydra
+spec:
+  selector:
+    {{- include "facis-guard.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: hydra
+  ports:
+    - { name: public, port: 4444, targetPort: public }
+---
+# The admin API: cluster-internal, reachable by the login provider and the
+# client registration Job only (networkpolicy.yaml). Never routed by the ingress.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $full }}-hydra-admin
+  labels:
+    {{- include "facis-guard.labels" . | nindent 4 }}
+    app.kubernetes.io/component: hydra
+spec:
+  selector:
+    {{- include "facis-guard.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: hydra
+  ports:
+    - { name: admin, port: 4445, targetPort: admin }

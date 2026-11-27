@@ -1,0 +1,73 @@
+{{- if .Values.policyEngine.enabled }}
+{{- $full := include "facis-guard.fullname" . }}
+# OPA serving the policy bundle of infrastructure/opa (built with `opa build`,
+# held in a ConfigMap created before the install). Cluster-internal.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $full }}-policy
+  labels:
+    {{- include "facis-guard.labels" . | nindent 4 }}
+    app.kubernetes.io/component: policy-engine
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "facis-guard.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: policy-engine
+  template:
+    metadata:
+      labels:
+        {{- include "facis-guard.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: policy-engine
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: opa
+          image: "{{ .Values.policyEngine.image.repository }}:{{ .Values.policyEngine.image.tag }}"
+          imagePullPolicy: {{ .Values.policyEngine.image.pullPolicy }}
+          args:
+            - run
+            - --server
+            - --addr=0.0.0.0:8181
+            - --log-level=info
+            - --bundle
+            - /bundle/bundle.tar.gz
+          ports:
+            - { name: http, containerPort: 8181 }
+          readinessProbe:
+            httpGet: { path: "/health?bundles", port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 15
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: bundle, mountPath: /bundle, readOnly: true }
+          resources: {{ toJson .Values.policyEngine.resources }}
+      volumes:
+        - name: bundle
+          configMap:
+            name: {{ required "policyEngine.bundleConfigMap is required" .Values.policyEngine.bundleConfigMap }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $full }}-policy
+  labels:
+    {{- include "facis-guard.labels" . | nindent 4 }}
+    app.kubernetes.io/component: policy-engine
+spec:
+  selector:
+    {{- include "facis-guard.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: policy-engine
+  ports:
+    - { name: http, port: 8181, targetPort: http }
+{{- end }}

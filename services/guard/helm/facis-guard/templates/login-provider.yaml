@@ -1,0 +1,185 @@
+{{- $full := include "facis-guard.fullname" . }}
+{{- $lp := .Values.loginProvider }}
+{{- $v := $lp.verifier }}
+{{- if not $lp.statusListOrigins }}{{ fail "loginProvider.statusListOrigins is required (the status list origins of the trusted issuers)" }}{{ end }}
+{{- if eq $v.api "cvs-1.3" }}{{ $_ := required "loginProvider.verifier.permissionSet is required with api cvs-1.3" $v.permissionSet }}{{ end }}
+{{- if eq $v.api "cvs-1.2" }}{{ $_ := required "loginProvider.verifier.policyId is required with api cvs-1.2" $v.policyId }}{{ $_ := required "loginProvider.verifier.clientId is required with api cvs-1.2" $v.clientId }}{{ end }}
+# The flow is the chart's files/orce-flows/*.json (synced from
+# services/guard/orce/flows by sync-flows.sh); it is written to the ORCE flow
+# file at every start, so the running flow is always the one of this release.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $full }}-login-flows
+  labels:
+    {{- include "facis-guard.labels" . | nindent 4 }}
+data:
+{{- range $path, $_ := .Files.Glob "files/orce-flows/*.json" }}
+  {{ base $path }}: |
+{{ $.Files.Get $path | indent 4 }}
+{{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $full }}-login-env
+  labels:
+    {{- include "facis-guard.labels" . | nindent 4 }}
+data:
+  GUARD_HYDRA_ADMIN_URL: {{ printf "http://%s-hydra-admin:4445" $full | quote }}
+  GUARD_POLICY_URL: {{ include "facis-guard.policyUrl" . | quote }}
+  GUARD_VERIFIER_URL: {{ required "loginProvider.verifier.url is required" $v.url | quote }}
+  GUARD_VERIFIER_API: {{ $v.api | quote }}
+  GUARD_VERIFIER_TENANT: {{ required "loginProvider.verifier.tenant is required" $v.tenant | quote }}
+  GUARD_VERIFIER_GROUP: {{ $v.group | quote }}
+  GUARD_VERIFIER_PERMISSION_SET: {{ $v.permissionSet | quote }}
+  GUARD_VERIFIER_POLICY_ID: {{ $v.policyId | quote }}
+  GUARD_VERIFIER_CLIENT_ID: {{ $v.clientId | quote }}
+  GUARD_FIRST_PARTY_CLIENTS: {{ include "facis-guard.clientIds" . | quote }}
+  GUARD_STATUS_LIST_ORIGINS: {{ join "," $lp.statusListOrigins | quote }}
+  GUARD_WEB_WALLETS: {{ toJson $lp.webWallets | quote }}
+  GUARD_ATTEMPT_TTL_SECONDS: {{ $lp.attemptTtlSeconds | quote }}
+  GUARD_STATUS_LIST_ACCEPT: {{ $lp.statusListAccept | quote }}
+  GUARD_LOCKOUT_MAX_FAILURES: {{ $lp.lockout.maxFailures | quote }}
+  GUARD_LOCKOUT_WINDOW_SECONDS: {{ $lp.lockout.windowSeconds | quote }}
+  GUARD_LOCKOUT_SECONDS: {{ $lp.lockout.seconds | quote }}
+  GUARD_TRUSTED_PROXY_HOPS: {{ $lp.trustedProxyHops | quote }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $full }}-login
+  labels:
+    {{- include "facis-guard.labels" . | nindent 4 }}
+    app.kubernetes.io/component: login-provider
+spec:
+  # Attempts and lockouts are held in memory: one replica, and never two at
+  # once. Recreate stops the old pod before the new one starts; a rolling
+  # update would split logins in progress between two pods.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "facis-guard.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: login-provider
+  template:
+    metadata:
+      labels:
+        {{- include "facis-guard.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: login-provider
+      annotations:
+        checksum/flows: {{ .Files.Glob "files/orce-flows/*.json" | toString | sha256sum | trunc 16 }}
+        checksum/env: {{ toJson $lp | sha256sum | trunc 16 }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        fsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      initContainers:
+        # The runtime home starts from the image's /data, then gets the npm
+        # packages of the flow, a settings change and the flow file.
+        - name: prepare
+          image: "{{ $lp.image.repository }}:{{ $lp.image.tag }}"
+          imagePullPolicy: {{ $lp.image.pullPolicy }}
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+          env:
+            - { name: PACKAGES, value: {{ join " " $lp.packages | quote }} }
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              cp -a /data/. /work/
+              cd /work
+              # an image whose /data is empty seeds it from the ORCE home on first boot
+              if [ ! -f settings.js ] && [ -d /opt/maestro/MBE/.node-red ]; then
+                for f in $(ls -A /opt/maestro/MBE/.node-red); do
+                  [ "$f" = node_modules ] || [ -e "$f" ] || cp -a "/opt/maestro/MBE/.node-red/$f" .
+                done
+              fi
+              [ -f settings.js ] || [ -f settings.base.js ] || { echo "no ORCE settings.js in the image"; exit 1; }
+              for p in $PACKAGES; do
+                name="${p%@*}"; [ -n "$name" ] || name="$p"
+                [ -d "node_modules/$name" ] || npm install --save-exact --no-audit --no-fund --prefix /work "$p"
+              done
+              # Function nodes declare their modules (functionExternalModules);
+              # no editor and no admin API: the flow comes from the release only.
+              # ORCE's own settings stay as they are, loaded by a wrapper.
+              [ -f settings.base.js ] || mv settings.js settings.base.js
+              cat > settings.js <<'JS'
+              module.exports = Object.assign({}, require('./settings.base.js'), {
+                  functionExternalModules: true,
+                  httpAdminRoot: false
+              });
+              JS
+              node -e '
+                const fs = require("fs"); const dir = "/flows"; const out = [];
+                for (const f of fs.readdirSync(dir).filter((x) => x.endsWith(".json")).sort()) out.push(...JSON.parse(fs.readFileSync(dir + "/" + f, "utf8")));
+                fs.writeFileSync("/work/flows.json", JSON.stringify(out));
+              '
+              chown -R 1000:1000 /work
+          volumeMounts:
+            - { name: data, mountPath: /work }
+            - { name: flows, mountPath: /flows, readOnly: true }
+          resources: {{ toJson $lp.resources }}
+      containers:
+        - name: orce
+          image: "{{ $lp.image.repository }}:{{ $lp.image.tag }}"
+          imagePullPolicy: {{ $lp.image.pullPolicy }}
+          envFrom:
+            - configMapRef: { name: {{ $full }}-login-env }
+          env:
+            - { name: TZ, value: UTC }
+            {{- if $lp.caBundle.configMap }}
+            - { name: NODE_EXTRA_CA_CERTS, value: {{ printf "/etc/guard-ca/%s" $lp.caBundle.key | quote }} }
+            {{- end }}
+            - name: GUARD_ADMIN_TOKEN
+              valueFrom: { secretKeyRef: { name: {{ include "facis-guard.loginSecretName" . }}, key: admin-token, optional: true } }
+          ports:
+            - { name: http, containerPort: 1880 }
+          readinessProbe:
+            httpGet: { path: /guard/health, port: http }
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket: { port: http }
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          securityContext:
+            runAsUser: 1000
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: data, mountPath: /data }
+            {{- if $lp.caBundle.configMap }}
+            - { name: ca, mountPath: /etc/guard-ca, readOnly: true }
+            {{- end }}
+          resources: {{ toJson $lp.resources }}
+      volumes:
+        - name: data
+          emptyDir: {}
+        - name: flows
+          configMap:
+            name: {{ $full }}-login-flows
+        {{- if $lp.caBundle.configMap }}
+        - name: ca
+          configMap:
+            name: {{ $lp.caBundle.configMap }}
+        {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $full }}-login
+  labels:
+    {{- include "facis-guard.labels" . | nindent 4 }}
+    app.kubernetes.io/component: login-provider
+spec:
+  selector:
+    {{- include "facis-guard.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: login-provider
+  ports:
+    - { name: http, port: 1880, targetPort: http }

@@ -9,7 +9,12 @@
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
-bundle="${here}/bundle"
+# The fixtures run against a bundle built the way a deployment builds it: the
+# policies plus deployment data (fixtures/deployment-data, an example of it).
+work="$(mktemp -d)"
+trap 'rm -rf "${work}"' EXIT
+bundle="${work}/bundle.tar.gz"
+opa build "${here}/bundle" "${here}/fixtures/deployment-data" -o "${bundle}"
 failed=0
 total=0
 

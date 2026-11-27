@@ -1,0 +1,13 @@
+{
+  "name": "63-login-deny-issuer-for-another-organisation",
+  "query": "facis/login/allow",
+  "input": {
+    "roles": [
+      "data_analyst"
+    ],
+    "org_did": "did:web:org-y.facis.cloud",
+    "issuer": "did:web:issuer.example.org",
+    "client_id": "facis-ai-insight-ui"
+  },
+  "expect": "deny"
+}

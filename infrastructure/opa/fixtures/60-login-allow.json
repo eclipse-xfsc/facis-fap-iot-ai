@@ -5,7 +5,9 @@
     "roles": [
       "data_analyst"
     ],
-    "org_did": "did:web:org-x.facis.cloud"
+    "org_did": "did:web:org-x.facis.cloud",
+    "issuer": "did:web:issuer.example.org",
+    "client_id": "facis-ai-insight-ui"
   },
   "expect": "allow"
 }

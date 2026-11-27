@@ -15,7 +15,8 @@ Each fixture is a JSON object:
 }
 ```
 
-`query` is the OPA data path, `expect` is `allow` or `deny`. Replay them with
+`query` is the OPA data path, `expect` is `allow` or `deny`. The replay builds the bundle with the example deployment data of
+`deployment-data/` (trusted issuers and applications for `facis.login`), as a deployment would. Replay them with
 `infrastructure/opa/check-fixtures.sh`, locally or in CI, or against a running policy engine by
 posting each `input` to `/v1/data/<query>`.
 

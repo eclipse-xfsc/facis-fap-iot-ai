@@ -1,0 +1,97 @@
+{{- $full := include "facis-guard.fullname" . }}
+{{- $clients := list }}
+{{- range .Values.clients }}
+{{- $redirects := required (printf "clients[%s].redirectUris is required" .clientId) .redirectUris }}
+{{- $clients = append $clients (dict
+      "client_id" .clientId
+      "client_name" (default .clientId .name)
+      "grant_types" (list "authorization_code")
+      "response_types" (list "code")
+      "scope" "openid"
+      "redirect_uris" $redirects
+      "post_logout_redirect_uris" (default list .postLogoutRedirectUris)
+      "audience" (default list .audience)
+      "allowed_cors_origins" (default list .allowedCorsOrigins)
+      "token_endpoint_auth_method" "none"
+      "skip_consent" false) }}
+{{- end }}
+# Registers the web applications as OAuth2 clients (create, or update when it
+# exists): public clients, authorization code with PKCE, no refresh token.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $full }}-clients
+  labels:
+    {{- include "facis-guard.labels" . | nindent 4 }}
+data:
+  clients.json: {{ toJson $clients | quote }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $full }}-clients
+  labels:
+    {{- include "facis-guard.labels" . | nindent 4 }}
+    app.kubernetes.io/component: client-registration
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        {{- include "facis-guard.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: client-registration
+    spec:
+      restartPolicy: OnFailure
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: register
+          image: "{{ .Values.clientRegistration.image.repository }}:{{ .Values.clientRegistration.image.tag }}"
+          imagePullPolicy: {{ .Values.clientRegistration.image.pullPolicy }}
+          env:
+            - { name: ADMIN, value: {{ printf "http://%s-hydra-admin:4445" $full | quote }} }
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              i=0
+              until curl -sf -o /dev/null "$ADMIN/health/ready"; do
+                i=$((i + 1)); [ "$i" -lt 60 ] || { echo "authorization server not ready"; exit 1; }
+                sleep 5
+              done
+              n=$(jq 'length' /clients/clients.json)
+              k=0
+              while [ "$k" -lt "$n" ]; do
+                jq -c ".[$k]" /clients/clients.json > /tmp/client.json
+                id=$(jq -r .client_id /tmp/client.json)
+                code=$(curl -s -o /dev/null -w '%{http_code}' "$ADMIN/admin/clients/$id")
+                if [ "$code" = 200 ]; then
+                  curl -sf -X PUT -H 'content-type: application/json' --data @/tmp/client.json "$ADMIN/admin/clients/$id" > /dev/null
+                  echo "updated client $id"
+                else
+                  curl -sf -X POST -H 'content-type: application/json' --data @/tmp/client.json "$ADMIN/admin/clients" > /dev/null
+                  echo "created client $id"
+                fi
+                k=$((k + 1))
+              done
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: clients, mountPath: /clients, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: clients
+          configMap:
+            name: {{ $full }}-clients
+        - name: tmp
+          emptyDir: {}

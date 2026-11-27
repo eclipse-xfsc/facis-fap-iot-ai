@@ -1,0 +1,101 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $full := include "facis-guard.fullname" . }}
+{{- $sel := include "facis-guard.selectorLabels" . }}
+# Hydra: public port from the ingress controller (and the guard's own pods);
+# admin port from the login provider and the client registration Job only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-hydra
+  labels:
+    {{- include "facis-guard.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- $sel | nindent 6 }}
+      app.kubernetes.io/component: hydra
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: {{ .Values.networkPolicy.ingressNamespace }} }
+        - podSelector:
+            matchLabels:
+              {{- $sel | nindent 14 }}
+      ports: [{ port: 4444 }]
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- $sel | nindent 14 }}
+              app.kubernetes.io/component: login-provider
+        - podSelector:
+            matchLabels:
+              {{- $sel | nindent 14 }}
+              app.kubernetes.io/component: client-registration
+      ports: [{ port: 4445 }]
+---
+# Login provider: from the ingress controller only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-login
+  labels:
+    {{- include "facis-guard.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- $sel | nindent 6 }}
+      app.kubernetes.io/component: login-provider
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: {{ .Values.networkPolicy.ingressNamespace }} }
+      ports: [{ port: 1880 }]
+{{- if .Values.postgres.enabled }}
+---
+# Database: from Hydra only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-postgres
+  labels:
+    {{- include "facis-guard.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- $sel | nindent 6 }}
+      app.kubernetes.io/component: postgres
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- $sel | nindent 14 }}
+              app.kubernetes.io/component: hydra
+      ports: [{ port: 5432 }]
+{{- end }}
+{{- if .Values.policyEngine.enabled }}
+---
+# Policy engine: from the login provider only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-policy
+  labels:
+    {{- include "facis-guard.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- $sel | nindent 6 }}
+      app.kubernetes.io/component: policy-engine
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- $sel | nindent 14 }}
+              app.kubernetes.io/component: login-provider
+      ports: [{ port: 8181 }]
+{{- end }}
+{{- end }}

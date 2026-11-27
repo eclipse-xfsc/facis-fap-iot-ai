@@ -1,0 +1,10 @@
+{
+  "name": "facis-guard-orce-tests",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Flow-level tests for the guard's login provider ORCE flow. Runs the real function-node bodies from the flow JSON with the DSP connector's run-node.js harness.",
+  "scripts": {
+    "test": "node --test flows/*.spec.js"
+  },
+  "license": "Apache-2.0"
+}

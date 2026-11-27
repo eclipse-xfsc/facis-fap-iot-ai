@@ -1,0 +1,96 @@
+# Local test setup only (applied by up.sh): the stub verifier, and an edge
+# proxy that puts the authorization server and the login pages on one origin,
+# as the ingress does in a deployment. The ConfigMap guard-stub-verifier-code
+# is created by up.sh from stub-verifier.js.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: guard-stub-verifier
+  labels: { app.kubernetes.io/name: guard-stub-verifier, app.kubernetes.io/part-of: guard-local }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app.kubernetes.io/name: guard-stub-verifier } }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: guard-stub-verifier, app.kubernetes.io/part-of: guard-local }
+    spec:
+      automountServiceAccountToken: false
+      securityContext: { runAsNonRoot: true, runAsUser: 1000, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: stub
+          image: node:22.22.0-alpine3.23@sha256:e4bf2a82ad0a4037d28035ae71529873c069b13eb0455466ae0bc13363826e34
+          command: ["node", "/app/stub-verifier.js"]
+          env:
+            - { name: STUB_INTERNAL_URL, value: "http://guard-stub-verifier:8080" }
+          ports: [{ name: http, containerPort: 8080 }]
+          readinessProbe: { httpGet: { path: /healthz, port: http }, periodSeconds: 3 }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+          volumeMounts: [{ name: code, mountPath: /app, readOnly: true }]
+          resources: { requests: { cpu: 20m, memory: 32Mi }, limits: { cpu: 200m, memory: 128Mi } }
+      volumes:
+        - name: code
+          configMap: { name: guard-stub-verifier-code }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: guard-stub-verifier
+spec:
+  selector: { app.kubernetes.io/name: guard-stub-verifier }
+  ports: [{ name: http, port: 8080, targetPort: http }]
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: guard-edge
+data:
+  default.conf: |
+    # same routes as the chart's ingress, plus /stub/ (the test wallet's side)
+    server {
+      listen 8080;
+      proxy_set_header Host $http_host;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto http;
+      location /oauth2/      { proxy_pass http://guard-hydra-public:4444; }
+      location /.well-known/ { proxy_pass http://guard-hydra-public:4444; }
+      location = /userinfo   { proxy_pass http://guard-hydra-public:4444; }
+      location = /guard/login        { proxy_pass http://guard-login:1880; }
+      location = /guard/login/status { proxy_pass http://guard-login:1880; }
+      location = /guard/consent      { proxy_pass http://guard-login:1880; }
+      location = /guard/logout       { proxy_pass http://guard-login:1880; }
+      location = /guard/error        { proxy_pass http://guard-login:1880; }
+      location /stub/        { proxy_pass http://guard-stub-verifier:8080; }
+      location / { return 404; }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: guard-edge
+  labels: { app.kubernetes.io/name: guard-edge, app.kubernetes.io/part-of: guard-local }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app.kubernetes.io/name: guard-edge } }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: guard-edge, app.kubernetes.io/part-of: guard-local }
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: nginx
+          image: nginx:1.29.3-alpine@sha256:b3c656d55d7ad751196f21b7fd2e8d4da9cb430e32f646adcf92441b72f82b14
+          ports: [{ name: http, containerPort: 8080 }]
+          readinessProbe: { tcpSocket: { port: http }, periodSeconds: 3 }
+          volumeMounts: [{ name: conf, mountPath: /etc/nginx/conf.d, readOnly: true }]
+          resources: { requests: { cpu: 20m, memory: 16Mi }, limits: { cpu: 200m, memory: 64Mi } }
+      volumes:
+        - name: conf
+          configMap: { name: guard-edge }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: guard-edge
+spec:
+  selector: { app.kubernetes.io/name: guard-edge }
+  ports: [{ name: http, port: 8080, targetPort: http }]

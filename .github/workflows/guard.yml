@@ -1,0 +1,55 @@
+name: Guard
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "services/guard/**"
+      - "services/dsp-connector/orce/tests/harness/**"
+      - "services/ai-insight-ui/ui/app/public/facis-logo.svg"
+      - ".github/workflows/guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "services/guard/**"
+      - "services/dsp-connector/orce/tests/harness/**"
+      - "services/ai-insight-ui/ui/app/public/facis-logo.svg"
+      - ".github/workflows/guard.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  login-provider:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+
+      - name: The flow matches its sources
+        run: python3 services/guard/orce/build-flow.py --check
+
+      - name: Flow tests
+        working-directory: services/guard/orce/tests
+        run: npm test
+
+  local-scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Shell syntax
+        run: for f in services/guard/local/*.sh services/guard/local/wstack/*.sh services/guard/helm/facis-guard/*.sh; do bash -n "$f"; done
+
+      - name: No apostrophe inside a parameter expansion message
+        # bash reads an apostrophe in ${VAR:?message} as an opening quote: two of
+        # them silently swallow the lines between them.
+        run: |
+          if grep -nE '\$\{[A-Za-z_]+:[?=+-][^}]*'"'" services/guard/local/*.sh services/guard/local/wstack/*.sh services/guard/helm/facis-guard/*.sh; then exit 1; fi
+
+      - name: Chart renders
+        run: helm template guard services/guard/helm/facis-guard -f services/guard/local/values-local.yaml >/dev/null

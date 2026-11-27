@@ -1,0 +1,41 @@
+# Values of the local test setup (up.sh). Secrets are not here: up.sh creates
+# them in the namespace and names them in existingSecrets.
+fullnameOverride: guard
+publicUrl: http://localhost:8444
+dev: true
+existingSecrets:
+  hydra: guard-hydra-local
+  postgres: guard-postgres-local
+  loginProvider: guard-login-local
+clients:
+  - clientId: facis-ai-insight-ui
+    name: AI Insight (local)
+    # the end-to-end check's callback, and the UI's Vite dev server
+    redirectUris: [http://localhost:8444/callback, http://localhost:3000/orce/aiInsight/]
+    postLogoutRedirectUris: [http://localhost:8444/callback, http://localhost:3000/orce/aiInsight/]
+    audience: [facis-ai-insight]
+    allowedCorsOrigins: [http://localhost:3000]
+  - clientId: facis-local-test
+    name: Local test client
+    redirectUris: [http://localhost:8444/callback]
+    audience: [facis-ai-insight]
+loginProvider:
+  verifier:
+    url: http://guard-stub-verifier:8080
+    api: cvs-1.3
+    tenant: fap
+    permissionSet: facis-login
+  statusListOrigins: [http://guard-stub-verifier:8080]
+  webWallets:
+    - name: Test web wallet
+      url: "https://wallet.local.test/present?request={openid4vp}"
+policyEngine:
+  bundleConfigMap: guard-policy-bundle-local
+ingress:
+  # the edge proxy of local/manifests.yaml plays the ingress
+  enabled: false
+networkPolicy:
+  # the edge proxy runs in the release namespace
+  ingressNamespace: guard-local
+postgres:
+  storage: 256Mi

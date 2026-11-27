@@ -1,0 +1,917 @@
+[
+  {
+    "id": "guard-tab",
+    "type": "tab",
+    "label": "Guard: login provider",
+    "disabled": false,
+    "info": "Login and consent provider of the guard (the authorization server is Ory Hydra).\n\nWallet login: the authorization server sends the browser to /guard/login; the page shows the presentation request of the credential verifier (QR code, same-device link, web wallets); /guard/login/status checks the stored presentation, the status list and the login policy, then accepts the login. /guard/consent puts the verified claims into the tokens; /guard/logout ends the session. Configuration: GUARD_* environment variables, see services/guard/README.md."
+  },
+  {
+    "id": "guard-config-inject",
+    "type": "inject",
+    "z": "guard-tab",
+    "name": "on start",
+    "props": [],
+    "repeat": "",
+    "crontab": "",
+    "once": true,
+    "onceDelay": "0.1",
+    "topic": "",
+    "x": 130,
+    "y": 60,
+    "wires": [
+      [
+        "guard-config",
+        "guard-brand"
+      ]
+    ]
+  },
+  {
+    "id": "guard-config",
+    "type": "function",
+    "z": "guard-tab",
+    "name": "configuration",
+    "func": "// Reads and checks the login provider's configuration once, at start, and\n// publishes it as global \"guardConfig\" (plain data, no functions). Every\n// other node fails closed while guardConfig.ok is false.\n//\n// The verifier client is described here, as data: the routes are the same in\n// the supported verifier releases, only the body that creates a presentation\n// request differs. Adding a release means adding one entry to PROFILES.\nconst errors = [];\nconst raw = (k) => String(env.get(k) || '').trim();\nconst required = (k) => {\n    const v = raw(k);\n    if (!v) errors.push(k + ' is required');\n    return v;\n};\nconst optional = (k, d) => raw(k) || d;\nconst integer = (k, d, min, max) => {\n    const v = optional(k, String(d));\n    const n = Number(v);\n    if (!/^[0-9]+$/.test(v) || n < min || n > max) {\n        errors.push(k + ' must be an integer between ' + min + ' and ' + max);\n        return d;\n    }\n    return n;\n};\nconst list = (k) => raw(k).split(',').map((s) => s.trim()).filter(Boolean);\nconst baseUrl = (k, v) => {\n    if (!v) return '';\n    try {\n        const u = new url.URL(v);\n        if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('scheme');\n        return (u.origin + u.pathname).replace(/\\/+$/, '');\n    } catch (e) {\n        errors.push(k + ' must be an http(s) URL');\n        return '';\n    }\n};\nconst origin = (k, v) => {\n    try {\n        const u = new url.URL(v);\n        if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('scheme');\n        return u.origin;\n    } catch (e) {\n        errors.push(k + ': every entry must be an http(s) origin');\n        return null;\n    }\n};\n\nconst attemptTtl = integer('GUARD_ATTEMPT_TTL_SECONDS', 300, 30, 900);\n\nconst PROFILES = {\n    // Verifier 1.3.x: the client id comes from the tenant's verifier profile.\n    'cvs-1.3': () => ({ permissionSet: required('GUARD_VERIFIER_PERMISSION_SET'), ttl: attemptTtl }),\n    // Verifier 1.2.x: the request names a presentation policy and the client id.\n    'cvs-1.2': () => ({\n        presentationPolicyId: required('GUARD_VERIFIER_POLICY_ID'),\n        clientId: required('GUARD_VERIFIER_CLIENT_ID'),\n        ttl: attemptTtl\n    })\n};\n\nconst api = optional('GUARD_VERIFIER_API', 'cvs-1.3');\nlet createBody = null;\nif (Object.prototype.hasOwnProperty.call(PROFILES, api)) {\n    createBody = PROFILES[api]();\n} else {\n    errors.push('GUARD_VERIFIER_API must be one of ' + Object.keys(PROFILES).join(', '));\n}\n\nconst tenant = required('GUARD_VERIFIER_TENANT');\nif (tenant && !/^[A-Za-z0-9_-]{1,64}$/.test(tenant)) errors.push('GUARD_VERIFIER_TENANT has invalid characters');\nconst group = optional('GUARD_VERIFIER_GROUP', 'default');\nif (!/^[A-Za-z0-9_-]{1,64}$/.test(group)) errors.push('GUARD_VERIFIER_GROUP has invalid characters');\nconst t = encodeURIComponent(tenant);\n\nconst webWallets = [];\nif (raw('GUARD_WEB_WALLETS')) {\n    let parsed = null;\n    try { parsed = JSON.parse(raw('GUARD_WEB_WALLETS')); } catch (e) { parsed = null; }\n    if (!Array.isArray(parsed)) {\n        errors.push('GUARD_WEB_WALLETS must be a JSON array of {\"name\", \"url\"}');\n    } else {\n        for (const w of parsed) {\n            const ok = w && typeof w.name === 'string' && w.name.trim() && typeof w.url === 'string' &&\n                /^https:\\/\\//.test(w.url) && (w.url.includes('{request_uri}') || w.url.includes('{openid4vp}'));\n            if (ok) webWallets.push({ name: w.name.trim().slice(0, 60), url: w.url });\n            else errors.push('GUARD_WEB_WALLETS: each entry needs a name and an https url with {request_uri} or {openid4vp}');\n        }\n    }\n}\n\nconst statusListOrigins = list('GUARD_STATUS_LIST_ORIGINS').map((o) => origin('GUARD_STATUS_LIST_ORIGINS', o)).filter(Boolean);\nif (statusListOrigins.length === 0) errors.push('GUARD_STATUS_LIST_ORIGINS is required (the status list origins of the trusted issuers)');\n\nconst firstPartyClients = list('GUARD_FIRST_PARTY_CLIENTS');\nif (firstPartyClients.length === 0) errors.push('GUARD_FIRST_PARTY_CLIENTS is required');\n\nconst cfg = {\n    ok: false,\n    errors,\n    hydraAdmin: baseUrl('GUARD_HYDRA_ADMIN_URL', required('GUARD_HYDRA_ADMIN_URL')),\n    policyUrl: baseUrl('GUARD_POLICY_URL', required('GUARD_POLICY_URL')),\n    verifier: {\n        api,\n        base: baseUrl('GUARD_VERIFIER_URL', required('GUARD_VERIFIER_URL')),\n        tenant,\n        group,\n        createBody,\n        createPath: '/v1/tenants/' + t + '/internal/presentations/authorization',\n        requestObjectPath: '/v1/tenants/' + t + '/presentation/proof/{state}/request-object/request.jwt',\n        recordPath: '/v1/tenants/' + t + '/internal/presentations/{state}',\n        pendingCodes: [404, 409],\n        verifiedStatus: 'presentation-received',\n        rejectedStatus: 'presentation-rejected'\n    },\n    firstPartyClients,\n    statusListOrigins,\n    webWallets,\n    attemptTtl,\n    lockout: {\n        maxFailures: integer('GUARD_LOCKOUT_MAX_FAILURES', 5, 1, 100),\n        windowSeconds: integer('GUARD_LOCKOUT_WINDOW_SECONDS', 900, 60, 86400),\n        seconds: integer('GUARD_LOCKOUT_SECONDS', 900, 60, 86400)\n    },\n    proxyHops: integer('GUARD_TRUSTED_PROXY_HOPS', 1, 0, 5),\n    // One media type only: some status list services answer a list of types with\n    // an empty body. The W-Stack's own type is the default; another issuer may\n    // answer its standard format, which is read too.\n    statusListAccept: optional('GUARD_STATUS_LIST_ACCEPT', 'application/vnd.xfsc.status-list')\n};\ncfg.ok = errors.length === 0;\n\nglobal.set('guardConfig', cfg);\nif (cfg.ok) {\n    node.status({ fill: 'green', shape: 'dot', text: 'verifier ' + api });\n} else {\n    node.status({ fill: 'red', shape: 'ring', text: errors.length + ' configuration error(s)' });\n    node.error('guard configuration invalid, logins are refused: ' + errors.join('; '));\n}\nreturn msg;   // no outputs: nothing is sent, the node just ends\n",
+    "outputs": 0,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [
+      {
+        "var": "url",
+        "module": "url"
+      }
+    ],
+    "x": 330,
+    "y": 60,
+    "wires": []
+  },
+  {
+    "id": "guard-brand",
+    "type": "function",
+    "z": "guard-tab",
+    "name": "look of the pages (FACIS logo, styles)",
+    "func": "// The look of the login provider's pages, published once at start as global\n// \"guardBrand\" {logo, css}: the FACIS logo (embedded, the pages fetch nothing\n// from elsewhere) and the stylesheet, after the AI Insight UI's design tokens\n// (canvas, white card, primary #005FFF, 8 px controls, its call-to-action\n// buttons and its loading spinner). Both pages use it: guard-attempt-create\n// (login) and guard-error-page.\nconst logo = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzM3IiBoZWlnaHQ9IjEyNyIgdmlld0JveD0iMCAwIDMzNyAxMjciIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF85Xzc2KSI+CjxtYXNrIGlkPSJtYXNrMF85Xzc2IiBzdHlsZT0ibWFzay10eXBlOmx1bWluYW5jZSIgbWFza1VuaXRzPSJ1c2VyU3BhY2VPblVzZSIgeD0iMCIgeT0iMCIgd2lkdGg9IjMzNyIgaGVpZ2h0PSIxMjgiPgo8cGF0aCBkPSJNMzM3IDBIMFYxMjcuMzdIMzM3VjBaIiBmaWxsPSJ3aGl0ZSIvPgo8L21hc2s+CjxnIG1hc2s9InVybCgjbWFzazBfOV83NikiPgo8cGF0aCBkPSJNMjIuNzIyMyA0Mi44NTIxSDU5Ljc5NzZWNjQuMjc5NUgyMS41MjgyVjEyNy4zN0gwVjQ4Ljg0MTFDMCAyMi4wMzI0IDIxLjgzODcgMC4yOTcyMTEgNDguNzcyMSAwLjI5NzIxMUg3Mi45NTM5VjIxLjI2MDJDNjUuMzExNyAyMS4zMDggNTcuNjY5NSAyMS4zNTU3IDUwLjAyNzIgMjEuNDAwOEM0Mi45NTgyIDIxLjQ0ODYgMzYuMDM1MSAyMy45Mzc3IDMwLjkwMzIgMjguNzY5OEMzMC41Njg4IDI5LjA5MDggMzAuMjM0NSAyOS40MTQ2IDI5LjkwMDEgMjkuNzU5NUMyNS4wNjggMzQuNzgyNyAyMy4zNTY1IDQwLjI1NjkgMjIuNzIyMyA0Mi44NTIxWiIgZmlsbD0iIzAwMDE4QSIvPgo8cGF0aCBkPSJNMjI3LjgwNyAxMTMuMzIyQzIxOC41MzggMTIyLjMyMyAyMDYuMTAxIDEyNy4zNyAxOTMuMTQ5IDEyNy4zN0MxODAuMTk3IDEyNy4zNyAxNjcuNTU1IDEyMS45ODkgMTU4LjU4NCAxMTMuMjg4QzE1Ni44MzggMTExLjU5NyAxNTUuMjExIDEwOS43NzQgMTUzLjczIDEwNy44NDhDMTQ3LjMzIDk5LjUyNjUgMTQzLjUxNyA4OS4xNDU4IDE0My41MTcgNzcuOTY5MUMxNDMuNTE3IDcyLjAyNzggMTQxLjczNCA2Ni41MDU4IDEzOC42NzIgNjEuODk5MkMxMzMuNDIzIDU0LjAwNzYgMTI0LjQyNyA0OC44MDQgMTE0LjIxNCA0OC44MDRDOTguMDMyNiA0OC44MDQgODQuOTEzNSA2MS44NjIxIDg0LjkxMzUgNzcuOTY5MUM4NC45MTM1IDk0LjA3MzUgOTguMDMyNiAxMDcuMTMyIDExNC4yMTQgMTA3LjEzMkMxMjQuNDI3IDEwNy4xMzIgMTMzLjQyMyAxMDEuOTMxIDEzOC42NzIgOTQuMDM5QzE0MC43ODkgMTAxLjE1NiAxNDQuMjY4IDEwNy42OTEgMTQ4LjgzNyAxMTMuMzQ2QzEzOS45MDMgMTIyLjAzNiAxMjcuNjgxIDEyNy4zNyAxMTQuMjE0IDEyNy4zN0M4Ni44MDI4IDEyNy4zNyA2NC41ODIgMTA1LjI1MyA2NC41ODIgNzcuOTY5MUM2NC41ODIgNTAuNjg1NCA4Ni44MDI4IDI4LjU2ODEgMTE0LjIxNCAyOC41NjgxQzEyNy42ODEgMjguNTY4MSAxMzkuOTAzIDMzLjkwMTcgMTQ4LjgzNyA0Mi41ODk0QzE1MC42MDcgNDQuMjkzIDE1Mi4yNDcgNDYuMTM3MiAxNTMuNzMgNDguMDkwMkMxNjAuMDkxIDU2LjM3NDUgMTYzLjg0OCA2Ni43NDQ2IDE2My44NDggNzcuOTY5MUMxNjMuODQ4IDgzLjkwNzcgMTY1LjYyOSA4OS40MzI0IDE2OC42OTEgOTQuMDM5QzE3My45NCAxMDEuOTMxIDE4Mi45MzUgMTA3LjEzMiAxOTMuMTQ5IDEwNy4xMzJDMjAxLjEwMiAxMDcuMTMyIDIwOC4zMjQgMTAzLjk3OSAyMTMuNiA5OC44MzY2TDIyNy44MDcgMTEzLjMyMloiIGZpbGw9InVybCgjcGFpbnQwX2xpbmVhcl85Xzc2KSIvPgo8cGF0aCBkPSJNMjI4LjIzOSA0My4wNDMyTDIxMy44NjIgNTcuMzUxMUMyMDguNTY2IDUyLjA2NTIgMjAxLjIzNCA0OC44MDQgMTkzLjE0OSA0OC44MDRDMTgyLjkzNSA0OC44MDQgMTczLjk0MiA1NC4wMDc2IDE2OC42OTEgNjEuODk5MkMxNjYuNTg3IDU0LjgwMzcgMTYzLjExOSA0OC4yODEzIDE1OC41ODYgNDIuNjUwNEMxNjcuNTU1IDMzLjk0OTUgMTc5Ljc3OCAyOC41NjgxIDE5My4xNDkgMjguNTY4MUMyMDYuNTIgMjguNTY4MSAyMTguOTQ3IDMzLjc4MjMgMjI4LjIzOSA0My4wNDMyWiIgZmlsbD0idXJsKCNwYWludDFfbGluZWFyXzlfNzYpIi8+CjxwYXRoIGQ9Ik0yNTQuNzQzIDI4LjU2ODFIMjMzLjIxN1YxMjcuMzdIMjU0Ljc0M1YyOC41NjgxWiIgZmlsbD0iIzAwMDE4QSIvPgo8cGF0aCBkPSJNMjU0Ljc0MyAxLjUyNTg4ZS0wNUgyMzMuMjE3VjIxLjQyNDdIMjU0Ljc0M1YxLjUyNTg4ZS0wNVoiIGZpbGw9IiNCNzAwRkEiLz4KPHBhdGggZD0iTTI2MS45MTYgMTI3LjM3VjEwNS45NDNDMjcxLjE3NCAxMDYuMDI1IDI3OS4yNTkgMTA2LjAwMSAyODUuODM1IDEwNS45NDNDMzAzLjc4NiAxMDUuNzc2IDMxMS42OCAxMDUuMzI0IDMxMy4zNDQgMTAxLjE4QzMxMy45MTcgOTkuNzQxNCAzMTMuNTU5IDk4LjM1ODkgMzEzLjM0NCA5Ny42MTA2QzMwOS42NTggODQuNDU3IDI3Ny4wMDkgODguMDQ5OSAyNjUuNTAzIDcwLjIzMTRDMjU5LjIxNCA2MC40ODIyIDI1OS4yODYgNDQuNTQyNCAyNjcuODk3IDM1LjcxMTRDMjc0LjM3OSAyOS4wNjY5IDI4My42MjQgMjguNTc4NyAyODcuMDMxIDI4LjU2ODFIMzMyLjQ3OVY0OS45OTU0QzMyNC40NTQgNTAuMDI5OSAzMTcuODYzIDUwLjAxOTMgMzEzLjM0NCA0OS45OTU0QzI5NC4xMzUgNDkuODk5OSAyODQuOTE0IDQ5LjU3ODggMjgzLjQ0NCA1My41NjcxQzI4My4xMDkgNTQuNDY5MyAyODMuMjg3IDU1LjI2OCAyODMuNDQ0IDU1Ljk0NzNDMjg0LjgxOCA2Mi4wOTAzIDI5NS4zMzIgNjMuNzA4OSAzMDcuMzYzIDY3Ljg1MTFDMzIwLjYwMSA3Mi40MDk5IDMyNy4yMTcgNzQuNjg0IDMzMS4yODIgNzkuNzU0OUMzMzguODI4IDg5LjE0NTggMzM4Ljk4NSAxMDUuMzM1IDMzMS4yODIgMTE1LjQ2NkMzMjUuNTI5IDEyMy4wMjQgMzE3LjQyMiAxMjcuMzcgMzA0Ljk3MiAxMjcuMzdIMjYxLjkxNloiIGZpbGw9IiMwMDAxOEEiLz4KPC9nPgo8L2c+CjxkZWZzPgo8bGluZWFyR3JhZGllbnQgaWQ9InBhaW50MF9saW5lYXJfOV83NiIgeDE9IjY0LjU4MiIgeTE9Ijc3Ljk2OTEiIHgyPSIyMjcuODA3IiB5Mj0iNzcuOTY5MSIgZ3JhZGllbnRVbml0cz0idXNlclNwYWNlT25Vc2UiPgo8c3RvcCBzdG9wLWNvbG9yPSIjQjUwM0ZBIi8+CjxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iIzQzOTZGRCIvPgo8L2xpbmVhckdyYWRpZW50Pgo8bGluZWFyR3JhZGllbnQgaWQ9InBhaW50MV9saW5lYXJfOV83NiIgeDE9Ijk4LjM2OTYiIHkxPSI0NS4yMzIzIiB4Mj0iMTkyLjYxIiB5Mj0iNDUuMjMyMyIgZ3JhZGllbnRVbml0cz0idXNlclNwYWNlT25Vc2UiPgo8c3RvcCBzdG9wLWNvbG9yPSIjQjUwM0ZBIi8+CjxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iIzQzOTZGRCIvPgo8L2xpbmVhckdyYWRpZW50Pgo8Y2xpcFBhdGggaWQ9ImNsaXAwXzlfNzYiPgo8cmVjdCB3aWR0aD0iMzM3IiBoZWlnaHQ9IjEyNyIgZmlsbD0id2hpdGUiLz4KPC9jbGlwUGF0aD4KPC9kZWZzPgo8L3N2Zz4K';\nconst css = [\n    ':root{--canvas:#E1E7EF;--surface:#FFFFFF;--primary:#005FFF;--primary-hover:#2563EB;--primary-soft:#ECF4FF;',\n    '--text:#1F2937;--muted:#6B7280;--border:#E5E7EB;--danger-dark:#991B1B;--radius-card:20px;--radius-control:8px;',\n    '--shadow:0 1px 4px rgba(0,0,0,.10);',\n    \"--font:-apple-system,BlinkMacSystemFont,'Segoe UI','Roboto','Helvetica Neue',Arial,sans-serif}\",\n    '*{box-sizing:border-box}',\n    'body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 16px;',\n    'background:var(--canvas);color:var(--text);font-family:var(--font)}',\n    '.card{width:100%;max-width:420px;background:var(--surface);border-radius:var(--radius-card);box-shadow:var(--shadow);',\n    'padding:32px 28px;text-align:center}',\n    '.logo{width:120px;height:auto;margin:0 auto 20px;display:block}',\n    'h1{font-size:20px;font-weight:600;margin:0 0 8px}',\n    'h2{font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:24px 0 10px}',\n    'p{font-size:14px;line-height:1.5;color:var(--muted);margin:0 0 8px}',\n    '.qr{display:inline-block;padding:12px;border:1px solid var(--border);border-radius:var(--radius-control);background:#fff}',\n    '.qr svg{display:block;width:220px;height:220px}',\n    '.actions{display:flex;flex-direction:column;gap:10px;margin-top:16px}',\n    '.button{display:block;width:100%;padding:14px 32px;border:none;border-radius:var(--radius-control);',\n    'background:var(--primary);color:var(--surface);font:600 14px var(--font);text-decoration:none;cursor:pointer;',\n    'transition:background .15s}',\n    '.button:hover,.button:focus-visible{background:var(--primary-hover)}',\n    '.button.secondary{background:var(--surface);color:var(--primary);border:1px solid var(--primary)}',\n    '.button.secondary:hover,.button.secondary:focus-visible{background:var(--primary-soft)}',\n    '.status{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:24px;min-height:28px;font-size:14px;color:var(--muted)}',\n    '.spinner{width:20px;height:20px;border:3px solid var(--border);border-top-color:var(--primary);border-radius:50%;',\n    'animation:spin .8s linear infinite}',\n    '@keyframes spin{to{transform:rotate(360deg)}}',\n    '.status.ended .spinner{display:none}',\n    '.status.refused{color:var(--danger-dark)}',\n    '[hidden]{display:none!important}'\n].join('');\nglobal.set('guardBrand', { logo: logo.startsWith('data:image/') ? logo : '', css });\nreturn msg;   // no outputs: nothing is sent, the node just ends\n",
+    "outputs": 0,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 330,
+    "y": 100,
+    "wires": []
+  },
+  {
+    "id": "guard-in-login",
+    "type": "http in",
+    "z": "guard-tab",
+    "name": "GET /guard/login",
+    "url": "/guard/login",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 140,
+    "y": 140,
+    "wires": [
+      [
+        "guard-login-start"
+      ]
+    ]
+  },
+  {
+    "id": "guard-login-start",
+    "type": "function",
+    "z": "guard-tab",
+    "name": "login: check challenge, lockout",
+    "func": "// GET /guard/login?login_challenge=... — the authorization server sends the\n// browser here. Checks the challenge, the configuration and the lockout of\n// the client address, then asks the authorization server's admin API for the\n// login request.\n// Outputs: 1 = admin API request, 2 = error page.\nconst cfg = global.get('guardConfig');\nconst fail = (code, title, text) => {\n    msg._guardError = { code, title, text };\n    return [null, msg];\n};\nif (!cfg || !cfg.ok) {\n    return fail(503, 'Login unavailable', 'The login service is not configured. Contact the platform administrator.');\n}\n\n// Hydra's challenges carry the flow state (about 1 100 characters, base64url):\n// the check is on the alphabet and an upper bound, not a fixed length.\nconst challenge = String((msg.req.query || {}).login_challenge || '');\nif (!/^[A-Za-z0-9._~=-]{1,4096}$/.test(challenge)) {\n    return fail(400, 'Invalid login request', 'Start the login again from the application.');\n}\n\n// Client address: with N trusted proxies (the ingress), the client is the\n// N-th entry from the right of X-Forwarded-For; entries further left are\n// set by the client and are not trusted.\nconst xff = String((msg.req.headers || {})['x-forwarded-for'] || '')\n    .split(',').map((s) => s.trim()).filter(Boolean);\nconst addr = (cfg.proxyHops > 0 && xff.length >= cfg.proxyHops)\n    ? xff[xff.length - cfg.proxyHops]\n    : (msg.req.ip || 'unknown');\n\nconst now = Date.now();\nconst locks = flow.get('guardLockouts') || {};\nconst lock = locks['addr:' + addr];\nif (lock && lock.until > now) {\n    node.log(JSON.stringify({ event: 'guard.login.locked', key: 'addr', until: new Date(lock.until).toISOString() }));\n    return fail(429, 'Too many failed attempts', 'Logins from this address are paused for a while. Try again later or contact the platform administrator.');\n}\n\nmsg._guard = { challenge, addr };\nmsg.method = 'GET';\nmsg.url = cfg.hydraAdmin + '/admin/oauth2/auth/requests/login?login_challenge=' + encodeURIComponent(challenge);\nmsg.headers = { accept: 'application/json' };\nmsg.payload = '';\nreturn [msg, null];\n",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 380,
+    "y": 140,
+    "wires": [
+      [
+        "guard-req-login"
+      ],
+      [
+        "guard-error-page"
+      ]
+    ]
+  },
+  {
+    "id": "guard-req-login",
+    "type": "http request",
+    "z": "guard-tab",
+    "name": "authorization server: login request",
+    "method": "use",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "x": 650,
+    "y": 140,
+    "wires": [
+      [
+        "guard-login-request"
+      ]
+    ]
+  },
+  {
+    "id": "guard-login-request",
+    "type": "function",
+    "z": "guard-tab",
+    "name": "login: client allowed, create request",
+    "func": "// Reply of the authorization server to GET .../requests/login. Only the\n// first-party web applications may use the wallet login. Then asks the\n// verifier to create a presentation request (body per verifier release, see\n// guard-config).\n// Outputs: 1 = verifier request, 2 = error page.\nconst cfg = global.get('guardConfig');\nconst fail = (code, title, text) => {\n    msg._guardError = { code, title, text };\n    return [null, msg];\n};\nif (!cfg || !cfg.ok) {\n    return fail(503, 'Login unavailable', 'The login service is not configured. Contact the platform administrator.');\n}\nconst lr = msg.payload;\nif (msg.statusCode !== 200 || !lr || typeof lr !== 'object') {\n    // 404/410: unknown or expired challenge; anything else: admin API down\n    const expired = msg.statusCode === 404 || msg.statusCode === 410;\n    return fail(expired ? 410 : 502, expired ? 'Login request expired' : 'Login unavailable',\n        expired ? 'Start the login again from the application.' : 'The authorization server did not answer. Try again later.');\n}\nconst clientId = lr.client && typeof lr.client.client_id === 'string' ? lr.client.client_id : '';\nif (!cfg.firstPartyClients.includes(clientId)) {\n    node.log(JSON.stringify({ event: 'guard.login.refused', reason: 'client not allowed', client_id: clientId }));\n    return fail(403, 'Application not allowed', 'This application may not use the wallet login.');\n}\n\nmsg._guard.appClient = clientId;\nconst v = cfg.verifier;\nmsg.method = 'POST';\nmsg.url = v.base + v.createPath;\nmsg.headers = { 'content-type': 'application/json', accept: 'application/json', 'x-tenantId': v.tenant, 'x-groupid': v.group };\nmsg.payload = JSON.stringify(v.createBody);\nreturn [msg, null];\n",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 380,
+    "y": 200,
+    "wires": [
+      [
+        "guard-req-create"
+      ],
+      [
+        "guard-error-page"
+      ]
+    ]
+  },
+  {
+    "id": "guard-req-create",
+    "type": "http request",
+    "z": "guard-tab",
+    "name": "verifier: create request",
+    "method": "use",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "x": 650,
+    "y": 200,
+    "wires": [
+      [
+        "guard-verifier-created"
+      ]
+    ]
+  },
+  {
+    "id": "guard-verifier-created",
+    "type": "function",
+    "z": "guard-tab",
+    "name": "login: fetch request object",
+    "func": "// Reply of the verifier to the create call: {presentationId, requestId,\n// authorizationUrl, requestUri, ttl} in both supported releases. Then fetches\n// the request object, which carries the nonce, the verifier's client id and\n// the DCQL query ids that the stored presentation is checked against.\n// Outputs: 1 = request object fetch, 2 = error page.\nconst cfg = global.get('guardConfig');\nconst fail = (code, title, text) => {\n    msg._guardError = { code, title, text };\n    return [null, msg];\n};\nconst p = msg.payload;\nconst str = (x) => typeof x === 'string' && x.length > 0 && x.length < 4096;\nif ((msg.statusCode !== 201 && msg.statusCode !== 200) || !p || typeof p !== 'object' ||\n    !str(p.presentationId) || !str(p.requestId) || !str(p.authorizationUrl) ||\n    !p.authorizationUrl.startsWith('openid4vp://')) {\n    node.log(JSON.stringify({ event: 'guard.verifier.error', step: 'create', http: msg.statusCode }));\n    return fail(502, 'Login unavailable', 'The credential verifier could not create the request. Try again later.');\n}\n\nmsg._guard.state = p.presentationId;\nmsg._guard.requestId = p.requestId;\nmsg._guard.link = p.authorizationUrl;\nmsg._guard.requestUri = str(p.requestUri) ? p.requestUri : '';\n\nconst v = cfg.verifier;\nmsg.method = 'GET';\nmsg.url = v.base + v.requestObjectPath.replace('{state}', encodeURIComponent(p.presentationId));\nmsg.headers = { accept: 'application/oauth-authz-req+jwt, application/jwt', 'x-tenantId': v.tenant, 'x-groupid': v.group };\nmsg.payload = '';\nreturn [msg, null];\n",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 380,
+    "y": 260,
+    "wires": [
+      [
+        "guard-req-ro"
+      ],
+      [
+        "guard-error-page"
+      ]
+    ]
+  },
+  {
+    "id": "guard-req-ro",
+    "type": "http request",
+    "z": "guard-tab",
+    "name": "verifier: request object",
+    "method": "use",
+    "ret": "txt",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "x": 650,
+    "y": 260,
+    "wires": [
+      [
+        "guard-attempt-create"
+      ]
+    ]
+  },
+  {
+    "id": "guard-attempt-create",
+    "type": "function",
+    "z": "guard-tab",
+    "name": "login: attempt and page",
+    "func": "// Request object fetched: records the login attempt (single use, expires\n// after GUARD_ATTEMPT_TTL_SECONDS) and serves the login page. The page shows\n// the request as a QR code (mobile wallet), as a link (wallet on the same\n// device) and as one button per configured web wallet (redirect), then polls\n// /guard/login/status until the attempt ends.\n// libs: crypto, qrcode. Outputs: 1 = login page, 2 = error page.\nconst cfg = global.get('guardConfig');\nconst g = msg._guard || {};\nconst fail = (code, title, text) => {\n    msg._guardError = { code, title, text };\n    node.send([null, msg]);\n};\n\nlet ro = null;\ntry {\n    const parts = String(msg.payload || '').trim().split('.');\n    if (msg.statusCode === 200 && parts.length === 3) {\n        ro = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));\n    }\n} catch (e) {\n    ro = null;\n}\nconst dcql = ro && ro.dcql_query && Array.isArray(ro.dcql_query.credentials) ? ro.dcql_query.credentials : [];\nconst dcqlIds = dcql.map((q) => (q && typeof q.id === 'string' ? q.id : null)).filter(Boolean);\nif (!ro || typeof ro.nonce !== 'string' || !ro.nonce || typeof ro.client_id !== 'string' || !ro.client_id || dcqlIds.length === 0) {\n    node.log(JSON.stringify({ event: 'guard.verifier.error', step: 'request-object', http: msg.statusCode }));\n    fail(502, 'Login unavailable', 'The credential verifier returned an unusable request. Try again later.');\n    return null;\n}\n\nconst now = Date.now();\nconst attempts = flow.get('guardAttempts') || {};\nfor (const [k, a] of Object.entries(attempts)) {\n    // drop expired attempts, and supersede the earlier attempts of the same\n    // login request (renewing the attempt replaces it)\n    if (a.expires + 60000 < now || (a.challenge === g.challenge && a.status === 'pending')) delete attempts[k];\n}\nconst id = crypto.randomBytes(32).toString('hex');\nattempts[id] = {\n    challenge: g.challenge,\n    appClient: g.appClient,\n    addr: g.addr,\n    state: g.state,\n    requestId: g.requestId,\n    nonce: ro.nonce,\n    verifierClientId: ro.client_id,\n    dcqlIds,\n    created: now,\n    expires: now + cfg.attemptTtl * 1000,\n    status: 'pending',\n    busy: false\n};\nflow.set('guardAttempts', attempts);\n\nconst esc = (s) => String(s).replace(/[&<>\"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', \"'\": '&#39;' }[c]));\nconst requestUri = g.requestUri || (() => {\n    try { return new url.URL(g.link.replace(/^openid4vp:\\/\\//, 'https://x/')).searchParams.get('request_uri') || ''; } catch (e) { return ''; }\n})();\nconst wallets = cfg.webWallets.map((w) => ({\n    name: w.name,\n    href: w.url\n        .split('{openid4vp}').join(encodeURIComponent(g.link))\n        .split('{request_uri}').join(encodeURIComponent(requestUri))\n        .split('{client_id}').join(encodeURIComponent(ro.client_id))\n}));\nconst scriptNonce = crypto.randomBytes(16).toString('base64');\n\n(async () => {\n    let qr = '';\n    try {\n        qr = await qrcode.toString(g.link, { type: 'svg', errorCorrectionLevel: 'M', margin: 1 });\n    } catch (e) {\n        qr = '';\n    }\n    const brand = global.get('guardBrand') || { logo: '', css: '' };\n    const walletButtons = wallets.length\n        ? '<h2>Use a web wallet</h2><div class=\"actions\">' +\n          wallets.map((w) => '<a class=\"button\" href=\"' + esc(w.href) + '\">Open ' + esc(w.name) + '</a>').join('') + '</div>'\n        : '';\n    msg.statusCode = 200;\n    msg.headers = {\n        'content-type': 'text/html; charset=utf-8',\n        'cache-control': 'no-store',\n        'referrer-policy': 'no-referrer',\n        'x-frame-options': 'DENY',\n        'content-security-policy': \"default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; \" +\n            \"script-src 'nonce-\" + scriptNonce + \"'; connect-src 'self'; form-action 'none'; frame-ancestors 'none'; base-uri 'none'\"\n    };\n    delete msg.cookies;\n    msg.payload = '<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">' +\n        '<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Log in with your wallet · FACIS</title>' +\n        '<style>' + brand.css + '</style></head><body><main class=\"card\">' +\n        (brand.logo ? '<img class=\"logo\" src=\"' + brand.logo + '\" alt=\"FACIS\">' : '') +\n        '<h1>Log in with your wallet</h1>' +\n        '<p>Present your role credential to log in. The request expires in ' + Math.round(cfg.attemptTtl / 60) + ' minutes and can be used once.</p>' +\n        '<h2>Scan with a mobile wallet</h2>' +\n        (qr ? '<div class=\"qr\" aria-label=\"QR code of the presentation request\">' + qr + '</div>' : '') +\n        '<div class=\"actions\"><a class=\"button\" href=\"' + esc(g.link) + '\">Open a wallet on this device</a></div>' +\n        walletButtons +\n        '<div id=\"status\" class=\"status\" role=\"status\"><span class=\"spinner\" aria-hidden=\"true\"></span><span id=\"state\">Waiting for your wallet…</span></div>' +\n        '<div class=\"actions\"><a id=\"renew\" class=\"button secondary\" href=\"\" hidden>Start again</a></div>' +\n        '</main><script nonce=\"' + scriptNonce + '\">(function(){var id=\"' + id + '\";var s=document.getElementById(\"state\");' +\n        'var box=document.getElementById(\"status\");var r=document.getElementById(\"renew\");r.href=location.href;' +\n        'function show(t,renew,refused){s.textContent=t;r.hidden=!renew;box.className=\"status ended\"+(refused?\" refused\":\"\");}' +\n        'function poll(){fetch(\"login/status?attempt=\"+id,{cache:\"no-store\"}).then(function(x){return x.json();}).then(function(d){' +\n        'if(d.state===\"done\"&&d.redirect_to){s.textContent=\"Logged in, redirecting…\";location.assign(d.redirect_to);return;}' +\n        'if(d.state===\"refused\"){show(d.message||\"The login was refused.\",true,true);return;}' +\n        'if(d.state===\"expired\"||d.state===\"unknown\"){show(\"This request has expired.\",true,false);return;}' +\n        'if(d.state===\"error\"){show(\"The login could not be completed. Try again later.\",true,true);return;}' +\n        'setTimeout(poll,2000);}).catch(function(){setTimeout(poll,4000);});}setTimeout(poll,2000);})();</script>' +\n        '</body></html>';\n    node.log(JSON.stringify({ event: 'guard.login.started', client_id: g.appClient }));\n    node.send([msg, null]);\n})();\nreturn null;\n",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [
+      {
+        "var": "crypto",
+        "module": "crypto"
+      },
+      {
+        "var": "qrcode",
+        "module": "qrcode"
+      },
+      {
+        "var": "url",
+        "module": "url"
+      }
+    ],
+    "x": 380,
+    "y": 320,
+    "wires": [
+      [
+        "guard-resp-page"
+      ],
+      [
+        "guard-error-page"
+      ]
+    ]
+  },
+  {
+    "id": "guard-resp-page",
+    "type": "http response",
+    "z": "guard-tab",
+    "name": "login page",
+    "statusCode": "",
+    "headers": {},
+    "x": 650,
+    "y": 320,
+    "wires": []
+  },
+  {
+    "id": "guard-error-page",
+    "type": "function",
+    "z": "guard-tab",
+    "name": "error page",
+    "func": "// Renders msg._guardError {code, title, text} as a plain page, with no\n// internal detail.\n// Outputs: 1 = page.\nconst e = msg._guardError || { code: 500, title: 'Login unavailable', text: 'Try again later.' };\nconst esc = (s) => String(s).replace(/[&<>\"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', \"'\": '&#39;' }[c]));\nmsg.statusCode = Number.isInteger(e.code) ? e.code : 500;\nmsg.headers = {\n    'content-type': 'text/html; charset=utf-8',\n    'cache-control': 'no-store',\n    'x-frame-options': 'DENY',\n    'content-security-policy': \"default-src 'none'; img-src data:; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'\"\n};\ndelete msg.cookies;\nconst brand = global.get('guardBrand') || { logo: '', css: '' };\nmsg.payload = '<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">' +\n    '<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>' + esc(e.title) + ' · FACIS</title>' +\n    '<style>' + brand.css + '</style></head><body><main class=\"card\">' +\n    (brand.logo ? '<img class=\"logo\" src=\"' + brand.logo + '\" alt=\"FACIS\">' : '') +\n    '<h1>' + esc(e.title) + '</h1><p>' + esc(e.text) + '</p></main></body></html>';\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 900,
+    "y": 230,
+    "wires": [
+      [
+        "guard-resp-error"
+      ]
+    ]
+  },
+  {
+    "id": "guard-resp-error",
+    "type": "http response",
+    "z": "guard-tab",
+    "name": "error page",
+    "statusCode": "",
+    "headers": {},
+    "x": 1080,
+    "y": 230,
+    "wires": []
+  },
+  {
+    "id": "guard-in-status",
+    "type": "http in",
+    "z": "guard-tab",
+    "name": "GET /guard/login/status",
+    "url": "/guard/login/status",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 160,
+    "y": 420,
+    "wires": [
+      [
+        "guard-status-start"
+      ]
+    ]
+  },
+  {
+    "id": "guard-status-start",
+    "type": "function",
+    "z": "guard-tab",
+    "name": "status: attempt",
+    "func": "// GET /guard/login/status?attempt=... — polled by the login page. Answers\n// from the attempt when it has ended; otherwise asks the verifier for the\n// presentation it stored for this attempt's request.\n// Outputs: 1 = verifier record fetch, 2 = JSON answer.\nconst cfg = global.get('guardConfig');\nconst answer = (code, body) => {\n    msg.statusCode = code;\n    msg.headers = { 'content-type': 'application/json', 'cache-control': 'no-store' };\n    delete msg.cookies;\n    msg.payload = body;\n    return [null, msg];\n};\nif (!cfg || !cfg.ok) return answer(503, { state: 'error' });\n\nconst id = String((msg.req.query || {}).attempt || '');\nif (!/^[0-9a-f]{64}$/.test(id)) return answer(400, { state: 'unknown' });\nconst attempts = flow.get('guardAttempts') || {};\nconst a = attempts[id];\nif (!a) return answer(404, { state: 'unknown' });\n\nif (a.status === 'done') return answer(200, { state: 'done', redirect_to: a.redirectTo });\nif (a.status === 'refused') return answer(200, { state: 'refused', message: a.message });\nif (a.status === 'error') return answer(200, { state: 'error' });\nif (Date.now() > a.expires) {\n    a.status = 'expired';\n    flow.set('guardAttempts', attempts);\n    return answer(200, { state: 'expired' });\n}\nif (a.status === 'expired') return answer(200, { state: 'expired' });\n// one evaluation at a time per attempt: a concurrent poll just waits\nif (a.busy) return answer(200, { state: 'pending' });\na.busy = true;\nflow.set('guardAttempts', attempts);\n\nmsg._guard = { attemptId: id };\nconst v = cfg.verifier;\nmsg.method = 'GET';\nmsg.url = v.base + v.recordPath.replace('{state}', encodeURIComponent(a.state));\nmsg.headers = { accept: 'application/json', 'x-tenantId': v.tenant, 'x-groupid': v.group };\nmsg.payload = '';\nreturn [msg, null];\n",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 380,
+    "y": 420,
+    "wires": [
+      [
+        "guard-req-record"
+      ],
+      [
+        "guard-resp-json"
+      ]
+    ]
+  },
+  {
+    "id": "guard-req-record",
+    "type": "http request",
+    "z": "guard-tab",
+    "name": "verifier: stored presentation",
+    "method": "use",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "x": 650,
+    "y": 420,
+    "wires": [
+      [
+        "guard-status-record"
+      ]
+    ]
+  },
+  {
+    "id": "guard-status-record",
+    "type": "function",
+    "z": "guard-tab",
+    "name": "status: check presentation",
+    "func": "// The verifier's stored presentation for this attempt. The verifier checks\n// the signatures, the nonce and the audience; this node checks again what\n// binds the presentation to this attempt and to its holder, from the stored\n// record only (never from what the wallet answered):\n//   - the record is verified and belongs to this attempt's request;\n//   - it answers this request's DCQL query ids, and nothing else;\n//   - the presentation's nonce and audience are this request's;\n//   - holder binding: the presentation is signed by the credential subject;\n//   - one role credential with an organisation DID and roles;\n//   - the credential carries a status entry on an allowed status list origin.\n// Supports SD-JWT VC presentations (dc+sd-jwt, with key binding), JSON\n// presentations (ldp_vp) and JWT presentations (jwt_vp_json); any other format\n// is refused. For SD-JWT VC, the claims come from the disclosures the issuer\n// committed to (_sd digests), the holder is the key bound in the credential\n// (cnf.jwk, as did:jwk), and the key-binding JWT must carry this request's\n// nonce and audience, cover exactly what was presented (sd_hash) and be signed\n// by that bound key.\n// Outputs: 1 = status list fetch, 2 = refusal, 3 = JSON answer (pending/error).\nconst cfg = global.get('guardConfig');\nconst attempts = flow.get('guardAttempts') || {};\nconst id = (msg._guard || {}).attemptId;\nconst a = attempts[id];\nconst answer = (code, body) => {\n    if (a) { a.busy = false; flow.set('guardAttempts', attempts); }\n    msg.statusCode = code;\n    msg.headers = { 'content-type': 'application/json', 'cache-control': 'no-store' };\n    delete msg.cookies;\n    msg.payload = body;\n    return [null, null, msg];\n};\nconst refuse = (reason, counts) => {\n    msg._guard.refusal = { reason, countsAsFailure: counts !== false };\n    return [null, msg, null];\n};\nif (!cfg || !cfg.ok || !a) return answer(503, { state: 'error' });\n\n// a presentation the verifier recorded as rejected ends the attempt now\nif (msg.statusCode === 409 && msg.payload && typeof msg.payload === 'object' && msg.payload.status === cfg.verifier.rejectedStatus) {\n    return refuse('presentation rejected by the verifier');\n}\nif (cfg.verifier.pendingCodes.includes(msg.statusCode)) return answer(200, { state: 'pending' });\nif (msg.statusCode !== 200 || !msg.payload || typeof msg.payload !== 'object') {\n    node.log(JSON.stringify({ event: 'guard.verifier.error', step: 'record', http: msg.statusCode }));\n    return answer(200, { state: 'pending' });\n}\nconst rec = msg.payload;\nconst eq = (x, y) => typeof x === 'string' && typeof y === 'string' && x.length === y.length &&\n    crypto.timingSafeEqual(Buffer.from(x), Buffer.from(y));\nconst didOf = (ref) => (typeof ref === 'string' ? ref.split('#')[0] : (ref && typeof ref.id === 'string' ? ref.id.split('#')[0] : null));\nconst jwtPayload = (s) => {\n    if (typeof s !== 'string') return null;\n    const parts = s.trim().split('.');\n    if (parts.length !== 3) return null;\n    try { const p = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')); return p && typeof p === 'object' ? p : null; } catch (e) { return null; }\n};\nconst asJson = (v) => {\n    if (v && typeof v === 'object' && !Array.isArray(v)) return v;\n    if (typeof v === 'string' && v.trim().startsWith('{')) {\n        try { const o = JSON.parse(v); return o && typeof o === 'object' ? o : null; } catch (e) { return null; }\n    }\n    return null;\n};\n\nif (rec.status !== cfg.verifier.verifiedStatus) return refuse('presentation not verified by the verifier');\nif (!eq(rec.requestId, a.requestId)) return refuse('presentation belongs to another request');\nconst pres = rec.presentation;\nif (!pres || typeof pres !== 'object' || Array.isArray(pres) || Object.keys(pres).length === 0) return refuse('no presentation in the verifier record');\nconst keys = Object.keys(pres);\nif (!keys.every((k) => a.dcqlIds.includes(k))) return refuse('presentation answers queries outside this request');\n\nconst b64json = (s) => { try { return JSON.parse(Buffer.from(String(s), 'base64url').toString('utf8')); } catch (e) { return null; } };\nconst sha256 = (s) => crypto.createHash('sha256').update(s, 'ascii').digest('base64url');\n// SD-JWT VC: returns {vp} or {error}\nconst sdJwt = (compact) => {\n    const parts = compact.trim().split('~');\n    if (parts.length < 2) return { error: 'SD-JWT presentation not readable' };\n    const kb = parts.pop();\n    if (!kb) return { error: 'SD-JWT presentation has no key binding' };\n    const [ijwt, ...discs] = parts;\n    const ip = jwtPayload(ijwt);\n    const kp = jwtPayload(kb);\n    if (!ip || !kp) return { error: 'SD-JWT presentation not readable' };\n    if ((ip._sd_alg || 'sha-256') !== 'sha-256') return { error: 'SD-JWT digest algorithm not supported' };\n    if (!eq(kp.sd_hash, sha256(ijwt + '~' + discs.map((d) => d + '~').join('')))) return { error: 'key binding does not cover the presented disclosures' };\n    // claims: only disclosures whose digest the issuer signed\n    const byDigest = {};\n    for (const d of discs) {\n        const arr = b64json(d);\n        if (!Array.isArray(arr) || (arr.length !== 3 && arr.length !== 2)) return { error: 'SD-JWT disclosure not readable' };\n        byDigest[sha256(d)] = arr;\n    }\n    const used = new Set();\n    const resolve = (v) => {\n        if (Array.isArray(v)) {\n            const out = [];\n            for (const x of v) {\n                if (x && typeof x === 'object' && !Array.isArray(x) && Object.keys(x).length === 1 && typeof x['...'] === 'string') {\n                    const dd = byDigest[x['...']];\n                    if (dd && dd.length === 2) { used.add(x['...']); out.push(resolve(dd[1])); }\n                } else out.push(resolve(x));\n            }\n            return out;\n        }\n        if (v && typeof v === 'object') {\n            const out = {};\n            for (const [k, x] of Object.entries(v)) if (k !== '_sd' && k !== '_sd_alg') out[k] = resolve(x);\n            for (const dg of Array.isArray(v._sd) ? v._sd : []) {\n                const dd = byDigest[dg];\n                if (dd && dd.length === 3 && !['_sd', '...'].includes(dd[1])) { used.add(dg); out[dd[1]] = resolve(dd[2]); }\n            }\n            return out;\n        }\n        return v;\n    };\n    const claims = resolve(ip);\n    if (used.size !== Object.keys(byDigest).length) return { error: 'SD-JWT disclosure not committed by the issuer' };\n    const jwk = ip.cnf && ip.cnf.jwk;\n    if (!jwk || typeof jwk !== 'object') return { error: 'SD-JWT credential binds no holder key' };\n    // the key-binding JWT is signed by the bound key\n    try {\n        const [h, pl, sig] = kb.split('.');\n        const alg = (b64json(h) || {}).alg;\n        const algs = { ES256: 'sha256', ES384: 'sha384', ES512: 'sha512', EdDSA: null };\n        if (!Object.prototype.hasOwnProperty.call(algs, alg)) return { error: 'key binding algorithm not supported' };\n        const key = crypto.createPublicKey({ key: jwk, format: 'jwk' });\n        const ok = crypto.verify(algs[alg], Buffer.from(h + '.' + pl), alg === 'EdDSA' ? key : { key, dsaEncoding: 'ieee-p1363' }, Buffer.from(sig, 'base64url'));\n        if (!ok) return { error: 'key binding not signed by the holder key' };\n    } catch (e) {\n        return { error: 'key binding not verifiable' };\n    }\n    const pub = {};\n    for (const k of ['kty', 'crv', 'x', 'y', 'n', 'e']) if (jwk[k] !== undefined) pub[k] = jwk[k];\n    const holder = 'did:jwk:' + Buffer.from(JSON.stringify(pub)).toString('base64url');\n    if (claims.sub !== undefined && !eq(didOf(claims.sub), holder)) return { error: 'holder binding: credential subject is not the bound key' };\n    return { vp: { nonce: kp.nonce, aud: kp.aud, holder, vcs: [{ issuer: didOf(ip.iss) || ip.iss, subject: Object.assign({}, claims, { id: holder }),\n        status: claims.status, exp: ip.exp, nbf: ip.nbf }] } };\n};\n\n// Normalise every presented VP into {nonce, aud, holder, vcs: [{issuer, subject, status, exp, nbf}]}\nconst vps = [];\nfor (const k of keys) {\n    const entries = Array.isArray(pres[k]) ? pres[k] : [pres[k]];\n    for (const e of entries) {\n        if (typeof e === 'string' && e.includes('~')) {\n            const r = sdJwt(e);\n            if (r.error) return refuse(r.error);\n            vps.push(r.vp);\n            continue;\n        }\n        const j = jwtPayload(e);\n        if (j && j.vp) {\n            const vcs = (Array.isArray(j.vp.verifiableCredential) ? j.vp.verifiableCredential : [j.vp.verifiableCredential]).map((c) => {\n                const cj = jwtPayload(c);\n                if (cj && cj.vc) {\n                    const subj = Array.isArray(cj.vc.credentialSubject) ? cj.vc.credentialSubject[0] : cj.vc.credentialSubject;\n                    return { issuer: didOf(cj.iss || cj.vc.issuer), subject: Object.assign({}, subj, { id: (subj && subj.id) || cj.sub }),\n                        status: cj.vc.credentialStatus, exp: cj.exp, nbf: cj.nbf };\n                }\n                return null;\n            });\n            vps.push({ nonce: j.nonce, aud: j.aud, holder: didOf(j.iss || j.vp.holder), vcs });\n            continue;\n        }\n        const o = asJson(e);\n        if (o && o.proof) {\n            const proofs = Array.isArray(o.proof) ? o.proof : [o.proof];\n            const p0 = proofs[0] || {};\n            const vcs = (Array.isArray(o.verifiableCredential) ? o.verifiableCredential : [o.verifiableCredential]).map((c) => {\n                const co = asJson(c);\n                if (!co) return null;\n                const subj = Array.isArray(co.credentialSubject) ? co.credentialSubject[0] : co.credentialSubject;\n                const exp = co.validUntil || co.expirationDate;\n                return { issuer: didOf(co.issuer), subject: subj, status: co.credentialStatus,\n                    exp: exp ? Math.floor(Date.parse(exp) / 1000) : undefined };\n            });\n            vps.push({ nonce: p0.challenge, aud: p0.domain || p0.audience, holder: didOf(o.holder || p0.verificationMethod),\n                signer: didOf(p0.verificationMethod), vcs });\n            continue;\n        }\n        return refuse('presentation format not supported');\n    }\n}\n\nlet role = null;\nconst nowS = Math.floor(Date.now() / 1000);\nfor (const vp of vps) {\n    if (!eq(vp.nonce, a.nonce)) return refuse('presentation nonce does not match this request');\n    const audOk = Array.isArray(vp.aud) ? vp.aud.some((x) => eq(x, a.verifierClientId)) : eq(vp.aud, a.verifierClientId);\n    if (!audOk) return refuse('presentation audience does not match this request');\n    if (!vp.holder || (vp.signer && !eq(vp.signer, vp.holder))) return refuse('presentation holder is not its signer');\n    for (const vc of vp.vcs) {\n        if (!vc || !vc.subject || typeof vc.subject !== 'object') return refuse('presented credential not readable');\n        if (!eq(vc.subject.id, vp.holder)) return refuse('holder binding: credential subject is not the presenter');\n        if (typeof vc.exp === 'number' && vc.exp < nowS) return refuse('presented credential expired');\n        if (typeof vc.nbf === 'number' && vc.nbf > nowS + 60) return refuse('presented credential not yet valid');\n        if (!role && typeof vc.subject.org_did === 'string' && Array.isArray(vc.subject.roles)) role = { vc, holder: vp.holder };\n    }\n}\nif (!role) return refuse('no role credential presented');\n\n// holder lockout (the address lockout was checked when the attempt started)\nconst locks = flow.get('guardLockouts') || {};\nconst hl = locks['holder:' + role.holder];\nif (hl && hl.until > Date.now()) return refuse('holder locked out after repeated failures', false);\n\n// status entry: Bitstring Status List or Token Status List shape\nconst st = Array.isArray(role.vc.status) ? role.vc.status : (role.vc.status ? [role.vc.status] : []);\nif (st.length !== 1) return refuse('credential must carry exactly one status entry');\nconst s0 = st[0];\nconst ref = s0.statusListCredential || (s0.status_list && s0.status_list.uri);\nconst idx = s0.statusListCredential ? s0.statusListIndex : (s0.status_list && s0.status_list.idx);\nconst index = typeof idx === 'number' ? idx : (/^[0-9]{1,9}$/.test(String(idx)) ? Number(idx) : -1);\nlet statusUrl = null;\ntry { statusUrl = new url.URL(String(ref)); } catch (e) { statusUrl = null; }\nif (!statusUrl || index < 0) return refuse('credential status entry not readable');\nif (!cfg.statusListOrigins.includes(statusUrl.origin)) return refuse('credential status list origin not allowed');\n\nmsg._guard.holder = role.holder;\nmsg._guard.credential = {\n    issuer: role.vc.issuer,\n    org_did: role.vc.subject.org_did,\n    roles: role.vc.subject.roles.filter((r) => typeof r === 'string'),\n    purpose: Array.isArray(role.vc.subject.purposes) ? role.vc.subject.purposes.filter((p) => typeof p === 'string') : [],\n    name: typeof role.vc.subject.name === 'string' ? role.vc.subject.name : undefined,\n    email: typeof role.vc.subject.email === 'string' ? role.vc.subject.email : undefined\n};\nmsg._guard.statusIndex = index;\nmsg.method = 'GET';\nmsg.url = statusUrl.href;\nmsg.headers = { accept: cfg.statusListAccept };\nmsg.payload = '';\nreturn [msg, null, null];\n",
+    "outputs": 3,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [
+      {
+        "var": "crypto",
+        "module": "crypto"
+      },
+      {
+        "var": "url",
+        "module": "url"
+      }
+    ],
+    "x": 380,
+    "y": 480,
+    "wires": [
+      [
+        "guard-req-status"
+      ],
+      [
+        "guard-refuse"
+      ],
+      [
+        "guard-resp-json"
+      ]
+    ]
+  },
+  {
+    "id": "guard-req-status",
+    "type": "http request",
+    "z": "guard-tab",
+    "name": "issuer: status list",
+    "method": "use",
+    "ret": "txt",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "x": 650,
+    "y": 480,
+    "wires": [
+      [
+        "guard-status-list"
+      ]
+    ]
+  },
+  {
+    "id": "guard-status-list",
+    "type": "function",
+    "z": "guard-tab",
+    "name": "status: not revoked",
+    "func": "// The status list of the presented credential. Accepted shapes:\n//   - W-Stack status service: {\"list\": base64url(zlib)}, bit index 0 is the\n//     left-most bit of byte 0 (as in the W3C Bitstring Status List);\n//   - W3C Bitstring Status List credential (JSON or JWT): credentialSubject.\n//     encodedList = multibase \"u\" + base64url(gzip), same bit order;\n//   - IETF Token Status List (JWT): status_list {bits, lst = base64url(zlib)},\n//     entries read from the least significant bit.\n// Any error, a missing list or an index beyond it refuses the login (the\n// credential's non-revocation cannot be shown). Then asks the policy engine.\n// libs: zlib. Outputs: 1 = policy request, 2 = refusal.\nconst cfg = global.get('guardConfig');\nconst g = msg._guard || {};\nconst attempts = flow.get('guardAttempts') || {};\nconst a = attempts[g.attemptId];\nconst refuse = (reason, counts) => {\n    g.refusal = { reason, countsAsFailure: counts !== false };\n    return [null, msg];\n};\nif (!cfg || !cfg.ok || !a) return refuse('configuration or attempt missing', false);\nif (msg.statusCode !== 200) return refuse('credential status list unavailable', false);\n\nconst jwtPayload = (s) => {\n    const parts = String(s).trim().split('.');\n    if (parts.length !== 3) return null;\n    try { return JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')); } catch (e) { return null; }\n};\nlet body = msg.payload;\nif (Buffer.isBuffer(body)) body = body.toString('utf8');\nlet doc = null;\nif (typeof body === 'string') {\n    const t = body.trim();\n    if (t.startsWith('{')) { try { doc = JSON.parse(t); } catch (e) { doc = null; } } else { doc = jwtPayload(t); }\n} else if (body && typeof body === 'object') {\n    doc = body;\n}\nif (!doc || typeof doc !== 'object') return refuse('credential status list not readable', false);\n\nlet bytes = null;\nlet bits = 1;\nlet lsbFirst = false;\ntry {\n    const subj = (doc.vc && doc.vc.credentialSubject) || doc.credentialSubject;\n    if (typeof doc.list === 'string') {\n        bytes = zlib.unzipSync(Buffer.from(doc.list, 'base64url'));\n    } else if (subj && typeof subj.encodedList === 'string') {\n        const enc = subj.encodedList.startsWith('u') ? subj.encodedList.slice(1) : subj.encodedList;\n        bytes = zlib.unzipSync(Buffer.from(enc, 'base64url'));\n    } else if (doc.status_list && typeof doc.status_list.lst === 'string') {\n        bits = Number(doc.status_list.bits);\n        if (![1, 2, 4, 8].includes(bits)) return refuse('credential status list not readable', false);\n        bytes = zlib.unzipSync(Buffer.from(doc.status_list.lst, 'base64url'));\n        lsbFirst = true;\n    }\n} catch (e) {\n    bytes = null;\n}\nif (!bytes) return refuse('credential status list not readable', false);\n\nconst index = g.statusIndex;\nconst bitPos = index * bits;\nconst byteAt = Math.floor(bitPos / 8);\nif (!Number.isInteger(index) || index < 0 || byteAt >= bytes.length) return refuse('credential status index outside the list', false);\nconst shift = lsbFirst ? (bitPos % 8) : (8 - bits - (bitPos % 8));\nconst value = (bytes[byteAt] >> shift) & ((1 << bits) - 1);\nif (value !== 0) return refuse('credential revoked or suspended');\n\nmsg.method = 'POST';\nmsg.url = cfg.policyUrl;\nmsg.headers = { 'content-type': 'application/json', accept: 'application/json' };\nmsg.payload = JSON.stringify({\n    input: {\n        org_did: g.credential.org_did,\n        roles: g.credential.roles,\n        issuer: g.credential.issuer,\n        client_id: a.appClient\n    }\n});\nreturn [msg, null];\n",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [
+      {
+        "var": "zlib",
+        "module": "zlib"
+      }
+    ],
+    "x": 380,
+    "y": 540,
+    "wires": [
+      [
+        "guard-req-policy"
+      ],
+      [
+        "guard-refuse"
+      ]
+    ]
+  },
+  {
+    "id": "guard-req-policy",
+    "type": "http request",
+    "z": "guard-tab",
+    "name": "policy engine: facis.login",
+    "method": "use",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "x": 650,
+    "y": 540,
+    "wires": [
+      [
+        "guard-policy-decision"
+      ]
+    ]
+  },
+  {
+    "id": "guard-policy-decision",
+    "type": "function",
+    "z": "guard-tab",
+    "name": "status: policy, accept login",
+    "func": "// Decision of the policy engine (facis.login). On allow, accepts the login at\n// the authorization server: the subject is the holder DID, the verified\n// claims travel in the login context to the consent step, which puts them\n// into the tokens. Nothing is remembered: every login presents again.\n// Outputs: 1 = accept login request, 2 = refusal.\nconst cfg = global.get('guardConfig');\nconst g = msg._guard || {};\nconst attempts = flow.get('guardAttempts') || {};\nconst a = attempts[g.attemptId];\nconst refuse = (reason, counts) => {\n    g.refusal = { reason, countsAsFailure: counts !== false };\n    return [null, msg];\n};\nif (!cfg || !cfg.ok || !a) return refuse('configuration or attempt missing', false);\n\nlet body = msg.payload;\nif (typeof body === 'string') { try { body = JSON.parse(body); } catch (e) { body = null; } }\nif (msg.statusCode !== 200 || !body || typeof body !== 'object' || !('result' in body)) {\n    node.log(JSON.stringify({ event: 'guard.policy.error', http: msg.statusCode }));\n    return refuse('policy engine unavailable', false);\n}\n// facis.login returns {allow, reason}; a plain boolean is accepted too\nconst d = body.result;\nconst allow = d === true || (d && typeof d === 'object' && d.allow === true);\nif (!allow) return refuse('login policy: ' + (d && typeof d.reason === 'string' ? d.reason : 'denied'));\n\nconst c = g.credential;\nconst claims = { org_did: c.org_did, roles: c.roles, purpose: c.purpose };\nconst display = {};\nif (c.name) display.name = c.name;\nif (c.email) display.email = c.email;\n\nmsg.method = 'PUT';\nmsg.url = cfg.hydraAdmin + '/admin/oauth2/auth/requests/login/accept?login_challenge=' + encodeURIComponent(a.challenge);\nmsg.headers = { 'content-type': 'application/json', accept: 'application/json' };\nmsg.payload = JSON.stringify({\n    subject: g.holder,\n    remember: false,\n    amr: ['vp'],\n    context: { claims, display, issuer: c.issuer }\n});\nreturn [msg, null];\n",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 380,
+    "y": 600,
+    "wires": [
+      [
+        "guard-req-accept"
+      ],
+      [
+        "guard-refuse"
+      ]
+    ]
+  },
+  {
+    "id": "guard-req-accept",
+    "type": "http request",
+    "z": "guard-tab",
+    "name": "authorization server: accept login",
+    "method": "use",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "x": 650,
+    "y": 600,
+    "wires": [
+      [
+        "guard-login-accepted"
+      ]
+    ]
+  },
+  {
+    "id": "guard-login-accepted",
+    "type": "function",
+    "z": "guard-tab",
+    "name": "status: done",
+    "func": "// Reply of the authorization server to the login accept: {redirect_to}. The\n// attempt ends; the login page follows redirect_to, and the authorization\n// server continues with the consent step. A successful login clears the\n// failure counts of its address and holder (a lockout in force stays).\n// Outputs: 1 = JSON answer.\nconst g = msg._guard || {};\nconst attempts = flow.get('guardAttempts') || {};\nconst a = attempts[g.attemptId];\nmsg.headers = { 'content-type': 'application/json', 'cache-control': 'no-store' };\ndelete msg.cookies;\nconst p = msg.payload && typeof msg.payload === 'object' ? msg.payload : {};\nif (!a) {\n    msg.statusCode = 404;\n    msg.payload = { state: 'unknown' };\n    return msg;\n}\na.busy = false;\nif (msg.statusCode === 200 && typeof p.redirect_to === 'string' && /^https?:\\/\\//.test(p.redirect_to)) {\n    a.status = 'done';\n    a.redirectTo = p.redirect_to;\n    flow.set('guardAttempts', attempts);\n    const locks = flow.get('guardLockouts') || {};\n    for (const k of [a.addr ? 'addr:' + a.addr : null, g.holder ? 'holder:' + g.holder : null]) {\n        if (k && locks[k] && !(locks[k].until > Date.now())) delete locks[k];\n    }\n    flow.set('guardLockouts', locks);\n    node.log(JSON.stringify({ event: 'guard.login.accepted', client_id: a.appClient, org_did: g.credential && g.credential.org_did }));\n    msg.statusCode = 200;\n    msg.payload = { state: 'done', redirect_to: a.redirectTo };\n    return msg;\n}\na.status = 'error';\nflow.set('guardAttempts', attempts);\nnode.log(JSON.stringify({ event: 'guard.login.error', step: 'accept', http: msg.statusCode }));\nmsg.statusCode = 200;\nmsg.payload = { state: 'error' };\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 380,
+    "y": 660,
+    "wires": [
+      [
+        "guard-resp-json"
+      ]
+    ]
+  },
+  {
+    "id": "guard-refuse",
+    "type": "function",
+    "z": "guard-tab",
+    "name": "status: refused, lockout",
+    "func": "// Every refusal of a login attempt ends here. The attempt ends (single use).\n// A refusal caused by the presentation counts as a failure for the client\n// address and for the holder; after GUARD_LOCKOUT_MAX_FAILURES failures\n// within GUARD_LOCKOUT_WINDOW_SECONDS, both are locked out for\n// GUARD_LOCKOUT_SECONDS. Failures of the platform (verifier, status list or\n// policy engine unavailable) do not count. The page gets a generic message;\n// the reason goes to the audit log only.\n// Outputs: 1 = JSON answer.\nconst cfg = global.get('guardConfig');\nconst g = msg._guard || {};\nconst r = g.refusal || { reason: 'refused', countsAsFailure: true };\nconst attempts = flow.get('guardAttempts') || {};\nconst a = attempts[g.attemptId];\nconst now = Date.now();\nlet locked = false;\n\nif (a) {\n    a.busy = false;\n    a.status = 'refused';\n    a.message = 'The login was refused. Check that you presented a valid role credential for this application.';\n    flow.set('guardAttempts', attempts);\n}\nif (cfg && cfg.ok && r.countsAsFailure) {\n    const locks = flow.get('guardLockouts') || {};\n    const keys = [];\n    if (a && a.addr) keys.push('addr:' + a.addr);\n    if (g.holder) keys.push('holder:' + g.holder);\n    for (const k of keys) {\n        const l = locks[k] || { failures: [], until: 0 };\n        l.failures = l.failures.filter((t) => t > now - cfg.lockout.windowSeconds * 1000);\n        l.failures.push(now);\n        if (l.failures.length >= cfg.lockout.maxFailures) {\n            l.until = now + cfg.lockout.seconds * 1000;\n            l.failures = [];\n            locked = true;\n            node.log(JSON.stringify({ event: 'guard.lockout.set', key: k.split(':')[0], until: new Date(l.until).toISOString() }));\n        }\n        locks[k] = l;\n    }\n    for (const [k, l] of Object.entries(locks)) {\n        if (l.until < now && l.failures.every((t) => t <= now - cfg.lockout.windowSeconds * 1000)) delete locks[k];\n    }\n    flow.set('guardLockouts', locks);\n}\nnode.log(JSON.stringify({ event: 'guard.login.refused', reason: r.reason, counted: r.countsAsFailure, client_id: a && a.appClient }));\n\nmsg.statusCode = 200;\nmsg.headers = { 'content-type': 'application/json', 'cache-control': 'no-store' };\ndelete msg.cookies;\nmsg.payload = { state: 'refused', message: locked ? 'Too many failed attempts. Logins are paused for a while.' : (a ? a.message : 'The login was refused.') };\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 900,
+    "y": 540,
+    "wires": [
+      [
+        "guard-resp-json"
+      ]
+    ]
+  },
+  {
+    "id": "guard-resp-json",
+    "type": "http response",
+    "z": "guard-tab",
+    "name": "JSON",
+    "statusCode": "",
+    "headers": {},
+    "x": 1080,
+    "y": 480,
+    "wires": []
+  },
+  {
+    "id": "guard-in-consent",
+    "type": "http in",
+    "z": "guard-tab",
+    "name": "GET /guard/consent",
+    "url": "/guard/consent",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 150,
+    "y": 760,
+    "wires": [
+      [
+        "guard-consent-start"
+      ]
+    ]
+  },
+  {
+    "id": "guard-consent-start",
+    "type": "function",
+    "z": "guard-tab",
+    "name": "consent: challenge",
+    "func": "// GET /guard/consent?consent_challenge=... — asks the authorization server\n// for the consent request.\n// Outputs: 1 = admin API request, 2 = error page.\nconst cfg = global.get('guardConfig');\nconst fail = (code, title, text) => {\n    msg._guardError = { code, title, text };\n    return [null, msg];\n};\nif (!cfg || !cfg.ok) return fail(503, 'Login unavailable', 'The login service is not configured. Contact the platform administrator.');\nconst challenge = String((msg.req.query || {}).consent_challenge || '');\nif (!/^[A-Za-z0-9._~=-]{1,4096}$/.test(challenge)) return fail(400, 'Invalid request', 'Start the login again from the application.');\nmsg._guard = { consentChallenge: challenge };\nmsg.method = 'GET';\nmsg.url = cfg.hydraAdmin + '/admin/oauth2/auth/requests/consent?consent_challenge=' + encodeURIComponent(challenge);\nmsg.headers = { accept: 'application/json' };\nmsg.payload = '';\nreturn [msg, null];\n",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 380,
+    "y": 760,
+    "wires": [
+      [
+        "guard-req-consent"
+      ],
+      [
+        "guard-error-page"
+      ]
+    ]
+  },
+  {
+    "id": "guard-req-consent",
+    "type": "http request",
+    "z": "guard-tab",
+    "name": "authorization server: consent request",
+    "method": "use",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "x": 650,
+    "y": 760,
+    "wires": [
+      [
+        "guard-consent-accept"
+      ]
+    ]
+  },
+  {
+    "id": "guard-consent-accept",
+    "type": "function",
+    "z": "guard-tab",
+    "name": "consent: first-party, claims",
+    "func": "// Consent request received. The web applications are first-party clients:\n// consent is given without a page, the login policy was the gate. The claims\n// verified at login (login context) go into the tokens: org_did, roles and\n// purpose into the access token and the ID token, name and email into the ID\n// token only. Any other client is refused.\n// Outputs: 1 = accept (or reject) consent request, 2 = error page.\nconst cfg = global.get('guardConfig');\nconst fail = (code, title, text) => {\n    msg._guardError = { code, title, text };\n    return [null, msg];\n};\nif (!cfg || !cfg.ok) return fail(503, 'Login unavailable', 'The login service is not configured. Contact the platform administrator.');\nconst cr = msg.payload;\nif (msg.statusCode !== 200 || !cr || typeof cr !== 'object') {\n    const expired = msg.statusCode === 404 || msg.statusCode === 410;\n    return fail(expired ? 410 : 502, expired ? 'Login request expired' : 'Login unavailable',\n        expired ? 'Start the login again from the application.' : 'The authorization server did not answer. Try again later.');\n}\nconst challenge = msg._guard.consentChallenge;\nconst clientId = cr.client && typeof cr.client.client_id === 'string' ? cr.client.client_id : '';\nconst ctx = cr.context && typeof cr.context === 'object' ? cr.context : {};\nconst claims = ctx.claims && typeof ctx.claims === 'object' ? ctx.claims : null;\n\nmsg.method = 'PUT';\nmsg.headers = { 'content-type': 'application/json', accept: 'application/json' };\nif (!cfg.firstPartyClients.includes(clientId) || !claims) {\n    node.log(JSON.stringify({ event: 'guard.consent.rejected', client_id: clientId, reason: claims ? 'client not first-party' : 'no verified claims' }));\n    msg.url = cfg.hydraAdmin + '/admin/oauth2/auth/requests/consent/reject?consent_challenge=' + encodeURIComponent(challenge);\n    msg.payload = JSON.stringify({ error: 'access_denied', error_description: 'The wallet login is limited to the platform applications.' });\n    return [msg, null];\n}\nconst tokenClaims = { org_did: claims.org_did, roles: claims.roles, purpose: claims.purpose };\nmsg.url = cfg.hydraAdmin + '/admin/oauth2/auth/requests/consent/accept?consent_challenge=' + encodeURIComponent(challenge);\nmsg.payload = JSON.stringify({\n    grant_scope: Array.isArray(cr.requested_scope) ? cr.requested_scope : [],\n    grant_access_token_audience: Array.isArray(cr.requested_access_token_audience) ? cr.requested_access_token_audience : [],\n    remember: false,\n    session: {\n        access_token: tokenClaims,\n        id_token: Object.assign({}, tokenClaims, ctx.display && typeof ctx.display === 'object' ? ctx.display : {})\n    }\n});\nreturn [msg, null];\n",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 380,
+    "y": 820,
+    "wires": [
+      [
+        "guard-req-consent-accept"
+      ],
+      [
+        "guard-error-page"
+      ]
+    ]
+  },
+  {
+    "id": "guard-req-consent-accept",
+    "type": "http request",
+    "z": "guard-tab",
+    "name": "authorization server: accept consent",
+    "method": "use",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "x": 650,
+    "y": 820,
+    "wires": [
+      [
+        "guard-redirect"
+      ]
+    ]
+  },
+  {
+    "id": "guard-in-logout",
+    "type": "http in",
+    "z": "guard-tab",
+    "name": "GET /guard/logout",
+    "url": "/guard/logout",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 150,
+    "y": 880,
+    "wires": [
+      [
+        "guard-logout-start"
+      ]
+    ]
+  },
+  {
+    "id": "guard-logout-start",
+    "type": "function",
+    "z": "guard-tab",
+    "name": "logout: accept",
+    "func": "// GET /guard/logout?logout_challenge=... — ends the guard session: the\n// logout request is accepted without a page. Tokens already issued expire on\n// their own (5 minutes).\n// Outputs: 1 = accept logout request, 2 = error page.\nconst cfg = global.get('guardConfig');\nconst fail = (code, title, text) => {\n    msg._guardError = { code, title, text };\n    return [null, msg];\n};\nif (!cfg || !cfg.ok) return fail(503, 'Logout unavailable', 'The login service is not configured. Contact the platform administrator.');\nconst challenge = String((msg.req.query || {}).logout_challenge || '');\nif (!/^[A-Za-z0-9._~=-]{1,4096}$/.test(challenge)) return fail(400, 'Invalid request', 'Log out again from the application.');\nmsg.method = 'PUT';\nmsg.url = cfg.hydraAdmin + '/admin/oauth2/auth/requests/logout/accept?logout_challenge=' + encodeURIComponent(challenge);\nmsg.headers = { accept: 'application/json' };\nmsg.payload = '';\nreturn [msg, null];\n",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 380,
+    "y": 880,
+    "wires": [
+      [
+        "guard-req-logout"
+      ],
+      [
+        "guard-error-page"
+      ]
+    ]
+  },
+  {
+    "id": "guard-req-logout",
+    "type": "http request",
+    "z": "guard-tab",
+    "name": "authorization server: accept logout",
+    "method": "use",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "x": 650,
+    "y": 880,
+    "wires": [
+      [
+        "guard-redirect"
+      ]
+    ]
+  },
+  {
+    "id": "guard-redirect",
+    "type": "function",
+    "z": "guard-tab",
+    "name": "redirect",
+    "func": "// Reply of the authorization server to an accept or reject call:\n// {redirect_to}. Sends the browser there.\n// Outputs: 1 = redirect, 2 = error page.\nconst p = msg.payload && typeof msg.payload === 'object' ? msg.payload : {};\nif (msg.statusCode !== 200 || typeof p.redirect_to !== 'string' || !/^https?:\\/\\//.test(p.redirect_to)) {\n    msg._guardError = { code: 502, title: 'Login unavailable', text: 'The authorization server did not answer. Try again later.' };\n    return [null, msg];\n}\nmsg.statusCode = 302;\nmsg.headers = { location: p.redirect_to, 'cache-control': 'no-store' };\ndelete msg.cookies;\nmsg.payload = '';\nreturn [msg, null];\n",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 900,
+    "y": 850,
+    "wires": [
+      [
+        "guard-resp-redirect"
+      ],
+      [
+        "guard-error-page"
+      ]
+    ]
+  },
+  {
+    "id": "guard-resp-redirect",
+    "type": "http response",
+    "z": "guard-tab",
+    "name": "redirect",
+    "statusCode": "",
+    "headers": {},
+    "x": 1080,
+    "y": 850,
+    "wires": []
+  },
+  {
+    "id": "guard-in-error",
+    "type": "http in",
+    "z": "guard-tab",
+    "name": "GET /guard/error",
+    "url": "/guard/error",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 150,
+    "y": 940,
+    "wires": [
+      [
+        "guard-error-landing"
+      ]
+    ]
+  },
+  {
+    "id": "guard-error-landing",
+    "type": "function",
+    "z": "guard-tab",
+    "name": "authorization server error",
+    "func": "// GET /guard/error?error=...&error_description=... — where the authorization\n// server sends the browser when it cannot complete a login. Shows its error\n// code and description (escaped, shortened) on the plain error page.\n// Outputs: 1 = error page.\nconst q = msg.req.query || {};\nconst clip = (v, n) => String(v || '').replace(/[\\r\\n\\t]+/g, ' ').slice(0, n);\nconst code = clip(q.error, 64) || 'unknown_error';\nconst desc = clip(q.error_description, 300);\nmsg._guardError = {\n    code: 400,\n    title: 'Login failed',\n    text: (desc ? desc + ' ' : '') + '(' + code + '). Start the login again from the application.'\n};\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 380,
+    "y": 940,
+    "wires": [
+      [
+        "guard-error-page"
+      ]
+    ]
+  },
+  {
+    "id": "guard-in-admin-list",
+    "type": "http in",
+    "z": "guard-tab",
+    "name": "GET /guard/admin/lockouts",
+    "url": "/guard/admin/lockouts",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 170,
+    "y": 980,
+    "wires": [
+      [
+        "guard-admin-lockouts"
+      ]
+    ]
+  },
+  {
+    "id": "guard-in-admin-lift",
+    "type": "http in",
+    "z": "guard-tab",
+    "name": "DELETE /guard/admin/lockouts",
+    "url": "/guard/admin/lockouts",
+    "method": "delete",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 170,
+    "y": 1030,
+    "wires": [
+      [
+        "guard-admin-lockouts"
+      ]
+    ]
+  },
+  {
+    "id": "guard-admin-lockouts",
+    "type": "function",
+    "z": "guard-tab",
+    "name": "lockouts: list, lift",
+    "func": "// GET /guard/admin/lockouts lists the active lockouts; DELETE\n// /guard/admin/lockouts?key=<addr:...|holder:...> lifts one. Bearer\n// GUARD_ADMIN_TOKEN, compared in constant time; both actions are audited.\n// Without a configured token the endpoints answer 503 (fail closed).\n// Exposed inside the cluster only (not routed by the ingress).\n// libs: crypto. Outputs: 1 = JSON answer.\nconst answer = (code, body) => {\n    msg.statusCode = code;\n    msg.headers = { 'content-type': 'application/json', 'cache-control': 'no-store' };\n    delete msg.cookies;\n    msg.payload = body;\n    return msg;\n};\nconst token = String(env.get('GUARD_ADMIN_TOKEN') || '');\nif (!token) return answer(503, { error: 'admin endpoints disabled: GUARD_ADMIN_TOKEN is not set' });\nconst h = String((msg.req.headers || {}).authorization || '');\nconst given = h.toLowerCase().startsWith('bearer ') ? h.slice(7).trim() : '';\nconst a = crypto.createHash('sha256').update(given).digest();\nconst b = crypto.createHash('sha256').update(token).digest();\nif (!given || !crypto.timingSafeEqual(a, b)) return answer(401, { error: 'admin token required' });\n\nconst now = Date.now();\nconst locks = flow.get('guardLockouts') || {};\nif (msg.req.method === 'DELETE') {\n    const key = String((msg.req.query || {}).key || '');\n    if (!/^(addr|holder):.{1,512}$/.test(key)) return answer(400, { error: 'key must be addr:<address> or holder:<did>' });\n    const existed = Object.prototype.hasOwnProperty.call(locks, key);\n    delete locks[key];\n    flow.set('guardLockouts', locks);\n    node.log(JSON.stringify({ event: 'guard.lockout.lifted', key, existed }));\n    return answer(200, { lifted: existed, key });\n}\nconst active = Object.entries(locks)\n    .filter(([, l]) => l.until > now)\n    .map(([key, l]) => ({ key, until: new Date(l.until).toISOString() }));\nnode.log(JSON.stringify({ event: 'guard.lockout.listed', count: active.length }));\nreturn answer(200, { lockouts: active });\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [
+      {
+        "var": "crypto",
+        "module": "crypto"
+      }
+    ],
+    "x": 420,
+    "y": 1000,
+    "wires": [
+      [
+        "guard-resp-json"
+      ]
+    ]
+  },
+  {
+    "id": "guard-in-health",
+    "type": "http in",
+    "z": "guard-tab",
+    "name": "GET /guard/health",
+    "url": "/guard/health",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 140,
+    "y": 1090,
+    "wires": [
+      [
+        "guard-health"
+      ]
+    ]
+  },
+  {
+    "id": "guard-health",
+    "type": "function",
+    "z": "guard-tab",
+    "name": "health",
+    "func": "// GET /guard/health — readiness of the login provider: 200 when the\n// configuration is valid, 503 otherwise (the errors name variables, not\n// values).\n// Outputs: 1 = JSON answer.\nconst cfg = global.get('guardConfig');\nmsg.headers = { 'content-type': 'application/json', 'cache-control': 'no-store' };\ndelete msg.cookies;\nif (cfg && cfg.ok) {\n    msg.statusCode = 200;\n    msg.payload = { status: 'ok', verifier: cfg.verifier.api };\n} else {\n    msg.statusCode = 503;\n    msg.payload = { status: 'misconfigured', errors: cfg ? cfg.errors : ['configuration not loaded'] };\n}\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 380,
+    "y": 1090,
+    "wires": [
+      [
+        "guard-resp-json"
+      ]
+    ]
+  }
+]
